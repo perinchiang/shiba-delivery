@@ -120,6 +120,11 @@ export function standFrame(state, dt, scooter) {
     seq.hop = smoothstep(.70, .98, progress);
   }
   seq.seat = 1 - seq.hop;
+  // Bring the bars toward the supporting peg as the hips move to that side.
+  // Carry the incoming steering angle into the shot and leave the wheel straight.
+  seq.entrySteer ??= state.steer ?? 0;
+  const towardPeg = .108 * smoothstep(0, .21, seq.swing) + .31 * smoothstep(.26, .82, seq.swing);
+  state.steer = seq.entrySteer * (1 - smoothstep(0, .22, progress)) - towardPeg * seq.rise * seq.seat;
   state.stand = 1;
 
   if (!seq.approaching) {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Validate the shipped GLBs, the exported pose clips and their contacts in street coordinates. */
 import assert from 'node:assert/strict';
-import { sleeveChecks } from './morning-sleeve-checks.mjs';
+import { gripClearanceCheck, sleeveChecks } from './morning-sleeve-checks.mjs';
 import { checkAccessories } from './morning-accessory-checks.mjs';
 import { readFile } from 'node:fs/promises';
 import * as THREE from 'three';
@@ -31,6 +31,7 @@ assert.deepEqual(character.animations.map(clip => clip.name).sort(), ['Ride', 'S
 assert.ok(character.scene.getObjectByName('Head_Coat').material.map.image.width >= 512);
 const dog = name => rider.root.getObjectByName(name), bike = name => scooter.root.getObjectByName(name);
 const checkSleeves = sleeveChecks(rider.root);
+const checkGripClearance = gripClearanceCheck(rider.root, bike('Swept_Handlebar'));
 const at = node => node.getWorldPosition(new THREE.Vector3());
 const bounds = node => new THREE.Box3().setFromObject(node, true);
 const basePose = { time: 1, stride: 0, walking: 0, carrying: false, headTurn: -.12, speed: 5.6 };
@@ -61,6 +62,7 @@ const form = ['Root', 'Pelvis', 'Chest', 'Head', ...hips.flatMap(s => ['UpperArm
 const bindPose = form.map(name => [name, at(dog(name)), dog(name).getWorldScale(new THREE.Vector3())]);
 const fixedLengths = hips.flatMap(s => [['UpperArm_', 'Forearm_'], ['Forearm_', 'Paw_'], ['Thigh_', 'Shin_'], ['Shin_', 'Foot_']]
   .map(([a, b]) => [a + s, b + s, at(dog(a + s)).distanceTo(at(dog(b + s)))]));
+fixedLengths.push(['Pelvis', 'Chest', at(dog('Pelvis')).distanceTo(at(dog('Chest')))]);
 const box = bike('Delivery_Box'), saddle = bike('Solo_Saddle'), tank = bike('Two_Tone_Tank');
 function assertClearsBodyPart(object, bone, centre, radii) {
   const skin = dog('Head_Coat').skeleton;
@@ -321,6 +323,7 @@ for (const yaw of [0, 1.73, -2.1]) {
   }
   assert.ok(pressed, 'left boot operates the stand heel tang while stopping');
   for (const kind of ['park', 'mount']) {
+    if (kind === 'park') state.steer = .31 * Math.sign(yaw);
     if (kind === 'mount') {
       // Loading from the dismount spot takes the rider all the way to the other side.
       state.cargo = 'hand';
@@ -342,6 +345,7 @@ for (const yaw of [0, 1.73, -2.1]) {
       standFrame(state, .016, scooter);
       const seq = state.sequence;
       scooter.setStand(state.stand);
+      scooter.steer(state.steer);
       if (!seq) break;
       if (seq.approaching) {
         assert.ok(outsideChassis(), 'approach to the peg skirts the chassis');
@@ -355,6 +359,7 @@ for (const yaw of [0, 1.73, -2.1]) {
       if (yaw === 0 && sleeveFrame++ % 3 === 0) {
         checkSleeves();
       }
+      checkGripClearance(seq);
       const soleL = bounds(dog('Shoe_R')), soleR = bounds(dog('Shoe_L'));
       const positions = joints.map(name => at(dog(name)));
       if (lastJoints) positions.forEach((p, i) => {
@@ -424,6 +429,7 @@ for (const yaw of [0, 1.73, -2.1]) {
     assert.ok(highestBoot > .93, 'free ankle lifts above the cushion before descending');
     assert.ok(crossed && stoodOnPeg, kind + ' uses step-peg crossover');
     assert.equal(state.mode, kind === 'park' ? 'walk' : 'ride');
+    assert.equal(Math.abs(state.steer), 0, 'steering returns to centre at the end of the sequence');
     assert.equal(state.stand, 1, 'stand supports the bike until the rider pulls away');
     if (kind === 'park') assert.ok(leftOfBike(new THREE.Vector3(state.x, 0, state.z)) > .4, 'dismount to rider left');
   }

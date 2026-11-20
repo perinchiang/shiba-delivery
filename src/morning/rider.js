@@ -11,9 +11,9 @@ const supportingLeg = 1;
 // Right-boot (Foot_L) ankle arc in bike space: lift off the right peg, clear the
 // wide upholstered saddle cleanly, and hold clear above the left edge before hopping down.
 const swingPath = new THREE.CatmullRomCurve3([
-  [-.280, .599, -.151], [-.332, .727, -.226], [-.246, .855, -.353],
-  [-.059, .931, -.446], [.129, .990, -.459], [.248, .960, -.452],
-  [.315, .861, -.435], [.285, .795, -.403],
+  [-.280, .599, -.151], [-.332, .713, -.257], [-.246, .830, -.435],
+  [-.059, .900, -.531], [.129, .959, -.544], [.248, .935, -.537],
+  [.315, .847, -.520], [.285, .795, -.488],
 ].map(p => new THREE.Vector3(...p)));
 const xAxis = new THREE.Vector3(1, 0, 0), yAxis = new THREE.Vector3(0, 1, 0), zAxis = new THREE.Vector3(0, 0, 1);
 
@@ -100,6 +100,7 @@ function shoeSupport(pitch) {
 export function createShiba(asset) {
   const root = prepare(asset), rootBone = named(root, 'Root'), chest = named(root, 'Chest'), head = named(root, 'Head');
   const pelvis = named(root, 'Pelvis');
+  const chestOffset = chest.position.clone();
   const stand = clipSampler(asset, root, 'Stand'), walk = clipSampler(asset, root, 'Walk'), ride = clipSampler(asset, root, 'Ride');
   const tail = ['Tail', 'TailMid', 'TailTip'].map(name => root.getObjectByName(name)).filter(bone => bone?.isBone);
   const hinge = root.getObjectByName('GoggleHinge'), clothEnds = root.getObjectByName('KerchiefEnds');
@@ -167,6 +168,7 @@ export function createShiba(asset) {
   }
 
   function pose({ time, stride, walking, mount, carrying, headTurn, lift = 0, speed = 0, tiptoe = 0, reach = 0, seatBlend = 1, rise = 0, swing = 0, hop = 0, dt = 0 }) {
+    chest.position.copy(chestOffset);
     const motion = mount ? 'ride' : walking > 0 ? 'walk' : 'stand';
     const onboard = Boolean(mount);
     if (hinge && previousMount !== onboard) {
@@ -200,7 +202,7 @@ export function createShiba(asset) {
         root.worldToLocal(mount.frame.localToWorld(v.set(
           .045 + .074 * offPeg + .174 * nearSide,
           .469 + .025 * offPeg - .005 * nearSide,
-          -.137 + .013 * nearSide)));
+          -.192 + .013 * nearSide)));
         rootBone.position.lerp(v, rise);
       }
       if (hop > 0) {
@@ -210,9 +212,11 @@ export function createShiba(asset) {
         // Move briskly outward clear of the footpeg first, then drop softly onto the street.
         const out = THREE.MathUtils.smoothstep(hop, 0, .78);
         const drop = THREE.MathUtils.smoothstep(hop, .12, 1);
+        const airborne = Math.sin(Math.PI * hop);
         rootBone.position.x = THREE.MathUtils.lerp(rootBone.position.x, v.x, out);
-        rootBone.position.z = THREE.MathUtils.lerp(rootBone.position.z, v.z, out);
-        rootBone.position.y = THREE.MathUtils.lerp(rootBone.position.y, v.y, drop) + .16 * Math.sin(Math.PI * hop);
+        // Pass behind the end of the grip as the paws let go.
+        rootBone.position.z = THREE.MathUtils.lerp(rootBone.position.z, v.z, out) - .055 * airborne ** 2;
+        rootBone.position.y = THREE.MathUtils.lerp(rootBone.position.y, v.y, drop) + .16 * airborne;
         hopOffset.subVectors(rootBone.position, hopOffset).multiplyScalar(root.scale.y).applyQuaternion(root.quaternion);
       }
       const seatedLean = lean * (1 - rise) * seatBlend;
@@ -225,12 +229,16 @@ export function createShiba(asset) {
         // Roll the free hip up and turn it behind the planted hip. Counterbalance
         // at the chest so both shoulders can still reach across the handlebar.
         const roll = (.15 + .06 * nearSide) * up;
-        const twist = -(.26 + .44 * nearSide) * up;
+        const twist = -(.26 + .44 * nearSide + .37 * Math.sin(Math.PI * swing)) * up;
         turn(pelvis, zAxis, -roll);
         turn(pelvis, yAxis, twist);
-        turn(chest, yAxis, -twist);
-        turn(chest, zAxis, roll - .06 * up);
-        turn(chest, xAxis, .23 * up);
+        // Swing the existing spine offset around the hips. The shoulders can
+        // stay behind the grips while the planted leg carries the pelvis sideways.
+        turn(chest, yAxis, -twist + .052 * nearSide * up);
+        turn(chest, zAxis, (-.042 + .17 * nearSide) * up);
+        turn(chest, xAxis, (-.035 + .07 * offPeg + .055 * nearSide) * up);
+        chest.position.applyAxisAngle(zAxis, (-.095 + .165 * offPeg + .28 * nearSide) * up)
+          .applyAxisAngle(xAxis, (-.26 + .18 * nearSide) * up);
         turn(head, zAxis, -.27 * nearSide * up);
       }
       if (rise < 0) {
@@ -241,20 +249,23 @@ export function createShiba(asset) {
       }
       turn(chest, yAxis, mount.turn * .86 * (1 - hop));
       const worldScale = root.getWorldScale(v).y;
-      const handGrip = 1 - THREE.MathUtils.smoothstep(hop, 0, .50);
+      const handGrip = 1 - THREE.MathUtils.smoothstep(hop, 0, .14);
       const bootKick = mount.kick;
       // Update skeleton matrices once so Stand-pose limb fallbacks match rootBone.position.
       root.updateMatrixWorld(true);
       chest.getWorldQuaternion(shipQ);
       for (let i = 0; i < parts.length; i++) {
         const { arm, leg, elbowPole } = parts[i];
-        pole.copy(elbowPole).applyQuaternion(shipQ);
+        pole.copy(elbowPole);
+        pole.x *= 1 + Math.max(0, rise) * (1 - hop);
+        pole.applyQuaternion(shipQ);
         mount.palms[i].getWorldPosition(goal);
         if (handGrip < 1) {
           arm.c.getWorldPosition(v);
-          // Slight outward arm spread mid-hop for balance.
-          const spread = Math.sin(Math.PI * hop) * .09 * worldScale;
-          v.add(from.set(i === supportingLeg ? spread : -spread, spread * .9, 0).applyQuaternion(root.quaternion));
+          // Fold the paw outside the jacket before dropping into the standing pose.
+          arm.a.getWorldPosition(from);
+          from.add(to.set(i ? .135 : -.135, -.055, .125).applyQuaternion(shipQ).multiplyScalar(worldScale));
+          v.lerp(from, 1 - THREE.MathUtils.smoothstep(hop, .38, 1));
           goal.lerp(v, 1 - handGrip);
         }
         solve(arm, goal, pole, worldScale);
@@ -300,7 +311,7 @@ export function createShiba(asset) {
           // Let the toe trail the ankle as the hock folds behind the rump.
           const tuck = THREE.MathUtils.smoothstep(swing, .04, .32) * (1 - hop);
           aligned.multiply(q.setFromAxisAngle(yAxis, .3 * tuck));
-          aligned.multiply(q.setFromAxisAngle(xAxis, 1.26 * tuck));
+          aligned.multiply(q.setFromAxisAngle(xAxis, (1.26 + .23 * Math.sin(Math.PI * swing)) * tuck));
         }
         solve(leg, goal, pole, worldScale);
         leg.c.parent.getWorldQuaternion(parentQ);
