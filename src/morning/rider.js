@@ -241,7 +241,7 @@ export function createShiba(asset) {
       }
       turn(chest, yAxis, mount.turn * .86 * (1 - hop));
       const worldScale = root.getWorldScale(v).y;
-      const handGrip = 1 - THREE.MathUtils.smoothstep(hop, 0, .15);
+      const handGrip = 1 - THREE.MathUtils.smoothstep(hop, 0, .50);
       const bootKick = mount.kick;
       // Update skeleton matrices once so Stand-pose limb fallbacks match rootBone.position.
       root.updateMatrixWorld(true);
@@ -325,12 +325,9 @@ export function createShiba(asset) {
         for (const { leg } of parts) turn(leg.a, xAxis, -.17 * reach);
       }
       if (lift) turn(chest, xAxis, -lift * .02);
-      if (carrying) turn(parts[1].arm.a, xAxis, -.46 + .16 * lift, true);
+      if (carrying) turn(parts[1].arm.a, xAxis, -.46 - lift * 2.46, true);
       if (lift) {
-        // Lead with the elbow when raising the bag so the underarm can unfold.
-        turn(parts[1].arm.a, zAxis, 1.85 * lift);
-        turn(parts[1].arm.b, xAxis, -.10 * lift);
-        turn(parts[1].arm.b, zAxis, 1.20 * lift);
+        turn(parts[1].arm.a, zAxis, -.32 * lift);
         turn(parts[0].arm.a, xAxis, -lift * .55);
         turn(head, zAxis, .10 * lift);
       }

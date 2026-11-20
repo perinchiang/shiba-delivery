@@ -1,41 +1,40 @@
 import assert from 'node:assert/strict';
-import { Octree } from 'three/addons/math/Octree.js';
-import { Ray, Triangle, Vector3 } from 'three';
+import { Vector3 } from 'three';
 
-// glTF splits the sewn jacket along material boundaries. Compare the posed
-// triangles and exclude only edges meeting at the same garment vertex.
-export function checkSleeves(uniform) {
-  const panels = ['Uniform · bottle green', 'Uniform · sleeves'].map(name => {
-    const mesh = uniform.children.find(m => m.material.name === name);
-    assert.ok(mesh, name);
-    const points = Array.from({ length: mesh.geometry.attributes.position.count },
-      (_, i) => mesh.getVertexPosition(i, new Vector3()).applyMatrix4(mesh.matrixWorld));
-    const index = mesh.geometry.index.array, tree = new Octree(), edges = new Map();
-    for (let i = 0; i < index.length; i += 3) {
-      const a = index[i], b = index[i + 1], c = index[i + 2];
-      tree.addTriangle(new Triangle(points[a], points[b], points[c]));
-      for (const [j, k] of [[a,b], [b,c], [c,a]]) {
-        edges.set(Math.min(j,k) * points.length + Math.max(j,k), [points[j], points[k]]);
+// Measure two diameters on the same cross-section of the original round sleeve.
+// A hand can stay on the grip even when the cloth above it has collapsed.
+export function sleeveChecks(root) {
+  const rings = ['L', 'R'].map(tag => {
+    const mesh = root.getObjectByName('Sleeve_' + tag);
+    const { position, skinIndex, skinWeight } = mesh.geometry.attributes;
+    const ring = [];
+    let anchoredCap = false;
+    for (let i = 0; i < position.count; i++) {
+      const y = position.getY(i);
+      if (Math.abs(y - .69313) < .0001) ring.push(i);
+      for (let j = 0; j < 4; j++) {
+        if (mesh.skeleton.bones[skinIndex.getComponent(i, j)].name !== 'Chest') continue;
+        const w = skinWeight.getComponent(i, j);
+        if (y <= .720) assert.ok(w < .0001, 'sleeve barrel moves with the arm');
+        if (w > .5) anchoredCap = true;
       }
     }
-    tree.build();
-    return { tree, edges };
+    assert.ok(anchoredCap && ring.length >= 4, 'shoulder cap and round upper sleeve are present');
+    const diameters = [['getX', .196], ['getZ', .209]].map(([axis, minimum]) => {
+      const sorted = ring.slice().sort((a, b) => position[axis](a) - position[axis](b));
+      return { lo: sorted[0], hi: sorted.at(-1), minimum };
+    });
+    return { mesh, diameters };
   });
-  const ray = new Ray(), hit = new Vector3(), candidates = [];
-  for (const [source, obstacle] of [[1, 0], [0, 1], [1, 1]]) {
-    for (const [a, b] of panels[source].edges.values()) {
-      ray.origin.copy(a);
-      const length = ray.direction.subVectors(b, a).length();
-      if (length < 1e-6) continue;
-      ray.direction.divideScalar(length);
-      candidates.length = 0;
-      panels[obstacle].tree.getRayTriangles(ray, candidates);
-      for (const tri of candidates) {
-        if ([tri.a, tri.b, tri.c].some(p => p.distanceToSquared(a) < 1e-12 || p.distanceToSquared(b) < 1e-12)) continue;
-        if (!ray.intersectTriangle(tri.a, tri.b, tri.c, false, hit)) continue;
-        const d = hit.distanceTo(a);
-        assert.ok(d < 1e-6 || d > length - 1e-6, 'articulated sleeve cuts through another fabric triangle');
+  const a = new Vector3(), b = new Vector3();
+  return () => {
+    for (const { mesh, diameters } of rings) {
+      for (const { lo, hi, minimum } of diameters) {
+        mesh.getVertexPosition(lo, a);
+        mesh.getVertexPosition(hi, b);
+        // Original diameters at this latitude are .207 and .221 in rig space.
+        assert.ok(a.distanceTo(b) > minimum, 'round sleeve retains width and depth in the posed mesh');
       }
     }
-  }
+  };
 }

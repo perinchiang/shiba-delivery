@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Validate the shipped GLBs, the exported pose clips and their contacts in street coordinates. */
 import assert from 'node:assert/strict';
-import { checkSleeves } from './morning-sleeve-checks.mjs';
+import { sleeveChecks } from './morning-sleeve-checks.mjs';
 import { checkAccessories } from './morning-accessory-checks.mjs';
 import { readFile } from 'node:fs/promises';
 import * as THREE from 'three';
@@ -30,6 +30,7 @@ const rider = createShiba(character), scooter = createScooter(vehicle), mount = 
 assert.deepEqual(character.animations.map(clip => clip.name).sort(), ['Ride', 'Stand', 'Walk']);
 assert.ok(character.scene.getObjectByName('Head_Coat').material.map.image.width >= 512);
 const dog = name => rider.root.getObjectByName(name), bike = name => scooter.root.getObjectByName(name);
+const checkSleeves = sleeveChecks(rider.root);
 const at = node => node.getWorldPosition(new THREE.Vector3());
 const bounds = node => new THREE.Box3().setFromObject(node, true);
 const basePose = { time: 1, stride: 0, walking: 0, carrying: false, headTurn: -.12, speed: 5.6 };
@@ -105,7 +106,7 @@ for (const yaw of [0, 1.74, -2.30]) {
     scooter.steer(angle);
     rider.pose({ ...basePose, mount });
     rider.root.updateMatrixWorld(true); scooter.root.updateMatrixWorld(true);
-    if (yaw === 0 && step % 5 === 0) checkSleeves(dog('Uniform'));
+    if (yaw === 0 && step % 5 === 0) checkSleeves();
     for (const [a, b, length] of fixedLengths) {
       assert.ok(Math.abs(at(dog(a)).distanceTo(at(dog(b))) - length) < 2e-5, a + ' retains its standing length');
     }
@@ -255,7 +256,7 @@ for (const kind of ['pack', 'unpack']) {
       headTurn: 0, lift: state.lift, tiptoe: state.tiptoe, reach: state.reach });
     positionParcel(state, rider, scooter, looseBag);
     scene.updateMatrixWorld(true);
-    if (state.lift > 0 && liftFrame++ % 12 === 0) checkSleeves(dog('Uniform'));
+    if (state.lift > 0 && liftFrame++ % 12 === 0) checkSleeves();
     if (state.tiptoe > .1) {
       for (const side of hips) assert.ok(Math.abs(bounds(dog('Shoe_' + side)).min.y) < .002,
         'loading keeps the toes on the street');
@@ -352,7 +353,7 @@ for (const yaw of [0, 1.73, -2.1]) {
         seatBlend: seq.seat, speed: 0, rise: seq.rise, swing: seq.swing, hop: seq.hop });
       scene.updateMatrixWorld(true);
       if (yaw === 0 && sleeveFrame++ % 3 === 0) {
-        checkSleeves(dog('Uniform'));
+        checkSleeves();
       }
       const soleL = bounds(dog('Shoe_R')), soleR = bounds(dog('Shoe_L'));
       const positions = joints.map(name => at(dog(name)));
