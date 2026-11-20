@@ -6,7 +6,7 @@ import zlib
 import bpy
 from mathutils import Quaternion
 from forms import Parts, V, X, UP, Z, TAU, blender_v, material, smooth
-from riding_fit import RIDER_ORIGIN, PELVIS_TILT, CHEST_TILT, HEAD_LEVEL, SOLE_DEPTH, footrest, palm
+from riding_fit import CHASSIS_DROP, RIDER_ORIGIN, PELVIS_TILT, CHEST_TILT, HEAD_LEVEL, SOLE_DEPTH, footrest, palm
 from helmet import make_helmet, HINGE, PARK_ANGLE
 from accessories import fit_jacket_neckline, kerchief, curled_tail, tail_rotations, TAIL_JOINTS, TAIL_PATH
 
@@ -371,7 +371,7 @@ def author_actions(rig):
                 pb.location = (0, 0, 0)
                 pb.scale = (1, 1, 1)
             if name == "Ride":
-                off = RIDER_ORIGIN
+                off = RIDER_ORIGIN - UP * CHASSIS_DROP
                 bone_turn(rig, "Pelvis", PELVIS_TILT)
                 bone_turn(rig, "Chest", CHEST_TILT)
                 bone_turn(rig, "Head", HEAD_LEVEL)

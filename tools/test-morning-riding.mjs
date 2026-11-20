@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createScooter, createShiba, parcel } from '../src/morning/rider.js';
-import { beginSequence, boxFrame, positionParcel } from '../src/morning/sequence.js';
+import { standFrame, beginSequence, boxFrame, positionParcel } from '../src/morning/sequence.js';
 import { frameRide, resizeRideCamera } from '../src/morning/ride-camera.js';
 
 // Node has no GPU texture decoder. Check the embedded PNG here; WebKit/Chrome
@@ -31,12 +31,17 @@ assert.ok(character.scene.getObjectByName('Head_Coat').material.map.image.width 
 const dog = name => rider.root.getObjectByName(name), bike = name => scooter.root.getObjectByName(name);
 const at = node => node.getWorldPosition(new THREE.Vector3());
 const bounds = node => new THREE.Box3().setFromObject(node, true);
-const basePose = { time: 1, stride: 0, walking: 0, carrying: false, headTurn: -.12 };
+const basePose = { time: 1, stride: 0, walking: 0, carrying: false, headTurn: -.12, speed: 5.6 };
 const point = new THREE.Vector3(), focus = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
 const down = up.clone().negate(), ray = new THREE.Raycaster();
 const hips = ['L', 'R'];
 function surface(object, origin, dir = down) {
-  object.traverseVisible(node => { if (node.isSkinnedMesh) node.computeBoundingSphere(); });
+  object.traverseVisible(node => {
+    if (node.isSkinnedMesh) {
+      node.computeBoundingSphere();
+      if (node.boundingBox) node.computeBoundingBox();
+    }
+  });
   ray.set(origin.clone().addScaledVector(dir, -3), dir);
   return ray.intersectObject(object, true)[0]?.point.y;
 }
@@ -82,6 +87,13 @@ for (const x of [-.048, .048]) {
   assert.ok(hit && smile.getObjectById(hit.object.id), 'visible smile on each side of the nose');
 }
 for (const s of hips) assert.ok(Math.abs(bounds(dog('Shoe_'+s)).min.y) < .001, 'standing soles are grounded');
+for (const s of hips) {
+  const segment = (a, b) => at(dog(a+'_'+s)).distanceTo(at(dog(b+'_'+s))) / rider.root.scale.y;
+  assert.ok(Math.abs(segment('Thigh','Shin') - .19) < .0001);
+  assert.ok(Math.abs(segment('Shin','Foot') - Math.hypot(.102,.051)) < .0001);
+}
+const cushion = bounds(saddle).getSize(new THREE.Vector3()).divideScalar(scooter.root.scale.y);
+assert.ok(cushion.x > .40 && cushion.z > .55, 'broad motorcycle bench');
 let worstGrip = 0, minTail = Infinity;
 for (const yaw of [0, 1.74, -2.30]) {
   for (const root of [rider.root, scooter.root]) {
@@ -123,8 +135,8 @@ for (const yaw of [0, 1.74, -2.30]) {
             'a flat area of each sole meets its peg');
         }
         for (const object of [saddle,tank]) {
-          assertClearsBodyPart(object,dog('Thigh_'+s),new THREE.Vector3(sign*.151,.295,0),new THREE.Vector3(.117,.16,.117));
-          assertClearsBodyPart(object,dog('Shin_'+s),new THREE.Vector3(sign*.151,.152,.018),new THREE.Vector3(.098,.104,.096));
+          assertClearsBodyPart(object, dog('Thigh_'+s), new THREE.Vector3(sign*.151,.295,0), new THREE.Vector3(.117,.16,.117));
+          assertClearsBodyPart(object, dog('Shin_'+s), new THREE.Vector3(sign*.151,.152,.018), new THREE.Vector3(.098,.104,.096));
         }
       }
     }
@@ -145,7 +157,16 @@ for (const yaw of [0, 1.74, -2.30]) {
       const envelope=bounds(box).union(bounds(scooter.lid));
       vertices(dog('Curled_Tail'), p=>{minTail=Math.min(minTail,envelope.distanceToPoint(p));});
       assert.ok(minTail>.005,'curled tail clears the closed delivery box');
-      assert.ok(envelope.max.y < at(dog('UpperArm_L')).y-.12,'shoulders rise above box');
+      // The low seat puts the box near shoulder height. From behind the bike,
+      // the raised chase camera should still see both shoulders above its lid.
+      const chase = new THREE.PerspectiveCamera(55, 1, .12, 100);
+      frameRide(chase, {x: 0, z: 4, bikeYaw: Math.PI / 2}, Math.PI / 2, focus);
+      const observer = chase.position.clone().sub(new THREE.Vector3(0, 0, 4)).applyAxisAngle(up, -Math.PI / 2);
+      for (const side of hips) {
+        const shoulder = at(dog('UpperArm_' + side));
+        const lip = shoulder.clone().lerp(observer, (envelope.max.z - shoulder.z) / (observer.z - shoulder.z));
+        assert.ok(lip.y > envelope.max.y + .04, 'shoulder visible above the box from the chase camera');
+      }
       const rear = bounds(bike('Wheel_R'));
       assert.ok(envelope.min.z >= rear.min.z && envelope.getCenter(point).z < rear.max.z,'box sits above rear wheel inside tail length');
     }
@@ -215,6 +236,7 @@ looseBag.scale.copy(rider.root.scale);
 for (const kind of ['pack', 'unpack']) {
   const state = { x: 2, z: 2, bikeYaw: .73, yaw: .73 + Math.PI / 2, mode: 'walk',
     cargo: kind === 'pack' ? 'hand' : 'box' };
+  scooter.setStand(1);
   scooter.root.position.set(3, 0, 3);
   scooter.root.rotation.y = state.bikeYaw;
   scooter.root.updateMatrixWorld(true);
@@ -225,26 +247,131 @@ for (const kind of ['pack', 'unpack']) {
     const dt = .01, travel = boxFrame(state, dt, scooter);
     time += dt;
     stride += travel * 5.4;
-    rider.root.position.set(state.x, state.stepHeight, state.z);
+    rider.root.position.set(state.x, 0, state.z);
     rider.root.rotation.y = state.yaw;
     rider.pose({ time, stride, walking: Math.min(1, travel / (2.4 * dt)), mount: null, carrying: true,
-      headTurn: 0, lift: state.lift });
+      headTurn: 0, lift: state.lift, tiptoe: state.tiptoe, reach: state.reach });
     positionParcel(state, rider, scooter, looseBag);
     scene.updateMatrixWorld(true);
+    if (state.tiptoe > .1) {
+      for (const side of hips) assert.ok(Math.abs(bounds(dog('Shoe_' + side)).min.y) < .002,
+        'loading keeps the toes on the street');
+    }
     const u = state.sequence?.u;
     if (u === undefined || u < .45 || u > .83) continue;
     envelope.makeEmpty();
     vertices(rider.bag.visible ? rider.bag : looseBag, p => envelope.expandByPoint(scooter.root.worldToLocal(p)));
     if (envelope.min.x < -.222 && envelope.max.x > -.238) {
       crossingFrames++;
-      assert.ok(envelope.min.y > 1.124, kind + ' clears the near wall');
+      assert.ok(envelope.min.y > scooter.cargo.rim + .002, kind + ' clears the near wall');
     }
     if (u >= .81) {
       assert.ok(envelope.min.z > scooter.cargo.floor.z - .179 && envelope.max.z < scooter.cargo.floor.z + .179);
-      assert.ok(envelope.max.y < 1.116 && envelope.min.y >= scooter.cargo.floor.y - .001, 'bag fits under the closed lid');
+      assert.ok(envelope.max.y < scooter.cargo.rim - .006 && envelope.min.y >= scooter.cargo.floor.y - .001, 'bag fits under the closed lid');
     }
   }
   assert.ok(crossingFrames > 0);
+}
+scooter.setStand(0);
+// Slowing to a stop kicks the side stand down so the bike rests at a modest lean
+// with both boots on the pegs. Parking stands on the left peg, swings the right
+// boot cleanly over the bench saddle, and hops beside the bike; mounting reverses it.
+for (const yaw of [0, 1.73, -2.1]) {
+  const state = { x: 3, z: 3, bikeX: 3, bikeZ: 3, yaw, bikeYaw: yaw, mode: 'ride', stand: 0 };
+  scooter.root.position.set(3, 0, 3);
+  scooter.root.rotation.y = yaw;
+  scooter.steer(0);
+  const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+  const riderLeft = up.clone().cross(forward);
+  const leftOfBike = pos => pos.clone().sub(scooter.root.position).dot(riderLeft);
+  function outsideChassis() {
+    const riderOnStreet = new THREE.Vector3(state.x, 0, state.z).sub(scooter.root.position);
+    const x = riderOnStreet.dot(riderLeft) / scooter.root.scale.x;
+    const z = riderOnStreet.dot(forward) / scooter.root.scale.x;
+    return Math.abs(x) > .38 || z < -1.35 || z > 1.24;
+  }
+  let pressed = false;
+  for (let frame = 0; frame <= 30; frame++) {
+    scooter.setStand(frame / 30);
+    rider.root.position.set(state.x, 0, state.z);
+    rider.root.rotation.y = yaw;
+    rider.pose({ ...basePose, mount, speed: 0 });
+    scene.updateMatrixWorld(true);
+    assert.ok(bounds(bike('Stand_Leg_and_Tang')).min.y >= -.002, 'stand clears the road while sweeping');
+    const tang = at(mount.standToe);
+    const contact = surface(dog('Shoe_R'), tang, up);
+    if (contact !== undefined && Math.abs(contact - tang.y) < .003) pressed = true;
+    if (frame === 30) {
+      assert.ok(leftOfBike(at(mount.standFoot)) > .20, 'stand is on the rider’s left');
+      assert.ok(Math.abs(at(mount.standFoot).y) < .002 && Math.abs(bounds(bike('Stand_Leg_and_Tang')).min.y) < .002, 'side stand footpad rests on the street');
+      assert.ok(Math.abs(THREE.MathUtils.radToDeg(scooter.root.rotation.z) + 10) < .01, 'modest left lean on the side stand');
+      const seat = at(bike('Seat_Contact'));
+      const clearance = surface(dog('Uniform'), seat, up) - surface(saddle, seat);
+      assert.ok(clearance >= -.022 && clearance <= .003, 'rump rests on the padded seat at a stop');
+      for (const [i, tag] of hips.entries()) {
+        const peg = at(mount.feet[i]);
+        assert.ok(Math.abs(surface(dog('Shoe_' + tag), peg, up) - surface(bike('Rider_Footpegs'), peg)) < .001, 'both boots stay on tilted pegs at a stop');
+        assert.ok(at(dog('Paw_' + tag)).distanceTo(at(mount.palms[i])) < .001);
+      }
+    }
+  }
+  assert.ok(pressed, 'left boot operates the stand heel tang while stopping');
+  for (const kind of ['park', 'mount']) {
+    if (kind === 'mount') {
+      // Loading from the dismount spot takes the rider all the way to the other side.
+      state.cargo = 'hand';
+      beginSequence(state, 'pack');
+      while (state.sequence) {
+        boxFrame(state, .016, scooter);
+        assert.ok(outsideChassis(), 'approach to the box skirts the chassis');
+      }
+      assert.ok(leftOfBike(new THREE.Vector3(state.x, 0, state.z)) < -.35, 'loading ends on the other side from the stand');
+    }
+    beginSequence(state, kind);
+    let crossed = false, stoodOnPeg = false;
+    while (state.sequence) {
+      standFrame(state, .016, scooter);
+      const seq = state.sequence;
+      scooter.setStand(state.stand);
+      if (!seq) break;
+      if (seq.approaching) {
+        assert.ok(outsideChassis(), 'approach to the peg skirts the chassis');
+        continue;
+      }
+      rider.root.position.set(state.x, 0, state.z);
+      rider.root.rotation.y = state.yaw;
+      rider.pose({ ...basePose, mount: seq.seat > 0 ? mount : null,
+        seatBlend: seq.seat, speed: 0, rise: seq.rise, swing: seq.swing, hop: seq.hop });
+      scene.updateMatrixWorld(true);
+      const soleL = bounds(dog('Shoe_R')), soleR = bounds(dog('Shoe_L'));
+      if (seq.swing > .05 && seq.hop === 0) {
+        assert.equal(state.stand, 1);
+        const leftPeg = at(mount.feet[1]);
+        assert.ok(Math.abs(surface(dog('Shoe_R'), leftPeg, up) - surface(bike('Rider_Footpegs'), leftPeg)) < .002, 'left boot stays planted on peg during crossover');
+        stoodOnPeg = true;
+        if (yaw === 0 && kind === 'park') {
+          const cushionBounds = bounds(saddle);
+          if (cushionBounds.intersectsBox(soleR)) vertices(dog('Shoe_L'), vertex => {
+            if (!cushionBounds.containsPoint(vertex)) return;
+            const top = surface(saddle, vertex), bottom = surface(saddle, vertex, up);
+            assert.ok(!(vertex.y < top && vertex.y > bottom), 'entire boot clears the upholstered edges');
+          });
+        }
+        const ankle = scooter.root.worldToLocal(at(dog('Foot_L')));
+        if (Math.abs(ankle.x) < .10) {
+          crossed = true;
+          assert.ok(soleR.min.y > bounds(saddle).max.y + .015, 'boot clears saddle at crossover');
+        }
+      }
+      if (seq.hop > 0) {
+        assert.ok(soleL.min.y >= -.002 && soleR.min.y >= -.002, 'hop clears the road');
+      }
+    }
+    assert.ok(crossed && stoodOnPeg, kind + ' uses step-peg crossover');
+    assert.equal(state.mode, kind === 'park' ? 'walk' : 'ride');
+    assert.equal(state.stand, 1, 'stand supports the bike until the rider pulls away');
+    if (kind === 'park') assert.ok(leftOfBike(new THREE.Vector3(state.x, 0, state.z)) > .4, 'dismount to rider left');
+  }
 }
 // Sample the two garment surfaces at the tail insertion in pelvis space.
 const uniformParts = [];

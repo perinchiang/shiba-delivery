@@ -2,14 +2,68 @@
 
 import math
 from mathutils import Quaternion
-from forms import Parts, V, X, UP, Z, TAU, empty, material, spline
-from riding_fit import RIDER_ORIGIN, SEAT_DROP, footrest, grip, palm
+from forms import Parts as MeshParts, V, X, UP, Z, TAU, empty as make_empty, material, spline
+from riding_fit import CHASSIS_DROP, FRAME_KNEE, WHEEL_RATIO, STAND_LEAN, RIDER_ORIGIN, SEAT_DROP, footrest, grip, palm
 
 FRONT = 0.675
-REAR = -0.825
+REAR = -0.891
 AXLE = 0.317
 BOX_Z = -0.867
 PALETTE = {}
+# The side stand is authored directly in the final, lowered bike space.
+STAND_PARTS = ("Stand_Hinge", "Stand_Leg_and_Tang", "Side_Stand", "Stand_Axis", "Stand_Toe", "Stand_Foot")
+
+
+def chassis_height(height):
+    """Scale the chassis below the frame knee with the wheels; shift the rest down rigidly."""
+    return height - min(height, FRAME_KNEE) * (1 - WHEEL_RATIO)
+
+
+def chassis_point(point, part):
+    p = V(point)
+    if part not in STAND_PARTS:
+        p.y = chassis_height(p.y)
+    return p
+
+
+def empty(name, collection, pos=(0, 0, 0), parent=None, size=.05):
+    if name == "Seat_Rider":
+        position = V(pos) - UP * CHASSIS_DROP
+    else:
+        position = chassis_point(pos, name)
+    return make_empty(name, collection, position, parent, size)
+
+
+class Parts(MeshParts):
+    """Fit the lowered chassis around two smaller wheels."""
+    def finish(self, name, collection, parent=None, origin=(0, 0, 0)):
+        hub = V(origin)
+        wheel = name in ("Front_Wheel_Mesh", "Rear_Wheel_Mesh")
+        for i, pt in enumerate(self.p):
+            normal = self.n[i].copy()
+            if wheel:
+                delta = pt - hub
+                self.p[i] = chassis_point(hub, name) + V((delta.x, delta.y * WHEEL_RATIO, delta.z * WHEEL_RATIO))
+                normal.z /= WHEEL_RATIO
+                normal.y /= WHEEL_RATIO
+            elif name == "Motor":
+                # Keep the crankcase circular inside the compact cradle.
+                scale = 0.88
+                self.p[i] = V((
+                    pt.x * 0.94,
+                    (FRAME_KNEE - CHASSIS_DROP) + (pt.y - FRAME_KNEE) * scale,
+                    0.035 + (pt.z - 0.035) * scale,
+                ))
+                normal.x /= 0.94
+                normal.y /= scale
+                normal.z /= scale
+            elif name not in STAND_PARTS:
+                self.p[i] = chassis_point(pt, name)
+                # Inverse-transpose the normal through the change in height.
+                if pt.y < FRAME_KNEE:
+                    normal.y /= WHEEL_RATIO
+            self.n[i] = normal.normalized()
+        return super().finish(name, collection, parent=parent, origin=chassis_point(hub, name))
 
 
 def paints():
@@ -74,32 +128,27 @@ def equipment(collection):
         marker("Footrest_" + t, footrest(s))
     # Sculpt the three interfaces before building the chassis around them.
     p = Parts()
+    # A full-length upholstered motorcycle cushion with a welt and flat mounting pan.
+    # The hidden inner foam gives slightly under the thighs at the rider station.
     seat = [
-        (-0.490, 0.825, 0.010, 0.018),
-        (-0.471, 0.826, 0.036, 0.120),
-        (-0.430, 0.829, 0.043, 0.156),
-        (-0.367, 0.833, 0.044, 0.143),
-        (-0.296, 0.813, 0.043, 0.111),
-        (-0.247, 0.803, 0.043, 0.085),
-        (-0.204, 0.800, 0.043, 0.071),
-        (-0.146, 0.805, 0.035, 0.050),
-        (-0.103, 0.807, 0.021, 0.027),
-        (-0.093, 0.809, 0.008, 0.006),
+        (-.655, .786, .035, .139), (-.63, .786, .058, .206),
+        (-.54, .784, .063, .218), (-.43, .783, .064, .211),
+        (-.32, .781, .062, .190), (-.21, .781, .062, .158),
+        (-.13, .782, .059, .151), (-.085, .780, .048, .151),
+        (-.066, .776, .032, .137),
     ]
-    p.loft(
-        [(z, h - SEAT_DROP, ry, rx) for z, h, ry, rx in seat],
-        lambda y: m["Cream"] if y > -0.36 else m["SeatEdge"],
-        4,
-        40,
-        0.62,
-    )
+    profile = [(z, h - SEAT_DROP, ry, rx) for z, h, ry, rx in seat]
+    p.loft(profile, lambda y: m["SeatEdge"] if y > -.62 else m["Frame"], 4, 48, .65)
+    for side in (-1, 1):
+        p.tube([(side * (rx - .001), h - .009, z) for z, h, ry, rx in profile],
+               .0045, m["Cream"], 10, 3)
     p.finish("Solo_Saddle", collection, frame)
     p = Parts()
     for s in (-1, 1):
         x, y, z = footrest(s)
         p.tube(
             [
-                (s * 0.085, 0.476, z - 0.068),
+                (s * 0.085, 0.416, z - 0.068),
                 (s * 0.140, y - 0.065, z - 0.036),
                 (s * 0.176, y - 0.027, z),
                 (x, y - 0.027, z),
@@ -140,9 +189,11 @@ def equipment(collection):
     p = Parts()
     # At the original passenger station: shelf and box stay inside the rear tyre envelope.
     p.box((0, 0.647, BOX_Z), (0.455, 0.041, 0.390), 0.018, m["Frame"])
+    p.finish("Rack_Deck", collection, frame)
+    p = Parts()
     for s in (-1, 1):
         p.tube(
-            [(s * 0.120, 0.62, -0.42), (s * 0.165, 0.645, -0.66), (s * 0.165, 0.647, -1.048)],
+            [(s * 0.120, 0.62, -0.42), (s * 0.165, 0.645, -0.81), (s * 0.165, 0.647, -1.048)],
             0.018,
             m["Steel"],
             12,
@@ -210,13 +261,35 @@ def equipment(collection):
     )
     p.finish("Lid_Shell", collection, lid, origin=(0.237, 1.122, BOX_Z))
     marker("Cargo_Floor", (0, 0.689, BOX_Z))
-    marker("Cargo_Approach", (-0.77, 0, BOX_Z - 0.25))
-    marker("Cargo_Reach", (-0.47, 0, BOX_Z - 0.25))
-    peg = empty("Packing_Peg", collection, (0, 0.645, BOX_Z - 0.045), root)
+    marker("Cargo_Approach", (-0.77, 0, BOX_Z + 0.44))
+    # Left side stand, modelled deployed on the street at STAND_LEAN.
+    # A canted hinge folds the leg horizontally back under the left swingarm
+    # while bringing its heel tang just behind the left footpeg.
+    pivot = V((0.155, 0.345, -0.300))
+    pad_contact = V((0.340, 0.340 * math.tan(STAND_LEAN), -0.380))
+    pad_rot = Quaternion(Z, STAND_LEAN)
+    pad_center = pad_contact + pad_rot @ (UP * 0.012)
+    deployed_dir = (pad_center - pivot).normalized()
+    stowed_dir = V((0.030, -0.025, -0.330)).normalized()
+    stand_axis = deployed_dir.cross(stowed_dir).normalized()
+    stow_angle = math.acos(max(-1.0, min(1.0, deployed_dir.dot(stowed_dir))))
+    stand = empty("Side_Stand", collection, pivot, frame)
+    stand["stowAngle"] = stow_angle
+    stand["leanAngle"] = STAND_LEAN
+    marker("Stand_Axis", pivot + stand_axis * 0.20, stand)
+    marker("Stand_Foot", pad_contact, stand)
     p = Parts()
-    p.box((-0.010, 0.645, BOX_Z - 0.045), (0.42, 0.048, 0.27), 0.022, m["DeepTeal"])
-    p.finish("Packing_Step", collection, peg, origin=(0, 0.645, BOX_Z - 0.045))
-    marker("Packing_Peg_Out", (-0.60, 0.597, BOX_Z - 0.23))
+    p.tube([(0.095, 0.345, -0.300), pivot + X * 0.022], 0.026, m["Pewter"], 16)
+    p.finish("Stand_Hinge", collection, frame)
+    p = Parts()
+    p.tube([pivot, (0.245, 0.215, -0.335), pad_center + UP * 0.008], 0.016, m["Steel"], 14, 3)
+    p.oval(pivot + X * 0.014, (0.022, 0.022, 0.022), m["Pewter"], 14, 10)
+    p.box(pad_center, (0.088, 0.024, 0.104), 0.008, m["Frame"], rot=pad_rot)
+    tang = V((0.288, 0.502, -0.352))
+    p.tube([(0.175, 0.355, -0.315), (0.235, 0.440, -0.345), tang], 0.011, m["Pewter"], 12, 3)
+    p.box(tang, (0.056, 0.022, 0.044), 0.008, m["DeepTeal"])
+    p.finish("Stand_Leg_and_Tang", collection, stand, origin=pivot)
+    marker("Stand_Toe", tang + UP * 0.011, stand)
     return root, frame, steering, front, rear
 
 

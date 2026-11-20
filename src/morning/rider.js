@@ -5,6 +5,15 @@ import { ik2 } from '../core/ik.js';
 
 const cream = 0xffedcc, jacket = 0x26776c;
 const courierScale = 0.84;
+// The courier faces +Z. Viewed from behind, +X is the rider's left.
+// The original asset names its sides from the front, so its R leg supports the bike.
+const supportingLeg = 1;
+// Right-boot (Foot_L) ankle arc in bike space: lift off the right peg, clear the
+// wide upholstered saddle cleanly, and hold clear above the left edge before hopping down.
+const swingPath = new THREE.CatmullRomCurve3([
+  [-.280, .599, -.151], [-.34, .79, -.25], [-.15, .89, -.35], [.06, .91, -.36],
+  [.21, .86, -.31], [.27, .80, -.25],
+].map(p => new THREE.Vector3(...p)));
 const xAxis = new THREE.Vector3(1, 0, 0), yAxis = new THREE.Vector3(0, 1, 0), zAxis = new THREE.Vector3(0, 0, 1);
 
 // A padded triangular ear with a smaller inset. Its outline is rounded at all three corners.
@@ -80,8 +89,16 @@ function clipSampler(asset, root, name) {
   };
 }
 
+// Height of the ankle above the lowest point of the authored rounded outsole.
+function shoeSupport(pitch) {
+  const sin = Math.sin(pitch), cos = Math.cos(pitch);
+  return Math.max(.079*cos + .0811*sin, .078*cos + .0918*sin, .075*cos + .101*sin,
+    .070*cos + .1056*sin, .064*cos + .1071*sin, .153*sin > .079*cos ? Math.hypot(.079*cos, .153*sin) : 0);
+}
+
 export function createShiba(asset) {
   const root = prepare(asset), rootBone = named(root, 'Root'), chest = named(root, 'Chest'), head = named(root, 'Head');
+  const pelvis = named(root, 'Pelvis');
   const stand = clipSampler(asset, root, 'Stand'), walk = clipSampler(asset, root, 'Walk'), ride = clipSampler(asset, root, 'Ride');
   const tail = ['Tail', 'TailMid', 'TailTip'].map(name => root.getObjectByName(name)).filter(bone => bone?.isBone);
   const hinge = root.getObjectByName('GoggleHinge'), clothEnds = root.getObjectByName('KerchiefEnds');
@@ -108,7 +125,7 @@ export function createShiba(asset) {
       eye: named(root, 'Eye_' + tag), elbowPole: new THREE.Vector3(i ? .40 : -.40, -1, -.22) };
   });
   root.scale.setScalar(courierScale);
-  const bag = parcel(root, 0, 0, 0), grip = parts[0].arm.c;
+  const bag = parcel(root, 0, 0, 0), grip = parts[1].arm.c;
   const v = new THREE.Vector3(), from = new THREE.Vector3(), to = new THREE.Vector3();
   const a = new THREE.Vector3(), b = new THREE.Vector3(), end = new THREE.Vector3(), goal = new THREE.Vector3(), pole = new THREE.Vector3();
   const q = new THREE.Quaternion(), parentQ = new THREE.Quaternion(), delta = new THREE.Quaternion();
@@ -147,7 +164,7 @@ export function createShiba(asset) {
     greetingAge = 0;
   }
 
-  function pose({ time, stride, walking, mount, carrying, headTurn, lift = 0, speed = 0, dt = 0 }) {
+  function pose({ time, stride, walking, mount, carrying, headTurn, lift = 0, speed = 0, tiptoe = 0, reach = 0, seatBlend = 1, rise = 0, swing = 0, hop = 0, dt = 0 }) {
     const motion = mount ? 'ride' : walking > 0 ? 'walk' : 'stand';
     const onboard = Boolean(mount);
     if (hinge && previousMount !== onboard) {
@@ -167,19 +184,91 @@ export function createShiba(asset) {
     if (mount) {
       ridePhase = (ridePhase + dt * (.48 + 1.45 * rolling)) % 1;
       ride(ridePhase);
-      // The authored riding action works on its own. Mount translation and final
-      // contact use the actual vehicle markers, including both roots' transforms.
+      // Blend toward standing pose as the rider hops off the left footpeg.
+      if (seatBlend < 1) stand((time % 3) / 3, 1 - seatBlend);
+      // Refresh shiba.root world matrix before converting vehicle markers to local space.
+      root.updateMatrixWorld(true);
+      const lean = mount.lean ?? 0;
+      // Seated on the saddle, standing up on the left footpeg for the crossover,
+      // then hopping cleanly outward and down beside the bike onto the street.
       root.worldToLocal(mount.seat.getWorldPosition(rootBone.position));
-      turn(chest, yAxis, mount.turn * .86);
+      if (rise > 0 || hop > 0) {
+        root.worldToLocal(mount.frame.localToWorld(v.set(.145, .480, -.185)));
+        rootBone.position.lerp(v, rise);
+      }
+      if (hop > 0) {
+        root.worldToLocal(mount.besideWorld(v));
+        v.y = -.019;
+        // Move briskly outward clear of the footpeg first, then drop softly onto the street.
+        const out = THREE.MathUtils.smoothstep(hop, 0, .78);
+        const drop = THREE.MathUtils.smoothstep(hop, .12, 1);
+        rootBone.position.x = THREE.MathUtils.lerp(rootBone.position.x, v.x, out);
+        rootBone.position.z = THREE.MathUtils.lerp(rootBone.position.z, v.z, out);
+        rootBone.position.y = THREE.MathUtils.lerp(rootBone.position.y, v.y, drop) + .16 * Math.sin(Math.PI * hop);
+      }
+      const seatedLean = lean * (1 - rise) * seatBlend;
+      // Follow the tilted saddle with the rider's seat while keeping chest and head poised.
+      turn(rootBone, zAxis, -seatedLean);
+      turn(chest, zAxis, .55 * seatedLean);
+      turn(head, zAxis, .35 * seatedLean);
+      if (rise > 0 && hop < 1) {
+        const up = rise * (1 - hop);
+        turn(pelvis, xAxis, -.08 * up);
+        turn(chest, xAxis, .08 * up);
+      }
+      turn(chest, yAxis, mount.turn * .86 * (1 - hop));
       const worldScale = root.getWorldScale(v).y;
+      const handGrip = 1 - THREE.MathUtils.smoothstep(hop, 0, .50);
+      const bootKick = mount.kick;
+      // Update skeleton matrices once so Stand-pose limb fallbacks match rootBone.position.
+      root.updateMatrixWorld(true);
       chest.getWorldQuaternion(shipQ);
       for (let i = 0; i < parts.length; i++) {
         const { arm, leg, elbowPole } = parts[i];
         pole.copy(elbowPole).applyQuaternion(shipQ);
-        solve(arm, mount.palms[i].getWorldPosition(goal), pole, worldScale);
+        mount.palms[i].getWorldPosition(goal);
+        if (handGrip < 1) {
+          arm.c.getWorldPosition(v);
+          // Slight outward arm spread mid-hop for balance.
+          const spread = Math.sin(Math.PI * hop) * .09 * worldScale;
+          v.add(from.set(i === supportingLeg ? spread : -spread, spread * .9, 0).applyQuaternion(root.quaternion));
+          goal.lerp(v, 1 - handGrip);
+        }
+        solve(arm, goal, pole, worldScale);
         mount.feet[i].getWorldQuaternion(aligned);
         goal.set(0, soleDepth * worldScale, 0).applyQuaternion(aligned).add(mount.feet[i].getWorldPosition(v));
         pole.copy(leg.b.getWorldPosition(pole)).sub(leg.a.getWorldPosition(v)).normalize();
+        if (i === supportingLeg) {
+          if (bootKick > 0 && hop === 0) {
+            mount.standToe.getWorldPosition(v);
+            v.add(from.set(-.018, soleDepth, .048).applyQuaternion(mount.frame.quaternion).multiplyScalar(worldScale));
+            goal.lerp(v, bootKick);
+            goal.y += .032 * Math.sin(Math.PI * bootKick) * worldScale;
+          }
+          if (hop > 0) {
+            leg.c.getWorldPosition(v);
+            const footOut = THREE.MathUtils.smoothstep(hop, 0, .82);
+            const footDrop = THREE.MathUtils.smoothstep(hop, .14, 1);
+            goal.x = THREE.MathUtils.lerp(goal.x, v.x, footOut);
+            goal.z = THREE.MathUtils.lerp(goal.z, v.z, footOut);
+            goal.y = THREE.MathUtils.lerp(goal.y, v.y, footDrop) + .14 * Math.sin(Math.PI * hop) * worldScale;
+            aligned.slerp(root.quaternion, THREE.MathUtils.smoothstep(hop, .12, .82));
+          }
+        } else if (swing > 0 || hop > 0) {
+          mount.frame.localToWorld(swingPath.getPoint(THREE.MathUtils.clamp(swing, 0, 1), goal));
+          const overSeat = Math.sin(Math.PI * THREE.MathUtils.clamp(swing, 0, 1));
+          if (hop > 0) {
+            leg.c.getWorldPosition(v);
+            const footOut = THREE.MathUtils.smoothstep(hop, 0, .85);
+            const footDrop = THREE.MathUtils.smoothstep(hop, .10, 1);
+            goal.x = THREE.MathUtils.lerp(goal.x, v.x, footOut);
+            goal.z = THREE.MathUtils.lerp(goal.z, v.z, footOut);
+            goal.y = THREE.MathUtils.lerp(goal.y, v.y, footDrop) + .10 * Math.sin(Math.PI * hop) * worldScale;
+          }
+          pole.set(-.65 * (1 - swing) - .85 * overSeat, .22 * overSeat, 1 - 1.25 * overSeat)
+            .applyQuaternion(root.quaternion);
+          aligned.copy(root.quaternion);
+        }
         solve(leg, goal, pole, worldScale);
         leg.c.parent.getWorldQuaternion(parentQ);
         leg.c.quaternion.copy(parentQ.invert()).multiply(aligned).multiply(rest.get(leg.c).world);
@@ -188,9 +277,27 @@ export function createShiba(asset) {
       if (walking < 1) stand((time % 3) / 3);
       if (walking > 0) walk(THREE.MathUtils.euclideanModulo(stride / (2 * Math.PI), 1), walking);
       turn(chest, xAxis, .007 * Math.sin(time * 2.3) * (1 - walking) * (1 - lift));
-      if (lift) turn(rootBone, xAxis, lift * .15);
-      if (carrying) turn(parts[0].arm.a, xAxis, -.46 - lift * 2.33, true);
-      if (lift) turn(parts[1].arm.a, xAxis, -lift * .60);
+      if (tiptoe) {
+        const pitch = .88 * tiptoe, sin = Math.sin(pitch), cos = Math.cos(pitch);
+        // Roll about the rounded front tread. The support point changes from
+        // the flat sole to the first two bevel rings as the heel rises.
+        const support = shoeSupport(pitch);
+        rootBone.position.y += support - soleDepth;
+        rootBone.position.z += soleDepth * sin + .10 * (1 - cos);
+        for (const { leg } of parts) turn(leg.c, xAxis, pitch);
+      }
+      if (reach) {
+        // Hinge gently forward above the standing legs, leaving both toe contacts fixed.
+        turn(pelvis, xAxis, .17 * reach);
+        for (const { leg } of parts) turn(leg.a, xAxis, -.17 * reach);
+      }
+      if (lift) turn(chest, xAxis, -lift * .02);
+      if (carrying) turn(parts[1].arm.a, xAxis, -.46 - lift * 2.46, true);
+      if (lift) {
+        turn(parts[1].arm.a, zAxis, -.32 * lift);
+        turn(parts[0].arm.a, xAxis, -lift * .55);
+        turn(head, zAxis, .10 * lift);
+      }
     }
     if (mount && clothEnds) {
       turn(clothEnds, xAxis, .19 * rolling);
@@ -226,7 +333,10 @@ export function createShiba(asset) {
     bag.visible = carrying && !mount;
     if (carrying) {
       root.worldToLocal(grip.getWorldPosition(bag.position));
-      bag.position.y -= .39;
+      // Draw the bag against the raised mitten as the rider reaches over the rim.
+      bag.position.y -= .39 - .49 * lift;
+      bag.position.x += .13 * lift;
+      bag.position.z += .11 * lift;
       bag.rotation.z = walking * Math.sin(stride) * .06;
     }
   }
@@ -239,15 +349,34 @@ export function createScooter(asset) {
   const inRoot = o => root.worldToLocal(o.getWorldPosition(new THREE.Vector3()));
   const frontAxle = inRoot(front), rearAxle = inRoot(rear);
   const axis = inRoot(swivel).sub(inRoot(node('SteerAxisLower'))).normalize();
-  const mount = { seat: node('Seat_Rider'), turn: 0, palms: ['L', 'R'].map(t => node('PalmTarget_' + t)),
-    feet: ['L', 'R'].map(t => node('Footrest_' + t)) };
-  const peg = node('Packing_Peg'), stowed = peg.position.clone(), deployed = inRoot(node('Packing_Peg_Out'));
-  const cargo = { floor: inRoot(node('Cargo_Floor')), approach: inRoot(node('Cargo_Approach')), reach: inRoot(node('Cargo_Reach')) };
+  const stand = node('Side_Stand');
+  const standAxis = inRoot(node('Stand_Axis')).sub(inRoot(stand)).normalize();
+  const standStowAngle = stand.userData.stowAngle ?? 1.22;
+  const standLean = stand.userData.leanAngle ?? THREE.MathUtils.degToRad(10);
+  const besideLocal = new THREE.Vector3(.80, 0, -.18);
+  const besideWorld = out => {
+    const yaw = root.rotation.y, cos = Math.cos(yaw), sin = Math.sin(yaw), s = root.scale.x;
+    return out.set(
+      root.position.x + (besideLocal.x * cos + besideLocal.z * sin) * s,
+      0,
+      root.position.z + (-besideLocal.x * sin + besideLocal.z * cos) * s,
+    );
+  };
+  const mount = { seat: node('Seat_Rider'), turn: 0, kick: 0, lean: 0,
+    palms: ['L', 'R'].map(t => node('PalmTarget_' + t)), frame: root, besideWorld,
+    standToe: node('Stand_Toe'), standFoot: node('Stand_Foot'), feet: ['L', 'R'].map(t => node('Footrest_' + t)) };
+  root.rotation.order = 'YXZ';
+  const cargo = { floor: inRoot(node('Cargo_Floor')), approach: inRoot(node('Cargo_Approach')), rim: inRoot(node('Cargo_Lid')).y };
   root.scale.setScalar(courierScale);
   return { root, mount, cargo, lid: node('Cargo_Lid'), wheelbase: frontAxle.z - rearAxle.z,
-    packingStep(amount) {
-      peg.position.lerpVectors(stowed, deployed, amount);
-      return (peg.position.y + .012) * root.scale.y;
+    setStand(progress) {
+      // Lift the heel to the tang first, then swing the stand down and settle on it.
+      const deployed = THREE.MathUtils.smoothstep(progress, .20, .85);
+      const lean = standLean * THREE.MathUtils.smoothstep(deployed, .55, 1);
+      mount.kick = THREE.MathUtils.smoothstep(progress, .06, .32) * (1 - THREE.MathUtils.smoothstep(progress, .70, .94));
+      mount.lean = lean;
+      root.rotation.z = -lean;
+      stand.quaternion.setFromAxisAngle(standAxis, standStowAngle * (1 - deployed));
     },
     steer(angle) {
       mount.turn = angle;

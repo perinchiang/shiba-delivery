@@ -2,8 +2,8 @@
 
 import math
 from mathutils import Quaternion
-from forms import Parts, V, X, UP, Z, TAU
-from motorcycle import AXLE, FRONT, REAR, BOX_Z
+from forms import V, X, UP, Z, TAU
+from motorcycle import Parts, WHEEL_RATIO, AXLE, FRONT, REAR, BOX_Z
 from riding_fit import SEAT_DROP
 
 
@@ -67,7 +67,7 @@ def fender(parts, z, radius, a0, a1, width, mat):
             x = width * math.cos(b)
             r = radius + 0.014 * math.sin(b) - 0.022 * math.cos(b) ** 2
             n = (X * (0.18 * math.cos(b)) + radial * math.sin(b)).normalized()
-            row.append(parts.vertex(V((0, AXLE, z)) + radial * r + X * x, n))
+            row.append(parts.vertex(V((0, AXLE, z)) + V((0, radial.y * r, radial.z * r * WHEEL_RATIO)) + X * x, n))
         g.append(row)
     for i in range(len(g) - 1):
         for j in range(14):
@@ -255,7 +255,9 @@ def build(collection, assembly, m):
         )
     p.box((0, 0.702 - SEAT_DROP / 2, -0.32), (0.220, 0.088, 0.270), 0.034, m["DeepTeal"])
     p.box((0, 0.751 - SEAT_DROP, -0.33), (0.217, 0.050, 0.267), 0.020, m["SeatEdge"])
-    fender(p, REAR, 0.340, -78, 54, 0.110, m["Mint"])
+    rear_guard = Parts()
+    fender(rear_guard, REAR, 0.340, -78, 54, 0.110, m["Mint"])
+    rear_guard.finish("Mudguards", collection, frame)
     p.oval((0, 0.598, -1.052), (0.061, 0.032, 0.030), m["Rust"])
     for s in (-1, 1):
         p.oval((s * 0.118, 0.599, -1.026), (0.027, 0.021, 0.026), m["Gold"], 16, 10)
@@ -341,9 +343,11 @@ def build(collection, assembly, m):
         p.box((0, y, z), (0.300, 0.043, 0.076), 0.018, m["Pewter"])
     p.tube([(0, 0.914, 0.377), (0, 1.097, 0.287), (0, 1.170, 0.184)], 0.047, m["DeepTeal"], 14)
     p.tube([(-0.051, 1.158, 0.185), (0.051, 1.158, 0.185)], 0.022, m["Steel"], 14)
-    fender(p, FRONT, 0.381, -48, 59, 0.116, m["Ivory"])
+    front_guard = Parts()
+    fender(front_guard, FRONT, 0.381, -48, 59, 0.116, m["Ivory"])
     for s in (-1, 1):
-        p.tube([(s * 0.122, 0.486, 0.592), (s * 0.103, 0.626, 0.774)], 0.010, m["Pewter"], 9)
+        front_guard.tube([(s * 0.122, 0.486, 0.592), (s * 0.103, 0.626, 0.774)], 0.010, m["Pewter"], 9)
+    front_guard.finish("Mudguards", collection, steering)
     # Separate round headlamp bucket, bezel and domed warm lens. Round instrument on top.
     p.oval((0, 1.002, 0.405), (0.132, 0.126, 0.112), m["DeepTeal"])
     p.tube([(0, 1.006, 0.454), (0, 1.006, 0.496)], 0.116, m["Steel"], 36)

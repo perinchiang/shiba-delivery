@@ -179,6 +179,12 @@ else:
     ).normalized()
     steering.rotation_mode = "AXIS_ANGLE"
     steering.rotation_axis_angle = (0, *axis)
+    stand = bpy.data.objects["Side_Stand"]
+    stand_axis = (
+        bpy.data.objects["Stand_Axis"].matrix_world.translation - stand.matrix_world.translation
+    ).normalized()
+    stand.rotation_mode = "AXIS_ANGLE"
+    stand.rotation_axis_angle = (stand["stowAngle"], *stand_axis)
     scene.cycles.samples = 20
     scene.cycles.use_denoising = True
     world = bpy.data.worlds.new("Warm studio")

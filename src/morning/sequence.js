@@ -1,12 +1,16 @@
 /** Fixed-camera interactions. Paths are in doorway or scooter space, so they also work after turning the bike. */
 import * as THREE from 'three';
-import { clamp01, lerp, smoothstep } from '../core/mathx.js';
+import { angleDiff, clamp01, lerp, smoothstep } from '../core/mathx.js';
 import { STOPS } from './town.js';
 
 const doorwayX = STOPS.pharmacy.x;
 const thresholdInside = -4.36;
 const point = new THREE.Vector3();
 const target = new THREE.Vector3();
+const tangent = new THREE.Vector3();
+const boxOrientation = new THREE.Quaternion();
+const up = new THREE.Vector3(0, 1, 0);
+const acrossBox = new THREE.Quaternion().setFromAxisAngle(up, Math.PI / 2);
 
 export function beginSequence(state, kind) {
   state.sequence = { kind, elapsed: 0, x: state.x, z: state.z, yaw: state.yaw };
@@ -46,34 +50,106 @@ export function isBoxSequence(seq) {
   return seq?.kind === 'pack' || seq?.kind === 'unpack';
 }
 
+export function isStandSequence(seq) {
+  return seq?.kind === 'mount' || seq?.kind === 'park';
+}
+
+function approachBike(state, scooter, destination, facing) {
+  const seq = state.sequence;
+  if (!seq.approach) {
+    // Use an upright plan of the bike. The stand tilts the chassis but the route stays on the street.
+    const origin = scooter.root.position;
+    const scale = scooter.root.scale.x;
+    const toLocal = world => world.sub(origin).applyAxisAngle(up, -state.bikeYaw).divideScalar(scale).setY(0);
+    const start = toLocal(new THREE.Vector3(seq.x, 0, seq.z));
+    const end = toLocal(destination.clone());
+    let path = new THREE.LineCurve3(start, end);
+    if (start.x * end.x < 0) {
+      const crossingZ = lerp(start.z, end.z, start.x / (start.x - end.x));
+      const nose = 1.46, tail = -1.65;
+      if (crossingZ > tail && crossingZ < nose) {
+        const z = start.z + end.z > nose + tail ? nose : tail;
+        const side = .93 * Math.sign(start.x);
+        path = new THREE.CatmullRomCurve3([start, new THREE.Vector3(side, 0, z), new THREE.Vector3(-side, 0, z), end]);
+      }
+    }
+    const distance = path.getLength() * scale;
+    const travelTime = distance > .015 ? distance / 2.45 : 0;
+    const turning = Math.abs(angleDiff(seq.yaw, facing)) > .06;
+    const duration = travelTime > 0 || turning ? travelTime + .16 : 0;
+    seq.approach = { path, travelTime, duration };
+  }
+  const { path, travelTime, duration } = seq.approach;
+  seq.approaching = seq.elapsed < duration;
+  if (!seq.approaching) {
+    state.x = destination.x;
+    state.z = destination.z;
+    state.yaw = facing;
+    return seq.elapsed - duration;
+  }
+  const u = travelTime > 0 ? smoothstep(0, travelTime, seq.elapsed) : 1;
+  path.getPointAt(u, point).multiplyScalar(scooter.root.scale.x)
+    .applyAxisAngle(up, state.bikeYaw).add(scooter.root.position);
+  state.x = point.x;
+  state.z = point.z;
+  path.getTangentAt(u, tangent);
+  const heading = travelTime > 0 ? Math.atan2(tangent.x, tangent.z) + state.bikeYaw : seq.yaw;
+  const turn = seq.yaw + angleDiff(seq.yaw, heading) * smoothstep(0, .18, seq.elapsed);
+  state.yaw = turn + angleDiff(turn, facing) * smoothstep(Math.max(0, travelTime - .14), duration, seq.elapsed);
+  return 0;
+}
+
+// Starting from a stop already resting on the side stand: stand up on the left
+// footpeg, swing the right boot cleanly over the bench saddle, then hop lightly
+// down beside the bike. Mounting retraces those contacts in reverse.
+export function standFrame(state, dt, scooter) {
+  const seq = state.sequence, mounting = seq.kind === 'mount';
+  seq.elapsed += dt;
+  const beside = scooter.mount.besideWorld(target);
+  const elapsed = mounting ? approachBike(state, scooter, beside, state.bikeYaw) : seq.elapsed;
+  const progress = clamp01(elapsed / 1.80);
+  const u = mounting ? 1 - progress : progress;
+  seq.rise = smoothstep(0, .24, u);
+  seq.swing = smoothstep(.14, .62, u);
+  seq.hop = smoothstep(.58, .90, u);
+  seq.seat = 1 - seq.hop;
+  state.stand = 1;
+
+  if (!seq.approaching) {
+    state.x = lerp(beside.x, state.bikeX, seq.seat);
+    state.z = lerp(beside.z, state.bikeZ, seq.seat);
+    state.yaw = state.bikeYaw;
+  }
+  if (progress === 1) {
+    state.mode = mounting ? 'ride' : 'walk';
+    state.returnToBike = false;
+    state.sequence = null;
+  }
+}
+
 export function boxFrame(state, dt, scooter) {
   const seq = state.sequence;
-  const elapsed = (seq.elapsed += dt);
-  // Approach from wherever the bike was parked before acting out the lift at the peg.
-  const entering = smoothstep(0, 0.49, elapsed);
-  const duration = 2.36;
-  const progress = clamp01((elapsed - 0.49) / duration);
+  const oldX = state.x, oldZ = state.z;
+  seq.elapsed += dt;
+  target.copy(scooter.cargo.approach);
+  target.y = scooter.cargo.rim;
+  scooter.root.localToWorld(target);
+  const elapsed = approachBike(state, scooter, target, state.bikeYaw + Math.PI / 2);
+  const progress = clamp01(elapsed / 2.36);
   const u = seq.kind === 'pack' ? progress : 1 - progress;
   const lift = smoothstep(0.21, 0.52, u) * (1 - smoothstep(0.77, 0.95, u));
-  const step = smoothstep(0.16, 0.38, u) * (1 - smoothstep(0.78, 0.97, u));
+  const tiptoe = smoothstep(0.16, 0.38, u) * (1 - smoothstep(0.78, 0.97, u));
   // Move sideways over the box only after the bottom of the bag clears its lip.
-  const reachAcross = smoothstep(0.47, 0.56, u) * (1 - smoothstep(0.76, 0.94, u));
-  point.lerpVectors(scooter.cargo.approach, scooter.cargo.reach, reachAcross);
-  scooter.root.localToWorld(point);
-  const oldX = state.x, oldZ = state.z;
-  state.x = lerp(seq.x, point.x, entering);
-  state.z = lerp(seq.z, point.z, entering);
-  state.yaw = state.bikeYaw + Math.PI / 2;
+  state.reach = smoothstep(0.47, 0.56, u) * (1 - smoothstep(0.76, 0.94, u));
   state.lift = lift;
   seq.u = u;
-  const deploy = smoothstep(0.02, 0.14, u) * (1 - smoothstep(0.97, 1, u));
-  state.stepHeight = step * scooter.packingStep(deploy);
+  state.tiptoe = tiptoe;
   scooter.lid.rotation.z = -1.85 * smoothstep(0.06, 0.35, u) * (1 - smoothstep(0.81, 0.99, u));
   if (progress === 1) {
     state.cargo = seq.kind === 'pack' ? 'box' : 'hand';
     state.returnToBike = false;
     state.sequence = null;
-    state.lift = state.stepHeight = 0;
+    state.lift = state.tiptoe = 0;
     scooter.lid.rotation.z = 0;
   }
   return Math.hypot(state.x - oldX, state.z - oldZ);
@@ -93,4 +169,6 @@ export function positionParcel(state, shiba, scooter, looseBag) {
   looseBag.position.copy(point).lerp(target, across);
   looseBag.position.y = lerp(point.y, target.y, smoothstep(0.69, 0.81, u)) + 0.07 * scooter.root.scale.y * Math.sin(Math.PI * across);
   looseBag.rotation.set(0, state.yaw, 0);
+  scooter.root.getWorldQuaternion(boxOrientation).multiply(acrossBox);
+  looseBag.quaternion.slerp(boxOrientation, across);
 }

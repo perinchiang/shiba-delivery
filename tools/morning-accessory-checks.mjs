@@ -211,8 +211,11 @@ export function checkAccessories(rider, scooter) {
     world = new T.Matrix4();
   const fixedBoxes = chassis.map((n) => vehicleBounds(n, bikeInverse));
   let frames = 0;
-  function frame() {
+  function frame(standProgress = Number(!pose.mount)) {
     pose.time += pose.dt;
+    scooter.setStand(standProgress);
+    scooter.root.updateMatrixWorld(true);
+    bikeInverse.copy(scooter.root.matrixWorld).invert();
     rider.pose(pose);
     rider.root.updateMatrixWorld(true);
     scooter.root.updateMatrixWorld(true);
@@ -230,21 +233,21 @@ export function checkAccessories(rider, scooter) {
     for (const sleeve of shoulders) note('scarf/shoulder', bodyGap(scarf, sleeve) * scale);
     for (const paw of paws) note('scarf/paw', bodyGap(scarf, paw) * scale);
     for (const part of tail) for (const p of part.points) p.applyMatrix4(bikeInverse);
-    if (pose.mount) {
-      // Up in the matched rear inspection camera projects to (0, 1, .142).
+    if (pose.mount && pose.speed >= 1.35) {
+      // Sideways clearance is visible in the rear inspection just as height
+      // above the lid is. Require at least a centimetre of the curled brush.
       const lid = fixedBoxes[1];
-      const rim = lid.max.y + 0.142 * lid.max.z;
-      let top = -Infinity;
+      const rim = lid.max.y + .142 * lid.max.z;
+      let exposed = -Infinity;
       for (const { points, along } of tail) {
         for (let i = 0; i < points.length; i++) {
+          if (along.getX(i) < .1) continue;
           const p = points[i];
-          if (along.getX(i) >= 0.1 && p.x >= lid.min.x && p.x <= lid.max.x) {
-            top = Math.max(top, p.y + 0.142 * p.z);
-          }
+          exposed = Math.max(exposed, p.x - lid.max.x, lid.min.x - p.x,
+            (p.y + .142 * p.z - rim) / Math.hypot(1, .142));
         }
       }
-      // The crate can hide the rump. Some of the curled brush should peek over it.
-      note('visible plume above rim', (top - rim) * scale / Math.hypot(1, .142));
+      note('plume beyond rear box silhouette', exposed * scale - .01);
     }
     chassis.forEach((obj, i) => {
       const bounds = i === 1 && scooter.lid.rotation.z !== 0 ? vehicleBounds(obj, bikeInverse) : fixedBoxes[i];
@@ -282,12 +285,13 @@ export function checkAccessories(rider, scooter) {
   onboard();
   rider.greet();
   for (let i = 0; i < 245; i++) {
-    pose.speed = i < 35 ? 0 : i < 60 ? (i - 35) * 0.224 : i < 175 ? 5.6 : Math.max(0, 5.6 - (i - 175) * 0.2);
+    const standProgress = T.MathUtils.clamp(i < 175 ? (52 - i) / 17 : (i - 203) / 30, 0, 1);
+    pose.speed = i < 175 ? T.MathUtils.clamp((i - 52) * 0.224, 0, 5.6) : Math.max(0, 5.6 - (i - 175) * 0.2);
     scooter.steer(i < 62 ? 0 : i < 95 ? 0.31 : i < 143 ? -0.31 : i < 166 ? 0.21 : 0);
     pose.headTurn = 0.78 * Math.sin(i * 0.05);
-    frame();
+    frame(standProgress);
   }
-  // Actual park/mount pose boundaries. The current game swaps pose on the tick.
+  // Check the accessory blend across seated and standing poses.
   beside();
   frame();
   onboard();
@@ -308,10 +312,12 @@ export function checkAccessories(rider, scooter) {
     beginSequence(s, kind);
     while (s.sequence) {
       const travel = boxFrame(s, pose.dt, scooter);
-      rider.root.position.set(s.x, s.stepHeight, s.z);
+      rider.root.position.set(s.x, 0, s.z);
       rider.root.rotation.y = s.yaw;
       pose.carrying = true;
       pose.lift = s.lift;
+      pose.tiptoe = s.tiptoe;
+      pose.reach = s.reach;
       pose.walking = Math.min(1, travel / (pose.dt * 2.4));
       pose.stride += travel * 5.4;
       pose.headTurn = 0;

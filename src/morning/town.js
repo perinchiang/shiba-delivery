@@ -261,9 +261,10 @@ export function createStreet() {
     for (let i = 0; i < 10; i++) box(road, cross, 0.006, 1.45 + i * 0.53, 1.22, 0.01, 0.26, 0xe4dcca);
   }
   bake(road);
+  const shopSide = group(root);
   let pharmacyDoor;
   shops.forEach((shop, i) => {
-    const door = streetShop(root, shop, i);
+    const door = streetShop(shopSide, shop, i);
     if (shop.name === '便民药店') pharmacyDoor = door;
   });
   // The chase camera sees both sides of the road and the bend at its far end.
@@ -288,13 +289,13 @@ export function createStreet() {
   }
   bake(skyline);
   for (const [i, x] of [-9.1, -2.75, 5.58, 12.57, 19.51, 26.5, 33.55, 40.4].entries()) {
-    tree(root, x, -1.26, 0.84 + (i % 3) * 0.08, i + 21);
+    tree(shopSide, x, -1.26, 0.84 + (i % 3) * 0.08, i + 21);
   }
-  const cat = neighbor(root, STOPS.home.x, CURB_H, STOPS.home.z - 0.40, false);
+  const cat = neighbor(shopSide, STOPS.home.x, CURB_H, STOPS.home.z - 0.40, false);
   cat.rotation.y = -0.23;
   const steam = [];
-  for (let i = 0; i < 4; i++) steam.push(oval(root, 0, 0, 0, 0.07, 0.13, 0.07, 0xffebcb));
-  return { root, opposite, pharmacyDoor, update(t) {
+  for (let i = 0; i < 4; i++) steam.push(oval(shopSide, 0, 0, 0, 0.07, 0.13, 0.07, 0xffebcb));
+  return { root, shopSide, opposite, pharmacyDoor, update(t) {
     steam.forEach((puff, i) => {
       const life = (t * 0.53 + i * 0.25) % 1;
       const r = (0.048 + life * 0.08) * Math.sin(life * Math.PI);

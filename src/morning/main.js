@@ -7,7 +7,7 @@ import { glowMaterial } from '../core/materials.js';
 import { oscVoice } from '../audio/synth.js';
 import { createShiba, createScooter, parcel } from './rider.js';
 import { createStreet, createPharmacy, STOPS, CURB_H, CURB_Z } from './town.js';
-import { beginSequence, boxFrame, doorFrame, isBoxSequence, positionParcel } from './sequence.js';
+import { beginSequence, boxFrame, doorFrame, isBoxSequence, isStandSequence, standFrame, positionParcel } from './sequence.js';
 import { frameRide, resizeRideCamera } from './ride-camera.js';
 import './style.css';
 
@@ -17,6 +17,8 @@ const actionNames = {
   talk: '找兔药师取件', collect: '收好药袋', deliver: '递给猫婆婆', sign: '确认签收',
 };
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+// Leave enough room at the near curb for both boots when hopping off the left peg.
+const rideMinZ = CURB_Z + .94;
 
 async function run(renderer) {
   const scene = new THREE.Scene();
@@ -101,6 +103,7 @@ async function run(renderer) {
   const phone = $('phone'), phoneToggle = $('phone-toggle');
   let phoneExpanded = false;
   const focus = new THREE.Vector3();
+  const cameraUp = new THREE.Vector3(0, 1, 0);
   const eyeOffset = new THREE.Vector3();
   let time = 0, stride = 0, walking = 0, headTurn = 0, lastMode = '', lastAction = '';
   let aspect = 1, view = '', closeUp = false, followYaw = Math.PI / 2;
@@ -133,9 +136,9 @@ async function run(renderer) {
   function reset() {
     shiba.resetTail();
     Object.assign(state, { phase: 'offer', mode: 'ride', dialog: null, x: STOPS.start.x, z: STOPS.start.z,
-      bikeX: STOPS.start.x, bikeZ: STOPS.start.z, bikeYaw: Math.PI / 2, yaw: Math.PI / 2, speed: 0, steer: 0, returnToBike: false, sequence: null, cargo: 'none', stepHeight: 0, lift: 0, braking: false });
+      bikeX: STOPS.start.x, bikeZ: STOPS.start.z, bikeYaw: Math.PI / 2, yaw: Math.PI / 2, speed: 0, steer: 0, returnToBike: false, sequence: null, cargo: 'none', tiptoe: 0, reach: 0, stand: 1, lift: 0, braking: false });
     shiba.root.rotation.y = scooter.root.rotation.y = state.yaw;
-    headTurn = -0.75;
+    headTurn = .75;
     stride = walking = 0;
     street.pharmacyDoor.rotation.y = scooter.lid.rotation.z = 0;
     setCloseUp(false);
@@ -191,14 +194,6 @@ async function run(renderer) {
     if (expanded) (state.phase === 'done' ? $('replay') : $('phone-main')).focus({ preventScroll: true });
   }
 
-  function park() {
-    state.mode = 'walk';
-    state.speed = 0;
-    state.steer = 0;
-    state.braking = false;
-    state.z = Math.max(CURB_Z - 0.15, state.bikeZ - 0.85);
-    state.yaw = Math.PI;
-  }
   let startY, gestureSurface, swiped = false;
   phone.addEventListener('pointerdown', event => {
     if (!event.isPrimary || event.button !== 0 || phoneToggle.disabled) return;
@@ -244,14 +239,13 @@ async function run(renderer) {
       case 'statement':
         setPhoneExpanded(true);
         return;
+      case 'park':
       case 'brake':
         state.braking = true;
-        break;
-      case 'park':
-        park();
+        input.clearVirtual();
         break;
       case 'mount':
-        Object.assign(state, bike(), { mode: 'ride', yaw: state.bikeYaw, returnToBike: false });
+        beginSequence(state, 'mount');
         break;
       case 'enter':
       case 'exit':
@@ -321,11 +315,15 @@ async function run(renderer) {
     if (el.textContent !== value) el.textContent = value;
   }
   function guidance(target, action) {
+    if (state.braking) return state.speed ? '正在减速停车' : '正在放下侧撑';
+    if (state.sequence?.approaching) return '正在走到车旁';
+    if (isStandSequence(state.sequence)) return state.sequence.kind === 'park'
+      ? (state.sequence.hop > 0 ? '正在轻跳落地' : '正在跨座下车') : '正在跨座上车';
     if (state.phase === 'done') return '猫婆婆已签收';
     const dx = target.point.x - state.x, dz = target.point.z - state.z;
     if (state.mode === 'ride') {
       if (Math.abs(dx) < 1.35) return '到了，靠边停车';
-      const bearing = Math.atan2(dx, clamp(state.z, 1.85, 5.8) - state.z);
+      const bearing = Math.atan2(dx, clamp(state.z, rideMinZ, 5.8) - state.z);
       const angle = Math.atan2(Math.sin(bearing - state.bikeYaw), Math.cos(bearing - state.bikeYaw));
       const turn = Math.abs(angle) < 0.24 ? '↑ 沿街直行' : (angle > 0 ? '← 向左转' : '向右转 →');
       return turn + '　' + Math.ceil(Math.abs(dx)) + ' m';
@@ -341,7 +339,7 @@ async function run(renderer) {
   function syncHUD() {
     const task = navigate(), action = availableAction();
     const offer = state.phase === 'offer', done = state.phase === 'done', riding = state.mode === 'ride';
-    $('stage').setAttribute('aria-busy', String(!!state.sequence));
+    $('stage').setAttribute('aria-busy', String(!!state.sequence || state.braking));
     if (phone.dataset.phase !== state.phase) phone.dataset.phase = state.phase;
     write('order-kind', offer ? '附近来单' : done ? '订单完成' : '当前订单');
     write('phase', { offer: '待接单', pickup: '去取件', delivery: '去送达', done: '已签收' }[state.phase]);
@@ -392,6 +390,16 @@ async function run(renderer) {
     walking = 0;
     if (dt <= 0) return;
     if (state.sequence) {
+      if (isStandSequence(state.sequence)) {
+        const seq = state.sequence, x = state.x, z = state.z;
+        standFrame(state, dt, scooter);
+        if (seq.approaching) {
+          const travel = Math.hypot(state.x - x, state.z - z);
+          walking = Math.min(1, travel / (2.4 * dt));
+          stride += travel * 5.4;
+        }
+        return;
+      }
       const travel = isBoxSequence(state.sequence) ? boxFrame(state, dt, scooter) : doorFrame(state, dt, street.pharmacyDoor);
       walking = Math.min(1, travel / (2.4 * dt || 1));
       stride += travel * 5.4;
@@ -402,14 +410,16 @@ async function run(renderer) {
     if (closeUp && (dx || dz)) setCloseUp(false);
     if (state.mode === 'ride') {
       const throttle = state.braking ? 0 : -dz;
-      const targetSpeed = throttle > 0 ? 5.6 : (throttle < 0 ? -1.9 : 0);
+      // Let the boot fold the stand and return to the peg before the wheels move.
+      if (throttle) state.stand = approach(state.stand, 0, dt / .28);
+      const targetSpeed = state.stand ? 0 : throttle > 0 ? 5.6 : throttle < 0 ? -1.9 : 0;
       const deceleration = state.braking || throttle * state.speed < 0 ? 12 : (throttle ? 6.7 : 4.4);
       state.speed = approach(state.speed, targetSpeed, deceleration * dt);
       state.steer = damp(state.steer, state.braking ? 0 : -dx * 0.31, 12, dt);
       state.bikeYaw += Math.tan(state.steer) * state.speed / (scooter.wheelbase * courierScale) * dt;
       const sx = state.x, sz = state.z;
       state.x = clamp(sx + Math.sin(state.bikeYaw) * state.speed * dt, -7.2, 36.6);
-      state.z = clamp(sz + Math.cos(state.bikeYaw) * state.speed * dt, 1.62, 6.45);
+      state.z = clamp(sz + Math.cos(state.bikeYaw) * state.speed * dt, rideMinZ, 6.45);
       const travel = Math.hypot(state.x - sx, state.z - sz);
       if (travel < 0.00001) state.speed = 0;
       state.bikeX = state.x;
@@ -417,7 +427,11 @@ async function run(renderer) {
       state.yaw = state.bikeYaw;
       scooter.roll(Math.sign(state.speed) * travel);
       stride += travel * 3.4;
-      if (state.braking && Math.abs(state.speed) < 0.12) park();
+      if (!state.speed && !throttle) state.stand = approach(state.stand, 1, dt / .50);
+      if (state.braking && state.stand === 1) {
+        state.braking = false;
+        beginSequence(state, 'park');
+      }
     } else if (dx || dz) {
       const length = Math.hypot(dx, dz), step = 2.45 * dt / length;
       const inside = state.mode === 'shop';
@@ -435,28 +449,33 @@ async function run(renderer) {
   function draw(dt) {
     const inside = state.mode === 'shop', riding = state.mode === 'ride';
     const packing = isBoxSequence(state.sequence);
-    const nextView = state.sequence ? (packing ? 'box' : 'door') :
+    const handling = isStandSequence(state.sequence);
+    const seatBlend = handling ? state.sequence.seat ?? (riding ? 1 : 0) : Number(riding);
+    const nextView = state.sequence?.approaching ? 'street' :
+      state.braking && !state.speed ? 'stand' : state.sequence ? (handling ? 'stand' : packing ? 'box' : 'door') :
       (closeUp ? 'portrait' : inside ? 'shop' : !riding ? 'street' : state.phase === 'offer' ? 'intro' : 'chase');
     const snap = nextView !== view;
     room.root.visible = inside;
     room.bag.visible = state.phase === 'pickup';
     street.root.visible = !inside;
-    // The reverse-shot camera occupies the far side of the street in the close-ups.
-    street.opposite.visible = nextView === 'chase';
     scooter.root.visible = !inside;
     if (inside) room.update(time); else street.update(time);
-    let height = !inside && state.z < CURB_Z ? CURB_H : 0;
-    if (packing) height = Math.max(height, state.stepHeight);
+    const height = !inside && state.z < CURB_Z ? CURB_H : 0;
     const facing = closeUp && !riding ? 0.45 : state.yaw;
-    shiba.root.rotation.y = riding || snap ? facing : dampAngle(shiba.root.rotation.y, facing, 15, dt);
+    shiba.root.rotation.y = riding || handling || snap ? facing : dampAngle(shiba.root.rotation.y, facing, 15, dt);
     scooter.root.rotation.y = state.bikeYaw;
     scooter.root.position.set(state.bikeX, 0, state.bikeZ);
     scooter.steer(state.steer);
+    scooter.setStand(state.stand);
     shiba.root.position.set(state.x, riding ? 0 : height, state.z);
     const posed = nextView === 'portrait' || nextView === 'intro';
-    headTurn = damp(headTurn, riding ? (posed ? (Math.sin(state.bikeYaw) >= 0 ? -0.78 : 0.78) : -0.12) : 0, 10, dt);
-    shiba.pose({ time, dt, stride, walking, headTurn, speed: state.speed, lift: state.lift,
-      mount: riding ? scooter.mount : null, carrying: packing || state.cargo === 'hand' });
+    const lookTowardCamera = nextView === 'stand' ? .42 : posed ? .78 : -.12;
+    headTurn = damp(headTurn, riding || nextView === 'stand' ? lookTowardCamera : 0, 10, dt);
+    shiba.pose({ time, dt, stride, walking, headTurn, speed: state.speed, lift: state.lift, tiptoe: state.tiptoe, reach: state.reach,
+      seatBlend,
+      rise: handling ? state.sequence.rise : 0, hop: handling ? state.sequence.hop : 0,
+      swing: handling ? state.sequence.swing : 0,
+      mount: seatBlend > 0 ? scooter.mount : null, carrying: packing || state.cargo === 'hand' });
     positionParcel(state, shiba, scooter, looseBag);
     contact.position.set(state.x, (!inside && state.z < CURB_Z ? CURB_H : 0) + 0.025, state.z);
     contact.scale.set(riding ? 1.9 : 0.90, riding ? 0.84 : 0.65, 1).multiplyScalar(courierScale);
@@ -466,8 +485,8 @@ async function run(renderer) {
       scene.background = new THREE.Color(inside ? 0xe2cfaa : 0xc1dcd8);
       scene.fog = new THREE.FogExp2(inside ? 0xe2cfaa : 0xd9dfc9, inside ? 0.014 : 0.031);
       followYaw = state.bikeYaw;
-      const heights = { portrait: 3.30, intro: 4.8, door: 4.05, box: 3.6, shop: 5.56, street: 6.15 };
-      const widths = { portrait: 3.2, intro: 4.0, door: 3.25, box: 3.2, shop: 7.1, street: 5.2 };
+      const heights = { portrait: 3.30, intro: 4.8, door: 4.05, stand: 2.95, box: 3.6, shop: 5.56, street: 6.15 };
+      const widths = { portrait: 3.2, intro: 4.0, door: 3.25, stand: 3.00, box: 3.2, shop: 7.1, street: 5.2 };
       if (nextView !== 'chase') {
         const detailScale = nextView === 'portrait' || nextView === 'box' ? courierScale : 1;
         const h = Math.max(heights[nextView], Math.min(11.4, widths[nextView] / aspect)) * detailScale;
@@ -480,10 +499,16 @@ async function run(renderer) {
       followYaw = dampAngle(followYaw, state.bikeYaw, 5.4, dt);
       frameRide(chase, state, followYaw, focus);
     } else {
-      if (nextView === 'box') {
+      if (nextView === 'stand') {
+        scooter.root.localToWorld(desiredFocus.set(.32, 1.05, -.16));
+        if (aspect < .85) desiredFocus.y -= .24;
+        eye.set(4.65, 2.32, 1.75).applyAxisAngle(cameraUp, state.bikeYaw)
+          .multiplyScalar(courierScale).add(scooter.root.position);
+        eye.z = Math.max(eye.z, -.95);
+        eyeOffset.copy(eye).sub(desiredFocus);
+      } else if (nextView === 'box') {
         scooter.root.localToWorld(desiredFocus.set(-0.24, 1.07, scooter.cargo.floor.z + 0.15));
-        scooter.root.localToWorld(eye.set(0.84, 3.21, 4.52));
-        eye.z = Math.max(eye.z, 0.70);
+        scooter.root.localToWorld(eye.set(.35, 2.35, -4.35));
         eyeOffset.copy(eye).sub(desiredFocus);
       } else if (nextView === 'door') {
         desiredFocus.set(STOPS.pharmacy.x, 1.27, -1.48);
@@ -491,9 +516,9 @@ async function run(renderer) {
       } else if (posed) {
         desiredFocus.set(state.x, (riding ? 1.21 : 1.10) * courierScale, state.z);
         if (riding) {
-          const side = Math.sin(state.bikeYaw) >= 0 ? -1 : 1;
-          scooter.root.localToWorld(eye.set(side * 4.19 * Math.sin(portraitAngle), 2.18, 4.19 * Math.cos(portraitAngle)));
-          eye.z = Math.max(eye.z, 0.65);
+          eye.set(4.19 * Math.sin(portraitAngle), 1.92, 4.19 * Math.cos(portraitAngle))
+            .applyAxisAngle(cameraUp, state.bikeYaw).multiplyScalar(courierScale).add(scooter.root.position);
+          eye.z = Math.max(eye.z, -.95);
           eyeOffset.copy(eye).sub(desiredFocus);
         } else eyeOffset.set(0.8, 2.5, 9.2);
       } else {
@@ -504,6 +529,11 @@ async function run(renderer) {
       camera.position.copy(focus).add(eyeOffset);
       camera.lookAt(focus);
     }
+    // Dress the far side of a close-up; the shop row behind the lens can
+    // otherwise put a counter or a tree across the boots and stand.
+    const fromShopSide = nextView !== 'chase' && camera.position.z < focus.z;
+    street.shopSide.visible = !fromShopSide;
+    street.opposite.visible = nextView === 'chase' || fromShopSide;
     const lightX = Math.round(focus.x * 2) / 2;
     sun.target.position.set(lightX, 0.3, 0);
     sun.position.set(lightX - 6, 11.5, 7.5);
