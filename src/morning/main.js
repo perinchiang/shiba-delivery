@@ -502,7 +502,7 @@ async function run(renderer) {
       if (nextView === 'stand') {
         scooter.root.localToWorld(desiredFocus.set(.32, 1.05, -.16));
         if (aspect < .85) desiredFocus.y -= .24;
-        eye.set(4.65, 2.32, 1.75).applyAxisAngle(cameraUp, state.bikeYaw)
+        eye.set(4.65, 2.88, -2.25).applyAxisAngle(cameraUp, state.bikeYaw)
           .multiplyScalar(courierScale).add(scooter.root.position);
         eye.z = Math.max(eye.z, -.95);
         eyeOffset.copy(eye).sub(desiredFocus);

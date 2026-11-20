@@ -101,17 +101,24 @@ function approachBike(state, scooter, destination, facing) {
 
 // Starting from a stop already resting on the side stand: stand up on the left
 // footpeg, swing the right boot cleanly over the bench saddle, then hop lightly
-// down beside the bike. Mounting retraces those contacts in reverse.
+// down beside the bike. The two directions share contacts but have different phrasing.
 export function standFrame(state, dt, scooter) {
   const seq = state.sequence, mounting = seq.kind === 'mount';
   seq.elapsed += dt;
   const beside = scooter.mount.besideWorld(target);
   const elapsed = mounting ? approachBike(state, scooter, beside, state.bikeYaw) : seq.elapsed;
-  const progress = clamp01(elapsed / 1.80);
-  const u = mounting ? 1 - progress : progress;
-  seq.rise = smoothstep(0, .24, u);
-  seq.swing = smoothstep(.14, .62, u);
-  seq.hop = smoothstep(.58, .90, u);
+  const progress = clamp01(elapsed / (mounting ? 1.72 : 1.55));
+  if (mounting) {
+    seq.hop = 1 - smoothstep(.02, .30, progress);
+    seq.swing = 1 - smoothstep(.34, .81, progress);
+    // Keep weight on the peg through the sweep, then compress and rebound on the cushion.
+    seq.rise = 1 - smoothstep(.75, .90, progress)
+      - .15 * smoothstep(.86, .92, progress) * (1 - smoothstep(.92, 1, progress));
+  } else {
+    seq.rise = smoothstep(0, .23, progress);
+    seq.swing = smoothstep(.17, .69, progress);
+    seq.hop = smoothstep(.70, .98, progress);
+  }
   seq.seat = 1 - seq.hop;
   state.stand = 1;
 

@@ -275,7 +275,7 @@ for (const kind of ['pack', 'unpack']) {
 scooter.setStand(0);
 // Slowing to a stop kicks the side stand down so the bike rests at a modest lean
 // with both boots on the pegs. Parking stands on the left peg, swings the right
-// boot cleanly over the bench saddle, and hops beside the bike; mounting reverses it.
+// boot cleanly over the bench saddle, and hops beside the bike. Mounting uses the same contacts with its own timing.
 for (const yaw of [0, 1.73, -2.1]) {
   const state = { x: 3, z: 3, bikeX: 3, bikeZ: 3, yaw, bikeYaw: yaw, mode: 'ride', stand: 0 };
   scooter.root.position.set(3, 0, 3);
@@ -328,7 +328,11 @@ for (const yaw of [0, 1.73, -2.1]) {
       assert.ok(leftOfBike(new THREE.Vector3(state.x, 0, state.z)) < -.35, 'loading ends on the other side from the stand');
     }
     beginSequence(state, kind);
-    let crossed = false, stoodOnPeg = false;
+    let crossed = false, stoodOnPeg = false, highestBoot = 0;
+    let lastJoints;
+    const rightLegLength = fixedLengths.filter(([a]) => a === 'Thigh_L' || a === 'Shin_L')
+      .reduce((sum, [, , length]) => sum + length, 0);
+    const joints = ['Pelvis', 'Head', 'Shin_R', 'Foot_R', 'Shin_L', 'Foot_L', 'Paw_R', 'Paw_L'];
     while (state.sequence) {
       standFrame(state, .016, scooter);
       const seq = state.sequence;
@@ -344,22 +348,60 @@ for (const yaw of [0, 1.73, -2.1]) {
         seatBlend: seq.seat, speed: 0, rise: seq.rise, swing: seq.swing, hop: seq.hop });
       scene.updateMatrixWorld(true);
       const soleL = bounds(dog('Shoe_R')), soleR = bounds(dog('Shoe_L'));
-      if (seq.swing > .05 && seq.hop === 0) {
+      const positions = joints.map(name => at(dog(name)));
+      if (lastJoints) positions.forEach((p, i) => {
+        assert.ok(p.distanceTo(lastJoints[i]) < .12, joints[i] + ' moves continuously');
+      });
+      lastJoints = positions;
+      for (const [a, b, length] of fixedLengths) {
+        assert.ok(Math.abs(at(dog(a)).distanceTo(at(dog(b))) - length) < 2e-5, a + ' keeps its length throughout the hop');
+      }
+      for (const [name, , scale] of bindPose) {
+        assert.ok(dog(name).getWorldScale(point).distanceTo(scale) < 2e-5, name + ' keeps its scale');
+      }
+      const ankle = scooter.root.worldToLocal(at(dog('Foot_L')));
+      if (seq.hop === 0 && seq.swing > .04) {
+        for (const [i, tag] of hips.entries()) {
+          assert.ok(at(dog('Paw_' + tag)).distanceTo(at(mount.palms[i])) < .002, 'both paws keep their grips');
+        }
+        assert.ok(at(dog('Thigh_L')).distanceTo(at(dog('Foot_L'))) < rightLegLength * .9984,
+          'swing ankle remains inside the two-bone solver reach limit');
+        highestBoot = Math.max(highestBoot, ankle.y);
+        if (seq.swing === 1) {
+          assert.ok(ankle.x > .25 && ankle.z < -.36, 'trailing boot waits behind the planted leg');
+          assert.ok(seq.rise === 1, 'weight stays on the peg during the windup');
+        }
+      }
+      if (yaw === 0) {
+        const haunchBounds = bounds(dog('Haunch_L'));
+        for (const object of [saddle, tank, box, bike('Chassis_and_Rear_Suspension'),
+          bike('Side_Covers'), bike('High_Side_Exhaust'), bike('Motor')]) {
+          const obstacle = bounds(object);
+          if (obstacle.intersectsBox(soleR)) vertices(dog('Shoe_L'), vertex => {
+            if (!obstacle.containsPoint(vertex)) return;
+            const top = surface(object, vertex), bottom = surface(object, vertex, up);
+            assert.ok(!(vertex.y < top && vertex.y > bottom), 'swing boot clears ' + object.name);
+          });
+          if (!obstacle.intersectsBox(haunchBounds)) continue;
+          assertClearsBodyPart(object, dog('Thigh_L'), new THREE.Vector3(-.151,.295,0), new THREE.Vector3(.117,.16,.117));
+          assertClearsBodyPart(object, dog('Shin_L'), new THREE.Vector3(-.151,.152,.018), new THREE.Vector3(.098,.104,.096));
+        }
+        for (const [bone, centre, radii] of [
+          ['Pelvis', [0,.41,-.005], [.27,.17,.22]], ['Chest', [0,.60,0], [.32,.36,.25]],
+          ['Thigh_R', [.151,.295,0], [.117,.16,.117]], ['Shin_R', [.151,.152,.018], [.098,.104,.096]],
+        ]) assertClearsBodyPart(dog('Shoe_L'), dog(bone), new THREE.Vector3(...centre), new THREE.Vector3(...radii));
+      }
+      if (seq.hop === 0) {
         assert.equal(state.stand, 1);
         const leftPeg = at(mount.feet[1]);
         assert.ok(Math.abs(surface(dog('Shoe_R'), leftPeg, up) - surface(bike('Rider_Footpegs'), leftPeg)) < .002, 'left boot stays planted on peg during crossover');
+        assert.ok(scooter.root.worldToLocal(at(dog('Foot_R'))).distanceTo(new THREE.Vector3(.28,.599,-.151)) < .0025,
+          'planted ankle holds its position in the peg frame');
         stoodOnPeg = true;
-        if (yaw === 0 && kind === 'park') {
-          const cushionBounds = bounds(saddle);
-          if (cushionBounds.intersectsBox(soleR)) vertices(dog('Shoe_L'), vertex => {
-            if (!cushionBounds.containsPoint(vertex)) return;
-            const top = surface(saddle, vertex), bottom = surface(saddle, vertex, up);
-            assert.ok(!(vertex.y < top && vertex.y > bottom), 'entire boot clears the upholstered edges');
-          });
-        }
-        const ankle = scooter.root.worldToLocal(at(dog('Foot_L')));
         if (Math.abs(ankle.x) < .10) {
           crossed = true;
+          const seat = at(bike('Seat_Contact'));
+          assert.ok(surface(dog('Uniform'), seat, up) - surface(saddle, seat) > .032, 'rump stays up while the boot crosses');
           assert.ok(soleR.min.y > bounds(saddle).max.y + .015, 'boot clears saddle at crossover');
         }
       }
@@ -367,6 +409,11 @@ for (const yaw of [0, 1.73, -2.1]) {
         assert.ok(soleL.min.y >= -.002 && soleR.min.y >= -.002, 'hop clears the road');
       }
     }
+    rider.root.position.set(state.x, 0, state.z);
+    rider.pose({ ...basePose, mount: state.mode === 'ride' ? mount : null, speed: 0 });
+    scene.updateMatrixWorld(true);
+    joints.forEach((name, i) => assert.ok(at(dog(name)).distanceTo(lastJoints[i]) < .003, name + ' blends into final pose'));
+    assert.ok(highestBoot > .93, 'free ankle lifts above the cushion before descending');
     assert.ok(crossed && stoodOnPeg, kind + ' uses step-peg crossover');
     assert.equal(state.mode, kind === 'park' ? 'walk' : 'ride');
     assert.equal(state.stand, 1, 'stand supports the bike until the rider pulls away');
