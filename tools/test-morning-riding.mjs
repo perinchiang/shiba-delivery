@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** Validate the shipped GLBs, the exported pose clips and their contacts in street coordinates. */
 import assert from 'node:assert/strict';
+import { checkSleeves } from './morning-sleeve-checks.mjs';
 import { checkAccessories } from './morning-accessory-checks.mjs';
 import { readFile } from 'node:fs/promises';
 import * as THREE from 'three';
@@ -104,6 +105,7 @@ for (const yaw of [0, 1.74, -2.30]) {
     scooter.steer(angle);
     rider.pose({ ...basePose, mount });
     rider.root.updateMatrixWorld(true); scooter.root.updateMatrixWorld(true);
+    if (yaw === 0 && step % 5 === 0) checkSleeves(dog('Uniform'));
     for (const [a, b, length] of fixedLengths) {
       assert.ok(Math.abs(at(dog(a)).distanceTo(at(dog(b))) - length) < 2e-5, a + ' retains its standing length');
     }
@@ -242,7 +244,7 @@ for (const kind of ['pack', 'unpack']) {
   scooter.root.updateMatrixWorld(true);
   beginSequence(state, kind);
   const envelope = new THREE.Box3();
-  let time = 1.2, stride = 0, crossingFrames = 0;
+  let time = 1.2, stride = 0, crossingFrames = 0, liftFrame = 0;
   while (state.sequence) {
     const dt = .01, travel = boxFrame(state, dt, scooter);
     time += dt;
@@ -253,6 +255,7 @@ for (const kind of ['pack', 'unpack']) {
       headTurn: 0, lift: state.lift, tiptoe: state.tiptoe, reach: state.reach });
     positionParcel(state, rider, scooter, looseBag);
     scene.updateMatrixWorld(true);
+    if (state.lift > 0 && liftFrame++ % 12 === 0) checkSleeves(dog('Uniform'));
     if (state.tiptoe > .1) {
       for (const side of hips) assert.ok(Math.abs(bounds(dog('Shoe_' + side)).min.y) < .002,
         'loading keeps the toes on the street');
@@ -333,6 +336,7 @@ for (const yaw of [0, 1.73, -2.1]) {
     const rightLegLength = fixedLengths.filter(([a]) => a === 'Thigh_L' || a === 'Shin_L')
       .reduce((sum, [, , length]) => sum + length, 0);
     const joints = ['Pelvis', 'Head', 'Shin_R', 'Foot_R', 'Shin_L', 'Foot_L', 'Paw_R', 'Paw_L'];
+    let sleeveFrame = 0;
     while (state.sequence) {
       standFrame(state, .016, scooter);
       const seq = state.sequence;
@@ -347,6 +351,9 @@ for (const yaw of [0, 1.73, -2.1]) {
       rider.pose({ ...basePose, mount: seq.seat > 0 ? mount : null,
         seatBlend: seq.seat, speed: 0, rise: seq.rise, swing: seq.swing, hop: seq.hop });
       scene.updateMatrixWorld(true);
+      if (yaw === 0 && sleeveFrame++ % 3 === 0) {
+        checkSleeves(dog('Uniform'));
+      }
       const soleL = bounds(dog('Shoe_R')), soleR = bounds(dog('Shoe_L'));
       const positions = joints.map(name => at(dog(name)));
       if (lastJoints) positions.forEach((p, i) => {

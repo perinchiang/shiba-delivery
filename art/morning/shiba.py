@@ -190,6 +190,84 @@ def riding_shoe(parts, ankle, leather, rubber):
         parts.face((rings[-1][j], rings[-1][(j + 1) % segments], top), leather)
 
 
+def jacket_with_sleeves(p, jacket, sleeve_cloth):
+    # Open one patch on either side of the existing torso UV grid. Its upper
+    # edge sits below the kerchief and its lower edge forms the underarm fold.
+    bottom, top, half_width = 20, 30, 9
+    sides = [(-1, "L", 16), (1, "R", 48)]
+
+    def armhole(row, col):
+        return bottom <= row < top and any(m - half_width <= col < m + half_width for _, _, m in sides)
+
+    grid = p.oval((0, .60, 0), (.32, .36, .25), jacket, 64, 48, omit=armhole)
+    fit_jacket_neckline(p)
+
+    def side_weight(pt):
+        return .42 * smooth(.10, .28, abs(pt.x)) * smooth(.39, .53, pt.y) * (1 - smooth(.70, .76, pt.y))
+
+    for i, pt in enumerate(p.p):
+        arm = side_weight(pt)
+        tag = "R" if pt.x > 0 else "L"
+        p.weights[i] = {bone: w*(1-arm) for bone, w in p.weights[i].items()}
+        p.weights[i]["UpperArm_" + tag] = arm
+
+    for side, tag, middle in sides:
+        left, right = middle - half_width, middle + half_width
+        perimeter = ([(row, left) for row in range(bottom, top)]
+                     + [(top, col) for col in range(left, right)]
+                     + [(row, right) for row in range(top, bottom, -1)]
+                     + [(bottom, col) for col in range(right, left, -1)])
+        # Increasing longitude points toward the back on the +X side.
+        perimeter.reverse()
+        seam = [grid[row][col] for row, col in perimeter]
+        angles = [math.atan2(p.p[i].z / .205, (row - (bottom + top) / 2) / ((top - bottom) / 2))
+                  for i, (row, _) in zip(seam, perimeter)]
+        previous = seam
+        first = len(p.p)
+        # A raglan sleeve fans continuously from the side panel to a small
+        # diagonal cuff inside the mitten. The high side rounds the shoulder;
+        # the low side is a gusset that unfolds when the rider reaches forward.
+        for row in range(1, 9):
+            u = row / 8
+            elbow = 0.24 * smooth(.72, 1, u)
+            ring = []
+            for start, angle in zip(seam, angles):
+                c, h = math.cos(angle), math.sin(angle)
+                shoulder = p.p[start]
+                cuff = V((side * (.311 + .018*c), .614 + .048*c, .032 + .055*h))
+                pt = shoulder.lerp(cuff, u)
+                bulge = math.sin(math.pi*u)**1.2 * (.5 + .5*c)
+                pt.x += side * .100 * bulge
+                pt.y += .042 * bulge
+                pt.z += .038 * h * math.sin(math.pi*u)
+                anchor = p.weights[start].get("UpperArm_" + tag, 0)
+                arm = anchor + (1 - anchor) * u
+                pelvis = p.weights[start].get("Pelvis", 0) * (1-u)**3
+                p.bind = {"Pelvis": pelvis, "Chest": 1-arm-pelvis,
+                          "UpperArm_" + tag: arm*(1-elbow), "Forearm_" + tag: arm*elbow}
+                ring.append(p.vertex(pt, (side*c, c, h)))
+            for j in range(len(ring)):
+                k = (j + 1) % len(ring)
+                p.face((previous[j], previous[k], ring[k], ring[j]), sleeve_cloth, oriented=True)
+            previous = ring
+        p.face(previous, sleeve_cloth, oriented=True)
+
+        # Smooth shared normals across the armhole, including the adjoining
+        # torso faces. Both primitive boundaries export the same normal/weights.
+        normals = {i: V((0, 0, 0)) for i in [*seam, *range(first, len(p.p))]}
+        for face in p.faces:
+            if not any(i in normals for i in face):
+                continue
+            origin = p.p[face[0]]
+            normal = sum(((p.p[a] - origin).cross(p.p[b] - origin)
+                          for a, b in zip(face[1:], face[2:])), V((0, 0, 0))).normalized()
+            for i in face:
+                if i in normals:
+                    normals[i] += normal
+        for i, normal in normals.items():
+            p.n[i] = normal.normalized()
+
+
 def make_character(collection, rig, coat_path):
     fur = material("Fur · fox orange", "d87b38")
     cream = material("Fur · warm cream", "ffedcc")
@@ -275,8 +353,10 @@ def make_character(collection, rig, coat_path):
         return {"Pelvis": hem, "Chest": 1 - hem}
 
     p.bind = rear_hem
-    p.oval((0, 0.60, 0), (0.32, 0.36, 0.25), jacket, 64, 48)
-    fit_jacket_neckline(p)
+    # Separate material slot for checking articulated sleeves against the scarf.
+    sleeve_cloth = jacket.copy()
+    sleeve_cloth.name = "Uniform · sleeves"
+    jacket_with_sleeves(p, jacket, sleeve_cloth)
     p.bind = "Pelvis"
     p.oval((0, 0.41, -0.005), (0.27, 0.17, 0.22), pants)
     p.bind = "Chest"
@@ -286,15 +366,6 @@ def make_character(collection, rig, coat_path):
     kerchief(collection, rig, orange)
     curled_tail(collection, rig)
     for s, t in SIDES:
-        shoulder = BONES["UpperArm_" + t][0]
-
-        def sleeve(p, tag=t):
-            f = smooth(0.068, 0.171, 0.77 - p.y)
-            return {"UpperArm_" + tag: 1 - f, "Forearm_" + tag: f}
-
-        p, end = part("Sleeve_" + t, sleeve)
-        p.oval(shoulder + V((s * 0.023, -0.105, 0.016)), (0.105, 0.162, 0.112), jacket)
-        end()
         p, end = part("Mitten_" + t, "Paw_" + t)
         p.oval(BONES["Paw_" + t][0], (0.093, 0.102, 0.096), cream)
         end()

@@ -89,16 +89,17 @@ class Parts:
         self.weights.append({w: 1.0} if isinstance(w, str) else w)
         return len(self.p) - 1
 
-    def face(self, idx, mat):
+    def face(self, idx, mat, *, oriented=False):
         if mat not in self.mats:
             self.mats.append(mat)
-        a, b, c = [self.p[i] for i in idx[:3]]
-        if (b - a).cross(c - a).dot(sum((self.n[i] for i in idx), ZERO.copy())) < 0:
-            idx = tuple(reversed(idx))
+        if not oriented:
+            a, b, c = [self.p[i] for i in idx[:3]]
+            if (b - a).cross(c - a).dot(sum((self.n[i] for i in idx), ZERO.copy())) < 0:
+                idx = tuple(reversed(idx))
         self.faces.append(idx)
         self.mat_ids.append(self.mats.index(mat))
 
-    def oval(self, center, radii, mat, seg=28, rings=18, rot=None, lower=-math.pi / 2, upper=math.pi / 2):
+    def oval(self, center, radii, mat, seg=28, rings=18, rot=None, lower=-math.pi / 2, upper=math.pi / 2, omit=None):
         c = V(center)
         rx, ry, rz = radii
         grid = []
@@ -107,6 +108,9 @@ class Parts:
             lat = lower + (upper - lower) * v
             row = []
             for k in range(seg + 1):
+                if omit and all(omit(y, x) for y in (j - 1, j) for x in (k - 1, k)):
+                    row.append(None)
+                    continue
                 u = k / seg
                 a = (u - 0.5) * TAU
                 x, y, z = math.sin(a) * math.cos(lat), math.sin(lat), math.cos(a) * math.cos(lat)
@@ -119,6 +123,8 @@ class Parts:
             grid.append(row)
         for j in range(rings):
             for i in range(seg):
+                if omit and omit(j, i):
+                    continue
                 a, b, c0, d = grid[j][i], grid[j][i + 1], grid[j + 1][i + 1], grid[j + 1][i]
                 if j == 0 and lower <= -math.pi / 2:
                     self.face((a, c0, d), mat)
@@ -126,6 +132,8 @@ class Parts:
                     self.face((a, b, c0), mat)
                 else:
                     self.face((a, b, c0, d), mat)
+
+        return grid
 
     def box(self, center, dims, radius, mat, rot=None):
         c, half = V(center), V(dims) * 0.5
