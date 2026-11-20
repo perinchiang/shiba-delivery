@@ -1,0 +1,41 @@
+# 阿柴快送 · 单人送餐摩托与阿柴
+
+用 Blender 5.2 LTS 打开 **Rongwan-Courier.blend**。两个资产共用地面原点，文件打开时阿柴已经骑在车上。场景内有侧面、前方斜视和背面三台检查相机。
+
+## 调姿与换装
+
+- 选中 `CourierRig`，在动作编辑器切换 `Stand`、`Walk`、`Ride`。步行循环为 24 帧。进入姿态模式可独立转动肩、肘、手、髋、膝和脚。
+- 每只手和脚都有一个默认值为零的 IK 滑块。调到 1 后，移动 `Pin_Hand_L/R` 或 `Pin_Boot_L/R` 调整接触位置，移动相应的 `Pole` 调整弯曲方向。手部控制点跟随车把。控制器位于第 04 集合。
+- `Head_Coat`、双耳、眼睛、口鼻、头盔、短领巾和卷尾都是独立网格。头部使用可替换的 UV 贴图 **Shiba_Urajiro.png**，源文件和角色 GLB 中也各自内嵌了一份。
+
+## 领巾和卷尾
+
+`Kerchief` 是从一侧短布端绕过后结、领口和胸前三角，再回到另一侧布端的一整条网格。胸前的腰果花使用内嵌的 **Kerchief_Paisley.png**，同名 SVG 可用来调整印花。系带走在袖山内侧，制服上部的领口按这段布带裁剪。胸骨固定前片与后结，只有两个短布端的权重渐变到 `KerchiefEnds`。它们在三个动作中轻摆，骑行时随车速略微扬起。
+
+尾根从后衣摆和裤腰的交界伸出，该处衣摆随骨盆运动。卷尾上车后略微侧收，餐箱会自然遮住下半部。暖橘色、奶油尾尖和顺着卷曲方向的毛束纹理位于 **Plume_Coat.png**。运行 `python3 paint_plume.py` 可用 Pillow 重绘毛色贴图。
+
+`Curled_Tail` 由 `Tail → TailMid → TailTip` 三节骨骼驱动。弧长决定每圈顶点的权重，两侧的顶点一起转动。改造型、绑定或三个动作的尾巴摆幅时，编辑 `accessories.py` 后重新生成。
+
+`Stand` 用 72 帧完成一次呼吸，`Walk` 与 `Ride` 各用 24 帧，下一帧与首帧重合。源文件打开时播放范围为 1–24，预览完整待机呼吸时可将结束帧设为 72。Three.js 用实际步幅播放步行动作，用车速控制骑乘动作的频率。转向产生的滞后、收把后的回弹与接单、签收时的两拍轻摇位于 `src/morning/rider.js`，游戏在 `src/morning/main.js` 传入车速和事件。
+
+## 骑姿和接触位置
+
+在 `riding_fit.py` 里调整骨盆、胸口、头的相对角度，以及座位、握把和脚踏的位置。脚底基准与鞋底几何使用同一个尺寸，游戏从骨架的 `soleDepth` 读取。重新导出后，Blender 的骑乘动作和游戏的转向会使用同一组接触点。
+
+`Helmet` 是低侧翼、包后脑、带双耳开口的开放式盔壳，`Helmet_Chinstrap` 从盔内沿下颌系住。两侧铆钉共用一条横向轴线。`Helmet_Goggles` 的双镜片、鼻梁和侧臂绑定到头骨之下的 `GoggleHinge`。步行和待机时镜框停在额前，骑乘时落到双眼前方。Three.js 在换姿时插值 0.34 秒。要调整抬起角度或镜框形状，编辑 `helmet.py`。
+
+## 车辆与坐标
+
+`Steering` 绕后倾的转向轴转动。`Wheel_F` 和 `Wheel_R` 绕各自的本地 X 轴滚动，`Cargo_Lid` 绕箱侧铰链开启。原后座处的固定平台直接承托中空餐箱。
+
+资产使用米制。Blender 中 X 为横向、Z 向上、车头朝 −Y；导出后 glTF 使用 Y 向上、车头朝 +Z。`L` 对应负 X。游戏将两者按同一比例 0.84 放入街景。`Seat_Contact`、`Grip_L/R`、`Footrest_L/R` 标出实际接触面，`Seat_Rider` 和 `PalmTarget_L/R` 用来定位角色。取放包裹使用箱内的 `Cargo_Floor`。
+
+## 重新生成
+
+在本目录执行以下命令。游戏直接读取生成的 **shiba-courier.glb** 与 **monkey-delivery.glb**。
+
+```sh
+blender --background --factory-startup --python-exit-code 2 --python build.py -- --output ./rebuilt
+```
+
+默认使用同目录的毛色图。指定 `--coat /path/to/coat.png` 可试用其他同 UV 的毛色图。`--blockout` 会只摆出角色、单座、脚踏、握把、平台和餐箱，并输出侧面与背面的定位图。

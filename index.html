@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3e6c8">
+  <link rel="icon" href="data:,">
+  <title>阿柴快送</title>
+</head>
+<body>
+  <main id="game" aria-label="阿柴快送">
+    <div id="stage" aria-label="游戏画面"></div>
+    <div id="hud" hidden>
+      <div id="street-controls">
+        <div id="keys" class="keys">W/S 油门与刹车　 A/D 转向　 E 互动</div>
+        <button id="look" type="button" aria-pressed="false"><kbd>V</kbd><span>近看阿柴</span></button>
+        <span class="photo-hint">左右拖动看车身</span>
+        <div class="pad" aria-label="移动">
+          <button data-move="up" aria-label="向街里走">↑</button>
+          <button data-move="left" aria-label="向左">←</button>
+          <button data-move="down" aria-label="向街外走">↓</button>
+          <button data-move="right" aria-label="向右">→</button>
+        </div>
+        <div class="interaction">
+          <aside id="dialogue" hidden aria-live="polite"><strong id="speaker"></strong><p id="line"></p></aside>
+          <button id="action" type="button"><kbd>E</kbd><span id="action-text"></span></button>
+        </div>
+      </div>
+      <div id="phone-shade" aria-hidden="true" hidden></div>
+      <div id="phone" role="region" aria-label="骑手手机" data-expanded="false">
+        <button id="phone-toggle" type="button" aria-expanded="false" aria-controls="phone-details"
+                aria-label="展开骑手手机" aria-describedby="order-kind phase goal directions">
+          <span class="phone-status"><span class="receiver" aria-hidden="true"></span><span id="order-kind">附近来单</span><span class="phone-place">· <span id="place">榕湾老街</span></span>
+            <time id="clock">07:12</time><i class="battery" aria-hidden="true"></i></span>
+          <span class="phone-task">
+            <span id="phase">待接单</span>
+            <span class="task-heading"><strong id="goal">便民药店</strong><i class="fold-arrow" aria-hidden="true"></i></span>
+            <span id="directions">送往榕树里 3 号</span>
+          </span>
+        </button>
+        <div id="phone-details" aria-hidden="true" inert>
+          <div class="phone-scroll">
+            <section id="order-screen" aria-label="订单明细">
+              <div class="order-pay"><span><span class="service-name">阿柴快送 · </span>配送费</span><strong>¥3.10</strong></div>
+              <ol class="stops">
+                <li><i>取</i><div><strong>便民药店</strong><small>榕湾老街 · 找兔药师</small></div></li>
+                <li><i>送</i><div><strong>榕树里 3 号</strong><small>猫婆婆在楼下等</small></div></li>
+              </ol>
+              <p class="note">备注　药袋请当面交给猫婆婆。</p>
+            </section>
+            <section id="receipt" aria-label="本单账单" hidden>
+              <h2>本单账单</h2>
+              <dl><div><dt>配送费</dt><dd>+ ¥3.10</dd></div><div><dt>今日首单保险</dt><dd>− ¥3.00</dd></div>
+                <div class="net"><dt>实际到手</dt><dd>¥0.10</dd></div></dl>
+              <p class="note">“开张了，一毛也是热乎的。”</p>
+            </section>
+          </div>
+          <footer class="phone-footer">
+            <button id="phone-main" type="button">接下第一单</button>
+            <button id="replay" type="button" hidden>再跑一趟 ↻</button>
+            <span class="home-line" aria-hidden="true"></span>
+          </footer>
+        </div>
+      </div>
+    </div>
+    <p id="loading" role="status">正在打开榕湾老街…</p>
+    <p id="announcement" class="sr" aria-live="polite"></p>
+    <noscript>请开启 JavaScript 后试玩。</noscript>
+  </main>
+  <script type="module" src="./src/morning/main.js"></script>
+</body>
+</html>
