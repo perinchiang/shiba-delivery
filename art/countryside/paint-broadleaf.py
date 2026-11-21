@@ -75,6 +75,16 @@ py = np.rint(.26*H + r*np.sin(a)).astype(int).clip(0,H-1)
 weight = np.clip((.22*H-yy)/(.08*H),0,1)[:,:,None]
 cap = pixels[py,px]*weight + pixels[:yy.shape[0]]*(1-weight)
 atlas.paste(Image.fromarray(cap.astype('uint8')), (0,0))
+# Project the underside around the fork as well. Its centre lies at v=.08.
+bottom = round(.92*H)
+yy, xx = np.mgrid[round(.65*H):bottom+1, :W]
+a = xx*math.tau/W
+r = (bottom-yy)*1.8
+px = np.rint(.70*W + r*np.cos(a)).astype(int)%W
+py = np.rint(.68*H + r*np.sin(a)*.45).astype(int).clip(0,H-1)
+weight = np.clip((yy-.65*H)/(.11*H),0,1)[:,:,None]
+under = pixels[py,px]*weight + pixels[yy,xx]*(1-weight)
+atlas.paste(Image.fromarray(under.astype('uint8')), (0,round(.65*H)))
 # The trunk shares the draw call and samples this neutral swatch.
 paint.rectangle((0, round(H*.945), W, H), fill='white')
 atlas.resize((1024,512), Image.Resampling.LANCZOS).save(Path(__file__).with_name('broadleaf.png'), optimize=True)

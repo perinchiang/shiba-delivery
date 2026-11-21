@@ -505,6 +505,15 @@ def build_hardwood(name, riverbank=False):
     texture.image = bpy.data.images.load(str(Path(__file__).with_name('broadleaf.png')), check_existing=True)
     tree.links.new(texture.outputs['Color'], tree.nodes.get('Principled BSDF').inputs['Base Color'])
     uv = wood.data.uv_layers.new(name='BarkAndLeaves')
+    # Distance along each meridian keeps a leaf the same size over a rolled
+    # shoulder and under a branch, where level spacing varies considerably.
+    meridians = []
+    for col in range(segments):
+        lengths = [0.0]
+        for row in range(1, len(knots)):
+            i = first + row*segments + col
+            lengths.append(lengths[-1] + (Vector(b.verts[i])-Vector(b.verts[i-segments])).length)
+        meridians.append([d/lengths[-1] for d in lengths])
     for face in wood.data.polygons:
         indices = list(face.vertices)
         if indices[0] < first:
@@ -516,8 +525,7 @@ def build_hardwood(name, riverbank=False):
         for li, i, col in zip(face.loop_indices, indices, columns):
             row = (i-first)//segments
             u = (col+segments if seam and col == 0 else col)/segments
-            # Allocate paint by arc length, including the horizontal crown top.
-            v = (.0,.04,.10,.20,.29,.37,.41,.50,.60,.65,.69,.77,.86,.94,1)[row]
+            v = meridians[col][row]
             uv.data[li].uv = (u, .08 + .90*v)
     return wood
 
