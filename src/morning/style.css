@@ -111,23 +111,36 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
     --stick-size:clamp(70px,20vw,104px);
     --side-room:calc(max(var(--dock-left),var(--dock-right)) + var(--stick-size) + 6px);
     --phone-width:min(234px,calc(100% - 2 * var(--side-room)));
-    --peek:82px;
+    --peek:44px;
   }
   .keys,kbd { display:none; }
   #look { min-height:44px; }
   #phone { left:50%; translate:-50% 0; }
-  #phone[data-expanded="false"] { border-radius:18px 18px 0 0; }
-  #phone[data-expanded="false"] #phone-toggle { height:calc(var(--peek) - 4px); }
-  #phone[data-expanded="false"] #phone-details { visibility:hidden; }
-  #phone[data-expanded="false"] .phone-status { height:22px; padding:0 8px; gap:4px; }
-  #phone[data-expanded="false"] .phone-task { gap:1px; padding:3px 8px; }
-  #phone[data-expanded="false"] #phase { display:none; }
-  #phone[data-expanded="false"] #goal, #phone[data-expanded="false"] #directions {
+  #phone[data-expanded="false"] {
+    container-type:inline-size; border:0; border-radius:0; background:transparent; box-shadow:none;
+    pointer-events:none;
+  }
+  #phone[data-expanded="false"] #phone-toggle {
+    height:var(--peek); justify-content:flex-end; padding-bottom:2px; background:transparent;
+  }
+  #phone[data-expanded="false"] :is(#phone-details,.phone-status,#phase) { display:none; }
+  #phone[data-expanded="false"] .phone-task {
+    flex:none; height:30px; flex-direction:row; align-items:center; justify-content:flex-start;
+    gap:8px; padding:0 28px 0 11px; border:1px solid var(--shell); border-radius:12px;
+    background:var(--cream); box-shadow:inset 3px 0 var(--yellow);
+  }
+  #phone[data-expanded="false"] .task-heading { min-width:0; flex-shrink:0; max-width:100%; }
+  #phone[data-expanded="false"] :is(#goal,#directions) {
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
-  #phone[data-expanded="false"] #goal { font-size:16px; }
-  #phone[data-expanded="false"] #directions { font-size:12px; }
-  #phone[data-expanded="false"] .fold-arrow { width:18px; height:18px; }
+  #phone[data-expanded="false"] #goal { font-size:14px; }
+  #phone[data-expanded="false"] #directions { margin-left:auto; font-size:12px; }
+  #phone[data-expanded="false"][data-phase="offer"] #phase { display:flex; flex-shrink:0; }
+  #phone[data-expanded="false"][data-phase="offer"] #directions { display:none; }
+  #phone[data-expanded="false"] .fold-arrow { position:absolute; right:6px; width:16px; height:16px; }
+  @container (max-width:205px) {
+    #phone[data-expanded="false"] #directions { display:none; }
+  }
   #phone[data-expanded="true"] { width:min(312px,calc(100% - 2 * max(var(--dock-left),var(--dock-right)))); }
   #phone[data-expanded="true"] #phone-toggle { height:98px; }
 
