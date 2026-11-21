@@ -181,6 +181,7 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
 #ride-info h2 { font-size:20px; }
 #scene-debug summary { padding:10px 13px; min-height:44px; cursor:pointer; }
 #scene-debug div { display:grid; grid-template-columns:repeat(2,1fr); gap:5px; padding:0 8px 8px; }
+#scene-debug #test-speed { margin:0 8px 8px; padding-inline:10px; }
 #scene-debug button { min-height:44px; border-radius:7px; background:#f9edd2; color:#29473b; }
 
 #switch-order { margin:3px 0; padding:5px 10px; border-radius:7px; background:#e1ecde; color:#285747; font-size:12px; }

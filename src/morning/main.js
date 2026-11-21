@@ -30,7 +30,7 @@ async function run(renderer) {
     view.reset(scene?.camera);
     hud.sync();
   }
-  const updateStats = setupSceneDebug(reset, renderer);
+  const updateStats = setupSceneDebug(reset, renderer, state);
   window.addEventListener('resize', () => { controls.releaseStick(); view.resize(); });
   view.resize();
 

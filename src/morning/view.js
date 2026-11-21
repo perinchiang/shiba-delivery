@@ -172,7 +172,9 @@ export function createView(renderer, state, world) {
     sun.position.set(lightX-6, ground+11.5, lightZ+7.5);
     if (free) scene.fog.density = .031 - .023 * THREE.MathUtils.smoothstep(state.x, 28, 100);
     view = nextView;
-    renderer.render(scene, view === 'chase' ? chase : camera);
+    const activeCamera = view === 'chase' ? chase : camera;
+    if (free) country.sky.position.copy(activeCamera.position);
+    renderer.render(scene, activeCamera);
   }
 
   function resize() {

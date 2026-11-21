@@ -1,3 +1,4 @@
+import { rideTuning } from './free-ride.js';
 import { centerZ, roadYaw, landmarks } from './country-route.js';
 import { orders, start, bunFacade } from './orders.js';
 
@@ -31,7 +32,7 @@ for (const { id, name, x } of landmarks.slice(1)) {
   sceneJumps[id] = { title: name, state: { phase: 'free', mode: 'ride', x, z, bikeX: x, bikeZ: z, yaw, bikeYaw: yaw } };
 }
 
-export function setupSceneDebug(reset, renderer) {
+export function setupSceneDebug(reset, renderer, state) {
   const panel = document.getElementById('scene-debug');
   const params = new URLSearchParams(location.search);
   const enabled = import.meta.env.DEV || import.meta.env.VITE_SCENE_DEBUG === '1' || params.get('debug') === '1';
@@ -52,6 +53,15 @@ export function setupSceneDebug(reset, renderer) {
   const id = params.get('scene');
   reset(enabled && Object.hasOwn(sceneJumps, id) ? sceneJumps[id] : sceneJumps.street);
 
+  const speedButton = document.getElementById('test-speed');
+  const limits = [25, 32.4, 35];
+  let speedIndex = 1;
+  speedButton.addEventListener('click', () => {
+    speedIndex = (speedIndex + 1) % limits.length;
+    rideTuning.topSpeed = limits[speedIndex] / 3.6;
+    speedButton.textContent = '切换试骑限速 · ' + limits[speedIndex] + ' km/h';
+  });
+
   const readout = document.getElementById('scene-perf');
   let since, frames = 0;
   return function updateStats(now) {
@@ -59,6 +69,7 @@ export function setupSceneDebug(reset, renderer) {
       since = undefined;
       return;
     }
+    speedButton.hidden = state.phase !== 'free';
     if (since === undefined) {
       since = now;
       frames = 0;

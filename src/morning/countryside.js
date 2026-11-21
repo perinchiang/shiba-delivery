@@ -6,6 +6,7 @@ import { centerZ, halfWidth, roadEnd, roadHeight } from './country-route.js';
 import { sign } from './shapes.js';
 
 const paint = litMaterial({ vertexColors: true, grid: false });
+const instancePaint = litMaterial({ grid: false });
 const fieldColors = [0x9ca757, 0xc1b45e, 0xaebc70, 0xc3bd73, 0x9bac69];
 const roofColors = [0x806d60, 0x946b53, 0x697974];
 const crown = new THREE.IcosahedronGeometry(1, 1);
@@ -15,7 +16,7 @@ const tint = new THREE.Color();
 
 function instances(group, geometry, pieces) {
   if (!pieces.length) return;
-  const mesh = new THREE.InstancedMesh(geometry, litMaterial({ grid: false }), pieces.length);
+  const mesh = new THREE.InstancedMesh(geometry, instancePaint, pieces.length);
   pieces.forEach(([x, y, z, w, h, d, color], i) => {
     dummy.position.set(x, y, z);
     dummy.scale.set(w, h, d);
@@ -34,18 +35,36 @@ function house(builder, x, z, side, rng) {
   const w = rng.range(4.7, 7.1), d = rng.range(4.1, 6), h = rng.range(2.8, 4.6);
   const wall = rng.pick([0xe8d9ae, 0xcbd8bd, 0xe0c69e]), roof = rng.pick(roofColors);
   builder.box(x, h/2-.15, z, w, h+.3, d, { color: wall });
+  const left = x-w/2, right = x+w/2;
+  for (const sideX of [-1, 1]) {
+    const gx = x + sideX*w/2;
+    const gable = [[gx,h,z-d/2],[gx,h+1.08,z],[gx,h,z+d/2],[gx,h,z+d/2]];
+    if (sideX<0) gable.reverse();
+    builder.quad(...gable,{color:wall});
+    const end = gx+sideX*.03;
+    builder.box(end,h*.57,z,.08,.93,.73,{color:0x718881});
+    builder.box(end+sideX*.05,h*.57,z,.06,.97,.075,{color:wall});
+  }
   for (const slope of [-1, 1]) {
-    const a = x-w/2-.38, b = x+w/2+.38, edge = z+slope*(d/2+.42);
-    const points = [[a,h,edge],[b,h,edge],[b,h+1.1,z],[a,h+1.1,z]];
+    const edge = z+slope*(d/2+.42);
+    const points = [[left-.38,h,edge],[right+.38,h,edge],[right+.38,h+1.1,z],[left-.38,h+1.1,z]];
     if (slope < 0) points.reverse();
     builder.quad(...points, { color: roof });
+    builder.box(x,h-.055,edge,w+.82,.13,.14,{color:0x655b52});
+    for (let tile=1;tile<6;tile++) {
+      const t = tile/6;
+      builder.box(x,h+1.1*t+.005,edge+(z-edge)*t,w+.74,.035,.05,{color:roof});
+    }
   }
-  builder.box(x, h + 1.05, z, w+.85, .15, .21, { color: 0x625c53 });
+  builder.box(x, h + 1.08, z, w+.85, .15, .21, { color: 0x625c53 });
   const front = z-side*(d/2+.03);
   builder.box(x-.65, 1, front, 1.1, 2.05, .08, { color: 0x76664f });
   builder.box(x+1.25, 1.6, front, 1.23, 1.1, .09, { color: 0x607d78 });
   builder.box(x+1.25, 1.6, front-side*.05, .09, 1.1, .05, { color: wall });
   builder.box(x, .13, front-side*.45, w, .26, .85, { color: 0xb7a98b });
+  builder.box(x-.65,2.13,front-side*.18,1.56,.15,.48,{color:0x977861});
+  builder.box(x-.65,1.87,front-side*.06,.92,.18,.07,{color:0xa4523d});
+  for (const post of [-1,1]) builder.box(x-.65+post*.59,1.04,front-side*.07,.105,1.9,.06,{color:0xa4523d});
 }
 
 function waymark(group, builder, x, text, sub) {
@@ -55,6 +74,70 @@ function waymark(group, builder, x, text, sub) {
   const plaque = sign(group, x-.075, y+1.9, z, 2.6, .9, text,
     { bg: '#f3dfad', ink: '#435d52', sub });
   plaque.rotation.y = -Math.PI/2;
+}
+
+// Each near-field tuft is crossed blades and bent seed heads in the same vertex-colour batch.
+function riceTuft(geo, x, z, rng) {
+  const h = rng.range(.35,.63), ground = -.22;
+  for (const dir of [-1,1]) {
+    const tip = [x+dir*.17,ground+h,z+.09];
+    geo.quad([x-.045,ground,z],[x+.045,ground,z],tip,tip,{color:0x849844});
+    geo.quad(tip,tip,[x+.045,ground,z],[x-.045,ground,z],{color:0x849844});
+    geo.box(x+dir*.19,ground+h-.045,z+.09,.06,.135,.055,{color:0xcbb452});
+  }
+}
+
+function banyan(geo, crowns, x, z) {
+  const limb = (a, b, bottom, top) => {
+    const start = new THREE.Vector3(...a), end = new THREE.Vector3(...b);
+    const delta = end.clone().sub(start);
+    const orientation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), delta.clone().normalize());
+    const mesh = new THREE.CylinderGeometry(top, bottom, delta.length(), 8);
+    geo.add(mesh,{ color:0x856e51, m:new THREE.Matrix4().compose(start.lerp(end,.5),orientation,new THREE.Vector3(1,1,1)) });
+    mesh.dispose();
+  };
+  geo.cylinder(x,-.3,z,.77,.54,3.75,{color:0x836e51,seg:12});
+  for (let i=0; i<8; i++) {
+    const a=i*2.4, r=2.4+i%3*.6;
+    const dx=Math.cos(a), dz=Math.sin(a), top=4.8+(i%3)*.56;
+    limb([x+dx*.32,1.5+i%2*.6,z+dz*.32],[x+dx*r,top,z+dz*r],.40,.16);
+    limb([x,1.05,z],[x+dx*1.45,-.18,z+dz*1.45],.3,.09);
+    crowns.push([x+dx*r,top+.72,z+dz*r,2.5,1.54,2.45,i%2 ? 0x668753 : 0x7d9259]);
+    if (i%2===0) {
+      geo.cylinder(x+dx*r,.04,z+dz*r,.11,.075,top,{color:0x907c57,seg:6});
+      geo.cylinder(x+dx*(r+.55),2.2,z+dz*(r+.55),.028,.037,2.8,{color:0x937c52,seg:5});
+    }
+  }
+  crowns.push([x,6.9,z,3.3,1.5,3.2,0x7d995e]);
+}
+
+function villagePavilion(group, geo) {
+  const x = roadEnd+7, z = centerZ(roadEnd)+2;
+  geo.box(x,-.07,z,5,.42,8,{color:0xaa9f83});
+  geo.box(x-2.8,-.03,z,.85,.22,5.0,{color:0xc8b999});
+  for (const dx of [-1.8,1.8]) for (const dz of [-3.2,3.2]) {
+    geo.box(x+dx,.38,z+dz,.62,.6,.62,{color:0xa79c86});
+    geo.cylinder(x+dx,.64,z+dz,.22,.215,2.62,{color:0xa5664c,seg:10});
+    geo.box(x+dx,3.22,z+dz,.69,.26,.62,{color:0x93634d});
+  }
+  geo.box(x,3.43,z,4.98,.4,8.56,{color:0x825843});
+  for (const side of [-1,1]) {
+    const points = [[x+side*3,3.58,z-4.7],[x+side*3,3.58,z+4.7],[x,4.88,z+4.3],[x,4.88,z-4.3]];
+    if (side>0) points.reverse();
+    geo.quad(...points,{color:0x64736d});
+    geo.box(x+side*3,3.56,z,.16,.16,9.6,{color:0x677b74});
+  }
+  geo.box(x,4.9,z,.26,.18,9.0,{color:0x61746e});
+  for (const dz of [-2.7,2.7]) {
+    geo.cylinder(x-2.08,2.46,z+dz,.33,.28,.55,{color:0xc36a48,seg:12});
+    geo.box(x-2.08,3.17,z+dz,.04,.32,.04,{color:0x72523c});
+    geo.box(x-2.08,2.33,z+dz,.06,.23,.06,{color:0xc79646});
+  }
+  for (const dz of [-2.1,2.1]) {
+    geo.box(x,.64,z+dz,2.5,.18,.49,{color:0xb48b61});
+    for (const dx of [-.9,.9]) geo.box(x+dx,.35,z+dz,.23,.57,.36,{color:0x8c7861});
+  }
+  sign(group,x-2.52,3.42,z,2.28,.58,'榕下歇脚亭',{bg:'#685743',ink:'#f0da99'}).rotation.y=-Math.PI/2;
 }
 
 function buildChunk(start, end) {
@@ -67,9 +150,9 @@ function buildChunk(start, end) {
   function tree(x, z, scale) {
     const h = scale * 2.1;
     poles.push([x,h/2-.18,z,.22*scale,h,.22*scale,0x83705a]);
-    for (let k=0; k<3; k++) {
-      const a = k*2.1+1.4;
-      crowns.push([x+Math.sin(a)*scale*.65,h+scale*(k===0 ? 1.1 : .6),z+Math.cos(a)*scale*.65,
+    for (let k=0; k<5; k++) {
+      const a = k*2.4+1.4;
+      crowns.push([x+Math.sin(a)*scale*.94,h+scale*(k===0 ? 1.4 : .37+(k%3)*.3),z+Math.cos(a)*scale*.94,
         1.35*scale,1.18*scale,1.23*scale,rng.pick([0x79965a,0x678852,0x8aa463])]);
     }
   }
@@ -86,6 +169,14 @@ function buildChunk(start, end) {
         : ribbon(x,nx,-hi,-lo,-hi1,-lo1,y,y1,color);
       band(width,width+.75,width1,width1+.75,h,h1,river ? 0xb8b2a5 : 0xbda987);
       if (river) {
+        if (x%8===0) {
+          geo.box(x,h-.38,centerZ(x)+side*width,.82,.78,.48,{color:0xada58e});
+          geo.box(x,-.07,centerZ(x)+side*(width-.3),.9,2.22,.82,{color:0x9c9987});
+        }
+        const deckZ = centerZ(x)+side*(width+.75), deckNext = centerZ(nx)+side*(width1+.75);
+        const fascia = [[x,h,deckZ],[nx,h1,deckNext],[nx,h1-.33,deckNext],[x,h-.33,deckZ]];
+        if (side > 0) fascia.reverse();
+        geo.quad(...fascia,{color:0xb1a991});
         band(0,220,0,220,-.88,-.88,0x7baaa3);
         if (x%8===0) {
           geo.box(x,h+.48,centerZ(x)+side*(width+.22),.35,1.02,.38,{ color:0xc1baa3 });
@@ -97,7 +188,12 @@ function buildChunk(start, end) {
         geo.quad([nx,h1+.70,b],[nx,h1+.85,b],[x,h+.85,a],[x,h+.70,a],{ color:0x998d78 });
         continue;
       }
-      band(width+.75,8,width1+.75,8,h,h1,0x9ca36a);
+      // Grade the outer shoulder down to the paddy rather than leaving a floating edge.
+      function bankPoint(px, lateral, y) { return [px,y,centerZ(px)+side*lateral]; }
+      const bank = [bankPoint(x,width+.75,h),bankPoint(x,8,-.22),
+        bankPoint(nx,8,-.22),bankPoint(nx,width1+.75,h1)];
+      if (side < 0) bank.reverse();
+      geo.quad(...bank,{color:0x9ca36a});
       for (let row=0; row<4; row++) {
         const lo = 8 + 19*row, hi = lo+19;
         const parcel = Math.floor((x+13*row)/42);
@@ -115,6 +211,29 @@ function buildChunk(start, end) {
     }
     if (x<200 && x%12<4) ribbon(x,nx,-.075,.075,-.075,.075,h+.012,h1+.012,0xe7dcb7);
     if (river && x%4===0) ribbon(x,x+.12,-width,width,-width,width,h+.012,h+.012,0x9c9686);
+  }
+  for (let x=start+.6;x<end;x+=1.3) {
+    if (x>=894 && x<950) {
+      for (const side of [-1,1]) {
+        const z = centerZ(x)+side*rng.range(8,38);
+        geo.floor(x,z,x+rng.range(.25,1.3),z+.08,-.868,{color:0xa3c4b1});
+      }
+      continue;
+    }
+    if (x<214 || x>1050) continue;
+    for (const side of [-1,1]) {
+      const z = centerZ(x);
+      for (let row=0;row<7;row++) {
+        riceTuft(geo,x+rng.range(-.26,.26),z+side*(8.8+row*1.65+rng.range(-.14,.14)),rng);
+      }
+    }
+  }
+  for (let x=start+28; x<end; x+=55) {
+    if (x<190 || x>850) continue;
+    const z = centerZ(x)+5.1;
+    // Split bamboo field fence with two staggered rails.
+    for (let j=0;j<4;j++) geo.cylinder(x+j*1.55,-.14,z,.063,.052,.90,{color:0xa78c52,seg:6});
+    for (const y of [.30,.61]) geo.box(x+2.33,y,z,4.8,.064,.07,{color:0xc1a572});
   }
   for (let x=start+8; x<end-1; x+=14) {
     if (x>860 && x<977) continue;
@@ -145,6 +264,17 @@ function buildChunk(start, end) {
     for (const side of [-1,1]) crowns.push([x,-7,centerZ(x)+side*rng.range(115,170),
       rng.range(46,85),rng.range(18,36),rng.range(27,48),rng.pick([0x829b85,0x91a78c])]);
   }
+  for (const bankX of [894,950]) {
+    if (bankX>=start && bankX<end) {
+      const z = centerZ(bankX);
+      for (const side of [-1,1]) {
+        const near = z+side*8, far = z+side*225;
+        const edge = [[bankX,-.22,near],[bankX,-.22,far],[bankX,-.91,far],[bankX,-.91,near]];
+        if ((bankX===950) === (side>0)) edge.reverse();
+        geo.quad(...edge,{color:0xa49c78});
+      }
+    }
+  }
   if (start<=138 && end>138) {
     const z = centerZ(138);
     for (const side of [-1,1]) {
@@ -159,7 +289,12 @@ function buildChunk(start, end) {
     if (x>=start && x<end) waymark(group,geo,x,title,sub);
   }
   if (start<roadEnd && end===roadEnd) {
-    tree(roadEnd+4,centerZ(roadEnd)-4,3.5);
+    villagePavilion(group,geo);
+    banyan(geo,crowns,roadEnd+7,centerZ(roadEnd)-5.9);
+    for (let i=0; i<6; i++) {
+      crowns.push([roadEnd+85+i%2*36,-8,centerZ(roadEnd)-118+i*46,
+        31+i%2*12,22+i%3*7,36, i%2 ? 0x92a98b : 0x869c81]);
+    }
     geo.box(roadEnd+29,-.42,centerZ(roadEnd),58,.36,185,{color:0xa3b58c});
   }
   const mesh = geo.mesh(paint);
@@ -170,11 +305,44 @@ function buildChunk(start, end) {
   return group;
 }
 
+function morningSky() {
+  const material = new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false,
+    uniforms: { horizon: { value: new THREE.Color(0xffe8b8) }, zenith: { value: new THREE.Color(0x94c9d2) } },
+    vertexShader: `
+      varying vec3 direction;
+      void main() {
+        direction = position;
+        vec4 clip = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        gl_Position = clip.xyww;
+      }`,
+    fragmentShader: `
+      varying vec3 direction;
+      uniform vec3 horizon, zenith;
+      void main() {
+        vec3 dir = normalize(direction);
+        float height = smoothstep(-.035, .46, dir.y);
+        vec3 daylight = mix(horizon, zenith, height);
+        float sun = max(0.0, dot(dir, normalize(vec3(.95,.21,-.38))));
+        daylight += vec3(.4,.22,.06)*pow(sun,24.) + vec3(1.6,1.2,.8)*smoothstep(.9996,.99994,sun);
+        gl_FragColor = vec4(daylight,1.);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(55,32,16),material);
+  sky.renderOrder = -100;
+  sky.frustumCulled = false;
+  return sky;
+}
+
 export function createCountryside() {
   const root = new THREE.Group();
   const chunks = new Map();
+  const sky = morningSky();
+  root.add(sky);
   // The street's base slab ends at x=52. Generate only nearby stretches as needed.
-  return { root, update(x) {
+  return { root, sky, update(x) {
     const current = Math.floor((x-52)/100);
     for (let i=Math.max(0,current-2); i<=current+2 && 52+i*100<roadEnd; i++) {
       if (chunks.has(i)) continue;
