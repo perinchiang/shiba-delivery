@@ -15,11 +15,9 @@
         <div id="keys" class="keys">W/S 油门与刹车　 A/D 转向　 E 互动</div>
         <button id="look" type="button" aria-pressed="false"><kbd>V</kbd><span>近看阿柴</span></button>
         <span class="photo-hint">左右拖动看车身</span>
-        <div class="pad" aria-label="移动">
-          <button data-move="up" aria-label="向街里走">↑</button>
-          <button data-move="left" aria-label="向左">←</button>
-          <button data-move="down" aria-label="向街外走">↓</button>
-          <button data-move="right" aria-label="向右">→</button>
+        <div id="joystick" role="group" aria-label="移动摇杆" aria-disabled="true">
+          <span class="stick-guides" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span class="stick-thumb" aria-hidden="true"></span>
         </div>
         <div class="interaction">
           <aside id="dialogue" hidden aria-live="polite"><strong id="speaker"></strong><p id="line"></p></aside>

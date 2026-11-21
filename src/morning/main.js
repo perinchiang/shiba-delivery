@@ -75,20 +75,49 @@ async function run(renderer) {
     left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
     up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'],
   });
-  const pad = [...document.querySelectorAll('[data-move]')];
-  for (const button of pad) {
-    const action = button.dataset.move;
-    button.addEventListener('pointerdown', event => {
-      event.preventDefault();
-      button.setPointerCapture(event.pointerId);
-      input.setVirtual(action, 1);
-    });
-    const release = () => input.setVirtual(action, 0);
-    button.addEventListener('lostpointercapture', release);
-    button.addEventListener('pointercancel', release);
-    button.addEventListener('pointerup', release);
+  const stick = $('joystick'), thumb = stick.querySelector('.stick-thumb');
+  let stickPointer = null;
+  function releaseStick() {
+    if (stickPointer === null) return;
+    const id = stickPointer;
+    stickPointer = null;
+    if (stick.hasPointerCapture(id)) stick.releasePointerCapture(id);
+    thumb.style.transform = '';
+    for (const action of ['up', 'down', 'left', 'right']) input.setVirtual(action, 0);
   }
-  window.addEventListener('blur', () => input.clearVirtual());
+  function dragStick(event) {
+    if (event.pointerId !== stickPointer) return;
+    const rect = stick.getBoundingClientRect();
+    const radius = (rect.width - thumb.offsetWidth) / 2;
+    if (radius <= 0) return releaseStick();
+    const x = (event.clientX - rect.left - rect.width / 2) / radius;
+    const y = (event.clientY - rect.top - rect.height / 2) / radius;
+    const distance = Math.hypot(x, y);
+    const limit = Math.max(1, distance);
+    thumb.style.transform = `translate(${radius * x / limit}px, ${radius * y / limit}px)`;
+    // A small central dead zone lets the thumb rest without creeping.
+    const power = clamp((distance - .14) / .86, 0, 1) / (distance || 1);
+    input.setVirtual('left', Math.max(0, -x * power));
+    input.setVirtual('right', Math.max(0, x * power));
+    input.setVirtual('up', Math.max(0, -y * power));
+    input.setVirtual('down', Math.max(0, y * power));
+  }
+  stick.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || stickPointer !== null || stick.getAttribute('aria-disabled') === 'true') return;
+    event.preventDefault();
+    stickPointer = event.pointerId;
+    stick.setPointerCapture(stickPointer);
+    dragStick(event);
+  });
+  stick.addEventListener('pointermove', dragStick);
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    stick.addEventListener(type, event => { if (stickPointer === event.pointerId) releaseStick(); });
+  }
+  window.addEventListener('blur', releaseStick);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) releaseStick(); });
+  for (const type of ['contextmenu', 'selectstart']) {
+    $('game').addEventListener(type, event => event.preventDefault());
+  }
   let audio;
   function bell(notes) {
     if (!window.AudioContext) return;
@@ -143,6 +172,7 @@ async function run(renderer) {
     street.pharmacyDoor.rotation.y = scooter.lid.rotation.z = 0;
     setCloseUp(false);
     view = '';
+    releaseStick();
     input.clearVirtual();
     $('receipt').hidden = true;
     $('announcement').textContent = '阿柴快送。第一单，便民药店取件。';
@@ -176,6 +206,7 @@ async function run(renderer) {
     if (expanded === phoneExpanded || (expanded && (state.sequence || state.dialog || state.braking))) return;
     phoneExpanded = expanded;
     if (expanded) state.speed = 0;
+    releaseStick();
     input.clearVirtual();
     phone.dataset.expanded = String(expanded);
     phone.setAttribute('role', expanded ? 'dialog' : 'region');
@@ -274,6 +305,24 @@ async function run(renderer) {
     syncHUD();
   }
   $('action').addEventListener('click', perform);
+  // Some touch browsers only synthesize a click for the first finger. Let the
+  // other thumb tap a control while the stick still owns the first pointer.
+  for (const button of [$('action'), phoneToggle]) {
+    let secondaryTap = false;
+    button.addEventListener('pointerdown', () => { secondaryTap = false; });
+    button.addEventListener('pointerup', event => {
+      if (event.pointerType !== 'touch' || event.isPrimary || button.disabled) return;
+      if (!button.contains(document.elementFromPoint(event.clientX, event.clientY))) return;
+      secondaryTap = true;
+      button.click();
+    });
+    button.addEventListener('click', event => {
+      if (secondaryTap && event.detail > 0) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
+  }
   window.addEventListener('keydown', e => {
     if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.code === 'KeyQ' || (e.code === 'Tab' && !phoneExpanded && !e.shiftKey && e.target.tagName !== 'BUTTON')) {
@@ -367,14 +416,13 @@ async function run(renderer) {
     }
     if (state.mode !== lastMode) {
       write('keys', riding ? 'W/S 油门与刹车　 A/D 转向　 E 互动' : '方向键 / WASD 步行　 E 互动');
-      const labels = riding ? { up: '油门', down: '刹车与倒车', left: '向左转', right: '向右转' }
-        : { up: '往里走', down: '往外走', left: '往左走', right: '往右走' };
-      for (const b of pad) b.setAttribute('aria-label', labels[b.dataset.move]);
+      stick.setAttribute('aria-label', riding ? '骑行摇杆，上推加速，下拉刹车或倒车，左右转向' : '步行摇杆，向任意方向拖动');
       lastMode = state.mode;
     }
-    for (const b of pad) {
-      const disabled = offer || done || !!state.dialog || !!state.sequence || state.braking || phoneExpanded;
-      if (b.disabled !== disabled) b.disabled = disabled;
+    const stickDisabled = offer || done || !!state.dialog || !!state.sequence || state.braking || phoneExpanded;
+    if (stick.getAttribute('aria-disabled') !== String(stickDisabled)) {
+      stick.setAttribute('aria-disabled', String(stickDisabled));
+      if (stickDisabled) releaseStick();
     }
     marker.visible = !offer && !done && !state.dialog && !state.sequence;
     const point = task.point;
@@ -412,7 +460,7 @@ async function run(renderer) {
       const throttle = state.braking ? 0 : -dz;
       // Let the boot fold the stand and return to the peg before the wheels move.
       if (throttle) state.stand = approach(state.stand, 0, dt / .28);
-      const targetSpeed = state.stand ? 0 : throttle > 0 ? 5.6 : throttle < 0 ? -1.9 : 0;
+      const targetSpeed = state.stand ? 0 : throttle * (throttle >= 0 ? 5.6 : 1.9);
       const deceleration = state.braking || throttle * state.speed < 0 ? 12 : (throttle ? 6.7 : 4.4);
       state.speed = approach(state.speed, targetSpeed, deceleration * dt);
       state.steer = damp(state.steer, state.braking ? 0 : -dx * 0.31, 12, dt);
@@ -433,7 +481,7 @@ async function run(renderer) {
         beginSequence(state, 'park');
       }
     } else if (dx || dz) {
-      const length = Math.hypot(dx, dz), step = 2.45 * dt / length;
+      const length = Math.hypot(dx, dz), step = 2.45 * dt / Math.max(1, length);
       const inside = state.mode === 'shop';
       const oldX = state.x, oldZ = state.z;
       state.x = clamp(state.x + dx * step, inside ? -2.75 : -8.3, inside ? 2.75 : 37.7);
@@ -548,7 +596,7 @@ async function run(renderer) {
     renderer.setSize(w, h, false);
     view = '';
   }
-  window.addEventListener('resize', resize);
+  window.addEventListener('resize', () => { releaseStick(); resize(); });
   reset();
   resize();
   let previous;

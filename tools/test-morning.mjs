@@ -169,6 +169,29 @@ try {
   assert.equal(await phone.isVisible(), false);
   assert.deepEqual(errors, []);
   console.log('PASS: phone, steering, braking, door/re-entry, pickup, stow, retrieve, payout and replay.');
+  await page.close();
+
+  const mobile = await browser.newPage({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true });
+  await mobile.goto(url.href);
+  await mobile.locator('#phone-toggle').tap();
+  await mobile.locator('#phone-main').tap();
+  const stick = await mobile.locator('#joystick').boundingBox();
+  const button = await mobile.locator('#action').boundingBox();
+  const leftThumb = { id: 1, x: stick.x + stick.width / 2, y: stick.y + stick.height * .18 };
+  const rightThumb = { id: 2, x: button.x + button.width / 2, y: button.y + button.height / 2 };
+  const client = await mobile.context().newCDPSession(mobile);
+  const touch = (type, touchPoints) => client.send('Input.dispatchTouchEvent', { type, touchPoints });
+  await touch('touchStart', [leftThumb]);
+  await mobile.getByRole('button', { name: '减速停车' }).waitFor();
+  // End only the second contact. Chrome can omit its native click while the
+  // first finger is steering; the action must still brake and dismount once.
+  await touch('touchStart', [leftThumb, rightThumb]);
+  await touch('touchEnd', [rightThumb]);
+  await mobile.locator('#stage[aria-busy="true"]').waitFor();
+  assert.equal(await mobile.locator('.stick-thumb').evaluate(node => node.style.transform), '');
+  await touch('touchEnd', [leftThumb]);
+  await mobile.getByRole('button', { name: '骑上小摩托' }).waitFor();
+  console.log('PASS: steering and tapping the action with two thumbs.');
 } finally {
   await browser.close();
 }
