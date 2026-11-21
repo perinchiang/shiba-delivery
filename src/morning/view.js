@@ -125,15 +125,17 @@ export function createView(renderer, state, world) {
       const heights = { portrait: 3.30, intro: 4.8, door: 4.05, stand: 2.95, box: 3.6, shop: 5.56, street: 6.15 };
       const widths = { portrait: 3.2, intro: 4.0, door: 3.25, stand: 3.00, box: 3.2, shop: 7.1, street: 5.2 };
       if (fieldInspection) {
-        chase.fov = shopReview.fov;
+        const halfAngle = THREE.MathUtils.degToRad(shopReview.fov / 2);
+        chase.fov = shopReview.fitWidth && aspect < 1
+          ? THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(halfAngle) / aspect))
+          : shopReview.fov;
         chase.far = 245;
         chase.updateProjectionMatrix();
       } else if (nextView !== 'chase') {
         const detailScale = nextView === 'portrait' || nextView === 'box' ? courierScale : 1;
         const h = nextView === 'inspection' ? shopReview.height : heights[nextView];
         const w = nextView === 'inspection' ? shopReview.width : widths[nextView];
-        const widthFit = shopReview?.fitWidth ? w / aspect : Math.min(11.4, w / aspect);
-        const frameHeight = Math.max(h, widthFit) * detailScale;
+        const frameHeight = Math.max(h, Math.min(11.4, w / aspect)) * detailScale;
         camera.left = -frameHeight * aspect / 2; camera.right = -camera.left;
         camera.top = frameHeight / 2; camera.bottom = -camera.top;
         camera.updateProjectionMatrix();
