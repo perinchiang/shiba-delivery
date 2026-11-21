@@ -1,5 +1,5 @@
 import { approach, clamp, damp, dampAngle, lerp, smoothstep } from '../core/mathx.js';
-import { centerZ, constrainToRoad, roadHeight, roadYaw } from './country-route.js';
+import { centerZ, crossing, constrainToRoad, roadHeight, roadYaw } from './country-route.js';
 
 export const trialLimitsKmh = [50, 32.4, 25, 35];
 export const maxTrialSpeed = trialLimitsKmh[0] / 3.6;
@@ -53,9 +53,12 @@ export function stepFreeRide(state, dx, dz, wheelbase, dt) {
   const x = state.x + Math.sin(state.bikeYaw)*state.speed*dt;
   const z = state.z + Math.cos(state.bikeYaw)*state.speed*dt;
   const bounded = constrainToRoad(x, z, false);
-  if (Math.abs(x-bounded.x) > .0001) state.speed = 0;
-  else if (Math.abs(z-bounded.z) > .0001) {
-    const tangent = roadYaw(x);
+  const hitX = Math.abs(x-bounded.x) > .0001, hitZ = Math.abs(z-bounded.z) > .0001;
+  const sideWall = hitX && Math.abs(bounded.x-crossing.x) <= crossing.half;
+  const endOfArm = hitZ && Math.abs(bounded.x-crossing.x) <= crossing.half && Math.abs(bounded.z-crossing.z) > crossing.arm-1;
+  if (endOfArm || (hitX && !sideWall)) state.speed = 0;
+  else if (hitX || hitZ) {
+    const tangent = sideWall ? 0 : roadYaw(x);
     const target = Math.cos(tangent-state.bikeYaw)>=0 ? tangent : tangent+Math.PI;
     state.bikeYaw = dampAngle(state.bikeYaw, target, 4.8, dt);
     state.speed *= Math.exp(-2.8*dt);
@@ -73,7 +76,9 @@ export function countryCamera(camera, state, yaw, focus) {
   const elevation = roadHeight(state.x);
   // Keep the boom on the road side of the village houses and above bridge approaches.
   const offset = clamp(z - centerZ(x), -5.5, 5.5);
-  camera.position.set(x,Math.max(roadHeight(x)+1.45, elevation+3.05),centerZ(x)+offset);
+  const boom = Math.abs(state.x - crossing.x) < 29
+    ? constrainToRoad(x, z, true) : { x, z: centerZ(x)+offset };
+  camera.position.set(boom.x, Math.max(roadHeight(x)+1.45, elevation+3.05), boom.z);
   const lead = 1.6+2.5*speed;
   focus.set(state.x+Math.sin(yaw)*lead, elevation+1.28, state.z+Math.cos(yaw)*lead);
   camera.lookAt(focus);

@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { GeoBuilder } from '../core/geo.js';
 import { rngFrom } from '../core/rng.js';
 import { litMaterial } from '../core/materials.js';
-import { bridgeJointXs, centerZ, halfWidth, roadEnd, roadHeight } from './country-route.js';
+import { bridgeJointXs, crossing, centerZ, halfWidth, roadEnd, roadHeight } from './country-route.js';
+import { createCityCrossing } from './city-crossing.js';
 import { sign } from './shapes.js';
 import { addPaddies, fieldStart, fieldEnd, fieldWindTime } from './paddy.js';
 import { addGravelVerge, addWornSurface } from './road-verge.js';
@@ -288,7 +289,7 @@ function buildChunk(start, end) {
       }
       band(84,225,84,225,-.24,-.24,0xa3b58c);
     }
-    if (x<200 && x%12<4) ribbon(x,nx,-.075,.075,-.075,.075,h+.012,h1+.012,0xe7dcb7);
+    if (x<200 && Math.abs(x-crossing.x)>21 && x%12<4) ribbon(x,nx,-.075,.075,-.075,.075,h+.012,h1+.012,0xe7dcb7);
 
   }
   for (let x=start+.6;x<end;x+=1.3) {
@@ -317,7 +318,7 @@ function buildChunk(start, end) {
     for (const y of [.30,.61]) geo.box(x+2.33,y,z,4.8,.064,.07,{color:0xc1a572});
   }
   for (let x=start+8; x<end-1; x+=14) {
-    if (x>860 && x<977) continue;
+    if ((x>860 && x<977) || Math.abs(x-crossing.x)<36) continue;
     const z = centerZ(x), side = rng.sign();
     if (x<204 || x>1070) {
       house(geo,x,z+side*rng.range(8.4,13.8),side,rng);
@@ -328,11 +329,11 @@ function buildChunk(start, end) {
   }
   // Chunk boundaries share pole locations; each span belongs to its western end.
   for (let x=Math.ceil(start/36)*36; x<end; x+=36) {
-    if (x>=880 && x<970) continue;
+    if ((x>=880 && x<970) || Math.abs(x-crossing.x)<27) continue;
     const z=centerZ(x)-6;
     poles.push([x,2.9,z,.12,6.2,.12,0x8b8173]);
     geo.box(x,5.65,z,.23,.19,1.8,{ color:0x665b50 });
-    if (x+36>=roadEnd || (x+36>=880 && x+36<970)) continue;
+    if (Math.abs(x+36-crossing.x)<27 || x+36>=roadEnd || (x+36>=880 && x+36<970)) continue;
     for (const offset of [-.66,.66]) {
       for (let k=0;k<6;k++) {
         function wire(t) { return [x+t*36,5.8-1.8*t*(1-t),z+(centerZ(x+36)-centerZ(x))*t+offset]; }
@@ -378,6 +379,7 @@ function buildChunk(start, end) {
     }
     geo.box(roadEnd+29,-.42,centerZ(roadEnd),58,.36,185,{color:0xa3b58c});
   }
+  if (start <= crossing.x && end > crossing.x) group.userData.updateSignals = createCityCrossing(group);
   addPaddies(group,geo,start,end);
   addStoneBridge(geo,start,end);
   addGravelVerge(geo,start,end);
@@ -447,6 +449,9 @@ export function createCountryside() {
       chunks.set(i,part);
       root.add(part);
     }
-    for (const [i,part] of chunks) part.visible = Math.abs(i-current)<=2;
+    for (const [i,part] of chunks) {
+      part.visible = Math.abs(i-current)<=2;
+      if (part.visible) part.userData.updateSignals?.(time);
+    }
   } };
 }

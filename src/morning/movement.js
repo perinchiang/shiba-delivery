@@ -25,6 +25,8 @@ export function createMovement(state, { street, scooter }, input) {
     const throttle = state.braking ? 0 : -dz;
     // Let the boot fold the stand and return to the peg before the wheels move.
     if (throttle) state.stand = approach(state.stand, 0, dt / .28);
+    state.throttle = Math.max(0, throttle);
+    state.brakePressure = state.braking ? 1 : throttle < 0 && state.speed > 0 ? -throttle : 0;
     const targetSpeed = state.stand ? 0 : throttle * (throttle >= 0 ? 5.6 : 1.9);
     const deceleration = state.braking || throttle * state.speed < 0 ? 12 : (throttle ? 6.7 : 4.4);
     state.speed = approach(state.speed, targetSpeed, deceleration * dt);

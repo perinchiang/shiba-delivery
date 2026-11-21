@@ -12,14 +12,15 @@ const bakeryFront = {
   order: buns, mode: 'walk', phase: 'pickup', x: bunFacade.x + 1.55, z: .16, ...parked(buns.door.x + 1),
 };
 
-function onCountryRoad(x) {
-  const z = centerZ(x), yaw = roadYaw(x);
+function onCountryRoad(x, laneOffset = 0) {
+  const z = centerZ(x) + laneOffset, yaw = roadYaw(x);
   return { phase: 'free', mode: 'ride', x, z, bikeX: x, bikeZ: z, yaw, bikeYaw: yaw };
 }
 
 // State overrides are applied to a fresh delivery. Optional camera presets are cleared on movement.
 export const sceneJumps = {
   street: { title: '老街起点' },
+  crossing: { title: '城市十字路口', state: onCountryRoad(70, 2.2) },
   riceBend: { title: '稻浪到石桥', state: onCountryRoad(792) },
   riceClose: {
     title: '田埂看稻穗', state: onCountryRoad(835),
@@ -38,7 +39,7 @@ export const sceneJumps = {
 };
 
 for (const { id, name, x } of landmarks.slice(1)) {
-  sceneJumps[id] = { title: name, state: onCountryRoad(x) };
+  sceneJumps[id] ??= { title: name, state: onCountryRoad(x) };
 }
 
 export function setupSceneDebug(reset, renderer, state) {

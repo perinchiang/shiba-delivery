@@ -425,6 +425,11 @@ export function createScooter(asset) {
   root.scale.setScalar(courierScale);
   return { root, mount, cargo, lid: node('Cargo_Lid'), wheelbase: frontAxle.z - rearAxle.z,
     frontZ: frontAxle.z * courierScale, rearZ: rearAxle.z * courierScale,
+    rearContact(out) {
+      rear.getWorldPosition(out);
+      out.y -= rearAxle.y * courierScale - .023;
+      return out;
+    },
     setSuspension(frontTravel, rearTravel) {
       front.position.y = frontRestY + frontTravel / courierScale;
       frontFender.position.y = fenderRestY + frontTravel / courierScale;

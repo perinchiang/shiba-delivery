@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { frameRide, resizeRideCamera } from './ride-camera.js';
+import { createTireEffects } from './tire-effects.js';
 import { createRideMotion } from './ride-motion.js';
 import { countryCamera, maxTrialSpeed } from './free-ride.js';
-import { roadHeight } from './country-route.js';
+import { constrainToRoad, crossing, halfWidth, roadHeight } from './country-route.js';
 import { $ } from './dom.js';
 import { clamp, damp, dampAngle } from '../core/mathx.js';
 import { isBoxSequence, isStandSequence, positionParcel } from './sequence.js';
@@ -13,6 +14,7 @@ export function createView(renderer, state, world) {
   const roomList = Object.values(rooms);
   const courierScale = scooter.root.scale.y;
   const suspension = createRideMotion(scooter.frontZ, scooter.rearZ);
+  const tireEffects = createTireEffects(scene, scooter);
   let headTurn = .75, shopReview;
   const focus = new THREE.Vector3();
   const cameraUp = new THREE.Vector3(0, 1, 0);
@@ -52,6 +54,7 @@ export function createView(renderer, state, world) {
     setCloseUp(false);
     shiba.resetTail();
     suspension.reset();
+    tireEffects.reset();
     shiba.root.rotation.y = scooter.root.rotation.y = state.yaw;
     scooter.lid.rotation.z = 0;
     for (const door of street.doors.values()) door.rotation.y = 0;
@@ -81,7 +84,9 @@ export function createView(renderer, state, world) {
     scooter.root.visible = !inside;
     if (inside) room.update(time); else street.update(time);
     const ground = free ? roadHeight(state.x) : 0;
-    const height = ground + (!inside && !outsideTown && state.z < CURB_Z ? CURB_H : 0);
+    const cityCurb = free && Math.abs(state.x-crossing.x) < 28
+      && Math.abs(state.z-crossing.z) > halfWidth(state.x) && Math.abs(state.x-crossing.x) > crossing.half;
+    const height = ground + (cityCurb ? .115 : !inside && !outsideTown && state.z < CURB_Z ? CURB_H : 0);
     const facing = closeUp && !riding ? 0.45 : state.yaw;
     shiba.root.rotation.y = riding || handling || snap ? facing : dampAngle(shiba.root.rotation.y, facing, 15, dt);
     scooter.root.rotation.y = state.bikeYaw;
@@ -94,6 +99,7 @@ export function createView(renderer, state, world) {
     scooter.root.position.y += rideMotion?.height ?? 0;
     scooter.root.rotation.x = -Math.atan(grade*Math.sin(state.bikeYaw)) + (rideMotion?.pitch ?? 0);
     scooter.root.rotation.z += free && riding ? state.bank : 0;
+    tireEffects.update(state, dt);
     shiba.root.rotation.order = 'YXZ';
     shiba.root.rotation.x = riding ? scooter.root.rotation.x : 0;
     shiba.root.rotation.z = free && riding ? state.bank : 0;
@@ -171,6 +177,14 @@ export function createView(renderer, state, world) {
       }
       if (snap) focus.copy(desiredFocus); else focus.lerp(desiredFocus, 1 - Math.exp(-7 * dt));
       activeCamera.position.copy(focus).add(eyeOffset);
+      if (free && !fieldInspection && Math.abs(state.x-crossing.x)<29) {
+        // Keep the walking/parking view on the street side of the city facades.
+        const pos = activeCamera.position, safe = constrainToRoad(pos.x,pos.z,true);
+        if (Math.hypot(pos.x-safe.x,pos.z-safe.z) > .01) {
+          pos.y += Math.min(3,Math.hypot(pos.x-safe.x,pos.z-safe.z)*.45);
+          pos.x=safe.x; pos.z=safe.z;
+        }
+      }
       activeCamera.lookAt(focus);
     }
     // Dress the far side of a close-up; the shop row behind the lens can

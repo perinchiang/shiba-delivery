@@ -7,7 +7,7 @@ import { distance } from './delivery.js';
 import { rideMinZ } from './movement.js';
 import { formatPay, nextOrder } from './orders.js';
 import { drawRouteMap } from './route-map.js';
-import { distanceAlong, roadEnd, roadPlace } from './country-route.js';
+import { distanceAlong, roadEnd, roadPlace, routeDistances } from './country-route.js';
 import { drawStreetMap } from './street-map.js';
 
 export function createHUD(state, delivery, view, { shiba, marker }, { input, stick, releaseStick }, reset, rideAudio) {
@@ -243,7 +243,10 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     $('free-ride').hidden = !offer && !free;
     write('free-ride', free ? '回老街接单' : '自由骑行');
     $('ride-info').hidden = !free;
-    if (free) write('ride-distance', '距老街 ' + Math.round(distanceAlong(state.x)) + ' m　距村口 ' + Math.round(distanceAlong(roadEnd)-distanceAlong(state.x)) + ' m');
+    if (free) {
+      const metres = routeDistances(state.x, state.z);
+      write('ride-distance', '距老街 ' + Math.round(metres.town) + ' m　距村口 ' + Math.round(metres.village) + ' m');
+    }
     write('phase', { free: '骑行', offer: '待接单', pickup: state.order.pickupPhase, delivery: '去送达', done: '已签收' }[state.phase]);
     write('goal', free ? roadPlace(state.x) : done ? state.order.customer.name + '已签收' : task.name);
     const hint = offer || done || free ? '' : guidance(task, action);

@@ -1,4 +1,4 @@
-import { centerZ, roadEnd, landmarks } from './country-route.js';
+import { centerZ, crossing, roadEnd, landmarks } from './country-route.js';
 
 export function drawRouteMap(canvas, state) {
   const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -15,6 +15,10 @@ export function drawRouteMap(canvas, state) {
   const point = (x,z) => tall ? [w*.48 + (z-16)*across, h-origin-x*along] :
     [origin+x*along, h*.48 + (z-16)*across];
   ctx.beginPath();
+  ctx.moveTo(...point(crossing.x,crossing.z-crossing.arm));
+  ctx.lineTo(...point(crossing.x,crossing.z+crossing.arm));
+  ctx.strokeStyle='#859d94'; ctx.lineWidth=4; ctx.lineCap='round'; ctx.stroke();
+  ctx.beginPath();
   for (let x=0;x<roadEnd;x+=4) {
     const p=point(x,centerZ(x));
     if (x===0) ctx.moveTo(...p); else ctx.lineTo(...p);
@@ -24,9 +28,10 @@ export function drawRouteMap(canvas, state) {
   for (const stop of landmarks) {
     const [x,y]=point(stop.x,centerZ(stop.x));
     ctx.fillStyle='#355d50'; ctx.beginPath(); ctx.arc(x,y,4,0,2*Math.PI); ctx.fill();
-    ctx.textAlign=tall ? 'left' : 'center';
+    const junction = stop.id === 'crossing';
+    ctx.textAlign=tall ? junction ? 'right' : 'left' : 'center';
     ctx.strokeStyle='#faf5e5'; ctx.lineWidth=3;
-    const tx=x+(tall?10:0), ty=y+(tall?0:17);
+    const tx=x+(tall ? junction ? -10 : 10 : 0), ty=y+(tall ? 0 : junction ? -18 : 17);
     ctx.strokeText(stop.name,tx,ty); ctx.fillText(stop.name,tx,ty);
   }
   const [x,y]=point(state.x,state.z);
