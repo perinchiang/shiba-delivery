@@ -205,7 +205,7 @@ function buildChunk(start, end, kit) {
   const rng = rngFrom('榕湾村道v2', start);
 
   const roundTrees = [];
-  const willows = [];
+  const bankTrees = [];
   const plainPoles = [];
   const lampPoles = [];
   const mirrors = [];
@@ -364,15 +364,15 @@ function buildChunk(start, end, kit) {
     }
   }
 
-  // Signature riverside & golden-paddy graceful weeping willows
-  const willowSpots = [
+  // Broadleaf trees on the riverbank and at the edge of the paddies.
+  const bankTreeSpots = [
     [330, 14.5, 1.15], [495, -13.5, 1.25], [648, 17.5, 1.22],
     [767, 15.8, 1.28], [818, -11.5, 1.12], [891.5, 11.2, 1.36],
     [892.5, -12.8, 1.18], [954, -13.5, 1.38], [958, 14.2, 1.22],
   ];
-  for (const [wx, offset, size] of willowSpots) {
+  for (const [wx, offset, size] of bankTreeSpots) {
     if (wx >= start && wx < end) {
-      willows.push([wx, -0.20, centerZ(wx) + offset, (wx * 1.7) % (Math.PI * 2), size, size, size, 0xffffff]);
+      bankTrees.push([wx, -0.20, centerZ(wx) + offset, (wx * 1.7) % (Math.PI * 2), size, size, size, 0xffffff]);
     }
   }
 
@@ -429,7 +429,7 @@ function buildChunk(start, end, kit) {
     villagePavilion(group, geo);
     const vz = centerZ(roadEnd);
     roundTrees.push([roadEnd + 7.5, -0.22, vz - 6.4, 0.8, 1.95, 1.75, 1.95, 0xffffff]);
-    willows.push([roadEnd + 11.0, -0.22, vz + 9.2, 2.1, 1.45, 1.45, 1.45, 0xffffff]);
+    bankTrees.push([roadEnd + 11.0, -0.22, vz + 9.2, 2.1, 1.45, 1.45, 1.45, 0xffffff]);
     for (let i = 0; i < 7; i++) {
       const ts = 1.45 + (i % 3) * 0.35;
       roundTrees.push([roadEnd + 22 + (i % 2) * 14, -0.22, vz - 36 + i * 12, i * 1.1, ts, ts * 1.05, ts, 0xf2f7eb]);
@@ -447,7 +447,7 @@ function buildChunk(start, end, kit) {
   }
 
   placeInstances(group, kit?.Tree_Round, roundTrees, true, true);
-  placeInstances(group, kit?.Tree_Willow, willows, true, true);
+  placeInstances(group, kit?.Tree_Bank, bankTrees, true, true);
   placeInstances(group, kit?.UtilityPole, plainPoles, true, true);
   placeInstances(group, kit?.UtilityPole_Lamp, lampPoles, true, true);
   placeInstances(group, kit?.RoadMirror, mirrors, true, true);

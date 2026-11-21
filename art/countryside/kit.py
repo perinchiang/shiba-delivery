@@ -333,101 +333,128 @@ def build_rice_clump(name, seed, height, blade_count, panicle_count, palette):
     return b.build_object()
 
 
-# One bark and foliage palette for the town and riverbank. The larger shapes carry
-# the silhouette at riding distance; folded leaves are accents along the skyline.
-BARK = (0x796049, 0x987858, 0xaa8763)
-BANYAN = (0x416f60, 0x699879, 0xa2bc81)
-WILLOW = (0x52775e, 0x839f68, 0xb4c580)
+# Rounded broadleaf trees share a short fluted trunk and overlapping leaf fans.
+def hardwood_trunk(b, scale):
+    rings = []
+    profile = [
+            (-.12, .43, .42, 0), (.12, .43, .28, 0), (.43, .40, .12, .02),
+            (.92, .39, .042, .065), (1.56, .34, .025, .04), (2.50, .27, .01, -.12),
+            (3.30, .19, 0, -.19)]
+    for z, radius, flare, shift in profile:
+        ring = []
+        for i in range(30):
+            a = TAU * i / 30
+            ridge = (.5 + .5 * math.cos(5 * a + .31 * z + .35 * math.sin(2 * a))) ** 2
+            r = scale * (radius + flare * ridge)
+            bark = lerp_hex(0x996744, 0xc09564, .15 + .55 * ridge + .12 * math.sin(2 * a))
+            ring.append(b.add_vert((shift + r * math.cos(a), r * math.sin(a), z), bark))
+        if rings:
+            for i in range(30):
+                j = (i + 1) % 30
+                b.add_face((rings[-1][i], rings[-1][j], ring[j], ring[i]))
+        rings.append(ring)
+    b.add_face(rings[-1])
+
+    # Small knot eyes follow the taper of the trunk. Keep their contrast low
+    # so the wood grain disappears naturally at riding distance.
+    def bark_point(a, z):
+        lower = max(i for i, ring in enumerate(profile) if ring[0] <= z)
+        lo, hi = profile[lower], profile[lower + 1]
+        t = (z - lo[0]) / (hi[0] - lo[0])
+        radius, flare, shift = [lo[k] + (hi[k] - lo[k]) * t for k in (1, 2, 3)]
+        ridge = (.5 + .5 * math.cos(5 * a + .31 * z + .35 * math.sin(2 * a))) ** 2
+        r = scale * (radius + flare * ridge) + .009
+        return (shift + r * math.cos(a), r * math.sin(a), z)
+
+    for angle, height, size in [(.62, 1.16, 1), (2.52, .81, .67), (4.77, 1.27, .83)]:
+        loops = []
+        for width, color in [(1, 0xb08359), (.74, 0x946d4c), (.47, 0xb48a5e)]:
+            loop = []
+            for i in range(14):
+                t = TAU * i / 14
+                dz = size * width * .23 * math.sin(t)
+                a = angle + .58 * dz + .29 * size * width * math.cos(t) * (1 - .32 * math.sin(t))
+                loop.append(b.add_vert(bark_point(a, height + dz), color))
+            if loops:
+                for i in range(14):
+                    j = (i + 1) % 14
+                    b.add_face((loops[-1][i], loops[-1][j], loop[j], loop[i]))
+            loops.append(loop)
+        b.add_face(loops[-1])
 
 
-def folded_leaf(b, base, angle, length, width, rise, color):
-    """A gently folded, almond-shaped leaf, solid on both faces."""
-    root = Vector(base)
-    along = Vector((math.cos(angle), math.sin(angle), 0))
-    across = Vector((-along.y, along.x, 0))
-    up = Vector((0, 0, 1))
-    mid = root + along * length * 0.49 + up * rise * 0.62
-    points = [root, mid - across * width, root + along * length + up * rise,
-              mid + across * width, mid + up * width * 0.44, mid - up * width * 0.25]
-    v = [b.add_vert(point, color) for point in points]
-    for i in range(4):
-        j = (i + 1) % 4
-        b.add_face((v[i], v[j], v[4]), False)
-        b.add_face((v[j], v[i], v[5]), False)
+
+def leaf_crown(b, center, size, seed):
+    """Leaf fans follow a rounded core, overlapping like shingles down each shoulder."""
+    rng = random.Random(seed)
+    cx, cy, cz = center
+    rx, ry, rz = size
+    b.add_puff(center, size, 16, 8, 0x356952, 0x558656, 0x86aa59,
+               lump=.025, seed=seed, normal_blend=.32)
+
+    def surface(a, latitude, offset):
+        return Vector((cx + rx * (1 + offset) * math.cos(latitude) * math.cos(a),
+                       cy + ry * (1 + offset) * math.cos(latitude) * math.sin(a),
+                       cz + rz * (1 + offset) * math.sin(latitude)))
+
+    def leaf_normal(a, latitude, side=0):
+        # Keep the leaf faces in the crown's light field. Averaging with the
+        # back face would give every leaf a dark, inflated rim.
+        a += .26 * side
+        return Vector((math.cos(latitude) * math.cos(a), math.cos(latitude) * math.sin(a),
+                       math.sin(latitude) + .15)).normalized()
+
+    for row, (latitude, count) in enumerate([(-.20, 12), (.30, 11), (.79, 9), (1.21, 6)]):
+        for i in range(count):
+            a = TAU * (i + .44 * row + rng.uniform(-.09, .09)) / count
+            lat = latitude + rng.uniform(-.09, .09)
+            spread = TAU / count * rng.uniform(.47, .61)
+            lean = rng.uniform(-.15, .15)
+            shade = rng.uniform(0, .30) + .14 * row
+            base = lerp_hex(0x366e50, 0x85a958, shade)
+            lit = lerp_hex(0x659b57, 0xa5c66a, shade)
+            # Broad shoulders, curved midrib and a small downward tip. Anchor
+            # and tip sit at different radii so the silhouette has a clear lip.
+            outline = [(0, .30, .015), (-.68, .19, .07), (-1, -.04, .12),
+                       (-.71, -.27, .16), (-.30, -.43, .17), (.06, -.53, .18),
+                       (.34, -.42, .175), (.71, -.28, .16),
+                       (1, -.08, .12), (.74, .16, .075)]
+            rim = []
+            for side, down, lift in outline:
+                pos = surface(a + spread * side - lean * down, lat + down, lift)
+                edge_color = lerp_hex(0x548956, 0x9dbb68, shade - .19 * down + .06 * side)
+                rim.append(b.add_vert(pos, edge_color, leaf_normal(a + spread * side, lat + down, side)))
+            spine = b.add_vert(surface(a, lat + .08, .174), lit, leaf_normal(a - .16, lat + .21))
+            lower_spine = b.add_vert(surface(a + .02, lat - .26, .208), lit, leaf_normal(a - .12, lat - .16))
+            # The upper surface faces outwards. The lip wraps into the dark
+            # underside, hiding the interior even on the lowest row of leaves.
+            underside = b.add_vert(surface(a, lat - .07, .035), base, leaf_normal(a, lat - .45))
+            for k, vertex in enumerate(rim):
+                nxt = rim[(k + 1) % len(rim)]
+                middle = lower_spine if 3 <= k <= 6 else spine
+                b.add_face((vertex, nxt, middle))
+                if k == 2:
+                    b.add_face((nxt, lower_spine, spine))
+                if k == 6:
+                    b.add_face((nxt, spine, lower_spine))
+                b.add_face((nxt, vertex, underside))
 
 
-def spreading_roots(b, foot, count):
-    for i in range(count):
-        a = i * 2.4
-        dx, dy = math.cos(a), math.sin(a)
-        reach = foot * (1.65 + 0.20 * math.sin(a))
-        b.add_tube([(0, 0, foot * 1.80), (dx * foot * .70, dy * foot * .70, .18),
-                    (dx * reach, dy * reach, -.035)],
-                   [foot * .55, foot * .48, .07], BARK[::-1], sides=8)
-
-
-def build_tree_round():
-    """Low spreading banyan, with three unequal tiers and a visible fork."""
-    b = MeshBuilder('Tree_Round')
-    spreading_roots(b, .42, 5)
-    b.add_tube([(0, 0, -.12), (.06, 0, .54), (-.15, .02, 1.64),
-                (.13, .08, 2.55), (.35, .22, 4.02)],
-               [.42, .31, .24, .19, .10], [*BARK[:2], *BARK], sides=11)
-    # Each lateral branch owns its crown. Stagger heights to retain sky gaps
-    # between the horizontal boughs when seen against a shopfront.
-    shoulders = [(0.18, 1.48, 3.43, 1.14), (2.45, 1.22, 3.82, 1.21),
-                 (4.12, 1.30, 3.18, 1.05), (5.44, .98, 4.08, .91)]
-    for i, (a, reach, height, radius) in enumerate(shoulders):
-        dx, dy = math.cos(a), math.sin(a)
-        x, y = reach * dx, reach * dy
-        b.add_tube([(-.10, .02, 1.63 + i * .19), (x * .53, y * .53, height - .95),
-                    (x * .88, y * .88, height - .69), (x, y, height)],
-                   [.20, .16, .115, .065], [*BARK, BARK[-1]], sides=8)
-        b.add_puff((x, y, height), (radius * 1.20, radius, radius * .70),
-                   16, 8, *BANYAN, lump=.17, seed=a, normal_blend=.24)
-        # Paired new leaves break the rim on the exposed end of each shoulder.
-        base = (x + dx * radius * .92, y + dy * radius * .80, height + radius * .37)
-        for turn, length, rise in [(-.60, .53, .19), (.50, .42, .31)]:
-            folded_leaf(b, base, a + turn, length, .13, rise, 0xa0ba7f)
-    b.add_puff((.16, .16, 4.53), (1.55, 1.37, .87), 18, 9,
-               *BANYAN, lump=.16, seed=1.3, normal_blend=.24)
-    b.add_puff((-.65, -.34, 4.49), (1.0, .92, .70), 14, 7,
-               *BANYAN, lump=.12, seed=3.4, normal_blend=.30)
-    return b.build_object()
-
-
-def build_tree_willow():
-    """A leaning river willow with grouped, tapered sprays and open windows."""
-    b = MeshBuilder('Tree_Willow')
-    spreading_roots(b, .37, 4)
-    b.add_tube([(0, 0, -.12), (.13, .02, .85), (.53, .14, 1.98),
-                (.40, .12, 2.86), (.60, .16, 4.70)],
-               [.38, .29, .25, .18, .09], [*BARK[:2], *BARK], sides=10)
-    for i, (a, reach, height) in enumerate([
-            (.25, 1.92, 3.97), (1.60, 1.36, 4.37), (2.85, 1.81, 3.88),
-            (4.10, 1.59, 4.28), (5.32, 1.76, 4.08)]):
-        dx, dy = math.cos(a), math.sin(a)
-        x, y = .40 + dx * reach, .12 + dy * reach
-        b.add_tube([(.40, .12, 2.62), (x * .68, y * .68, height - .67), (x, y, height)],
-                   [.17, .12, .07], BARK, sides=8)
-        b.add_puff((x, y, height + .32), (1.37, 1.26, .84), 14, 8,
-                   *WILLOW, lump=.14, seed=a, normal_blend=.27)
-        # Broad folded sprays sweep sideways as well as down. The middle of
-        # each bunch hangs longest, leaving a scalloped edge between boughs.
-        for j, offset in enumerate([-1.02, -.74, -.31, -.08, .17, .83, 1.08]):
-            direction = a + offset
-            ux, uy = math.cos(direction), math.sin(direction)
-            drop = 1.25 + .96 * math.cos(offset * 1.6) + .32 * math.sin(i + j * 2.1)
-            points = []
-            for t in [0, .22, .5, .77, 1]:
-                outward = 1.06 + .38 * math.sin(t * math.pi)
-                sweep = .38 * t * t
-                points.append((x + ux * outward - uy * sweep, y + uy * outward + ux * sweep,
-                               height + .47 - t * drop))
-            b.add_blade(points, [.065, .20, .17, .105, .012], [.04, .075, .06, .04, .008],
-                        [WILLOW[1], 0x89a670, 0x91ad70, 0xa4b879, WILLOW[2]])
-    b.add_puff((.54, .14, 4.99), (1.77, 1.58, .94), 16, 8,
-               *WILLOW, lump=.12, seed=1.4, normal_blend=.30)
+def build_hardwood(name, riverbank=False):
+    b = MeshBuilder(name)
+    hardwood_trunk(b, 1.18 if riverbank else 1.0)
+    spread = 1.18 if riverbank else 1.0
+    # A high rounded crest over three lower shoulders; vary their elevation so
+    # the crown reads as a single asymmetrical shape from the street below.
+    for i, (angle, reach, z, radius) in enumerate([
+            (.25, 1.11, 3.15, 1.32), (2.51, 1.08, 3.28, 1.39), (4.45, .96, 3.04, 1.24)]):
+        x = math.cos(angle) * reach * spread
+        y = math.sin(angle) * reach * spread
+        b.add_tube([(.015, 0, 1.65 + i * .13), (x * .59, y * .59, z - .78),
+                    (x * .94, y * .94, z - .37), (x, y, z)],
+                   [.23, .18, .13, .09], [0xaa8057, 0xb3895d, 0xb88d60, 0xae8559], sides=10)
+        leaf_crown(b, (x, y, z), (radius * spread, radius * 1.03, 1.0), 37 + 17 * i)
+    leaf_crown(b, (-.16, .13, 4.10), (1.53 * spread, 1.45, 1.23), 68)
     return b.build_object()
 
 
@@ -616,8 +643,8 @@ assets = [
     build_rice_clump('RiceTall_A', seed=101, height=1.40, blade_count=6, panicle_count=4, palette=tall_palette_a),
     build_rice_clump('RiceTall_B', seed=207, height=1.34, blade_count=6, panicle_count=3, palette=tall_palette_b),
     build_rice_clump('RiceLow', seed=313, height=0.84, blade_count=5, panicle_count=2, palette=low_palette),
-    build_tree_round(),
-    build_tree_willow(),
+    build_hardwood('Tree_Round'),
+    build_hardwood('Tree_Bank', riverbank=True),
     build_utility_pole('UtilityPole', with_lamp=False),
     build_utility_pole('UtilityPole_Lamp', with_lamp=True),
     build_road_mirror(),
