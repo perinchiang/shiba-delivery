@@ -1,7 +1,8 @@
 """Blender --background --factory-startup --python-exit-code 2 --python kit.py
 
 Build the stylized solid-3D countryside asset kit (countryside-kit.glb) for Shiba Delivery.
-All assets are clean vertex-colored solid 3D forms (no alpha cutout cards, no painted noise).
+The solid tree meshes use vertex colour and an embedded opaque broadleaf atlas.
+Regenerate broadleaf.png with paint-broadleaf.py when revising its leaf shapes.
 Blender Z-up exports to glTF Y-up with each named mesh centered at the ground origin.
 """
 import math
@@ -343,17 +344,18 @@ def hardwood_trunk(b, scale):
                (3.50, .24, 0, -.18)]
     # Angular column, height row, half-width in columns, half-height in rows,
     # reach, final height. The forks emerge at unequal heights around the stem.
-    forks = [(3, 18, 7, 4, 1.11, 3.15), (26, 23, 6, 4, 1.08, 3.28),
-             (45, 25, 5, 3, .96, 3.04)]
+    forks = [(3, 17, 7, 4, 1.48, 3.16), (26, 26, 6, 4, 1.06, 3.68),
+             (45, 22, 5, 3, 1.03, 3.52)]
     def bark(a, z):
         # A honey-coloured base with a few broad brush marks. Round root toes
         # carry the silhouette; keep the bark quiet beside the green canopy.
         sweep = a + .11*math.sin(2*z+a)
-        tone = .67 + .12*math.cos(4*sweep) + .055*math.sin(7*sweep + .6*z)
+        tone = .64 + .13*math.cos(4*sweep) + .08*math.sin(7*sweep + .6*z)
         for angle, height in [(1.58, .82), (4.43, 1.23)]:
             da = math.remainder(a-angle-.17*(z-height), TAU)/.24
             dz = (z-height)/.26
-            tone -= .28*math.exp(-2*(da*da + dz*dz))
+            eye = da*da + dz*dz
+            tone -= .32*math.exp(-2*eye) + .17*math.exp(-((eye-1)/.48)**2)
         return lerp_hex(0xa46c44, 0xe4af72, tone)
 
     # Slightly round the corners of each branch opening on the cylinder.
@@ -425,8 +427,8 @@ def hardwood_trunk(b, scale):
         original_colors = [b.vcols[v] for v in boundary]
         previous = boundary
         for t, radius in [(.14, .235), (.34, .195), (.59, .153), (.82, .115), (1, .075)]:
-            center = base.lerp(tip, t) - up * (.21 * math.sin(math.pi*t))
-            axis = (tip - base - up*(.21*math.pi*math.cos(math.pi*t))).normalized()
+            center = base.lerp(tip, t) - up * (.27 * math.sin(math.pi*t)) + lateral*(.15*math.sin(math.pi*t))
+            axis = (tip - base + (lateral*.15-up*.27)*(math.pi*math.cos(math.pi*t))).normalized()
             across = axis.cross(lateral).normalized()
             ring = []
             for k, (i, j) in enumerate(rim):
@@ -444,91 +446,186 @@ def hardwood_trunk(b, scale):
         b.add_face(previous)
 
 
-def broadleaf_crown(b, spread):
-    """A single closed leafy mantle. Each scalloped margin joins the row above."""
-    segments = 112
-    # Elevation of each leaf row, fan count, rotational offset. The short upper
-    # rows build the crest while the wider lower rows wrap the three shoulders.
-    rows = [(-1.24, 11, .21), (-.82, 15, .08), (-.40, 16, .24),
-            (.01, 15, .01), (.42, 12, .31), (.83, 10, .06), (1.19, 7, .42)]
+def leafy_bough(center, size, twist, tint, material):
+    """Closed, asymmetric bough with a rolled, pointed lower leaf margin."""
+    b = MeshBuilder('LeafBough')
+    segments = 64
+    base = b.add_vert((center[0]+.10*size[0], center[1], center[2] - size[2]*.76), 0xaab7a4)
+    texcoords = [(0, 0)]
+    prev = []
 
-    def fan(angle, row):
-        lat, count, turn = row
-        wave = (angle + turn)*count + .67*math.sin(3*angle + lat) + .31*math.sin(5*angle - 2*lat)
-        # Rounded shoulders narrowing to a biased tip. Slightly different
-        # depths prevent the leaf edges reading as level stripes around a ball.
-        blade = (.5 + .5*math.cos(wave))**.56
-        margin = lat - (.15 + .055*math.sin(2*angle + turn*8))*blade
-        margin += .095*math.sin(3*angle + .7*lat) + .044*math.sin(2*angle - 2.1*lat)
-        return margin, blade, math.remainder(wave, TAU)/math.pi
+    def margin(a, latitude, count, phase, depth):
+        blade = (.5+.5*math.cos(count*a + 1.15*math.sin(3*a+phase) + phase))**1.25
+        return latitude - depth*blade + .06*math.sin(2*a+phase)*math.cos(latitude), blade
 
-    tufts = [(-.18, .11, .80, 1.29, 1.27, 1.12),
-             (1.02, .25, -.19, 1.38, 1.26, .97),
-             (-.85, .66, -.09, 1.38, 1.26, .99),
-             (-.35, -.97, -.20, 1.31, 1.34, .94)]
-
-    def vertex(a, lat, lift, tone):
-        # Project the relief onto the outer envelope of four rounded tufts.
-        # The origin lies inside all four, so each ray has exactly one exit
-        # on the combined surface, even at a deep cleft between shoulders.
-        dx, dy, dz = math.cos(lat)*math.cos(a), math.cos(lat)*math.sin(a), math.sin(lat)
-        horizontal = a + .90
-        ux, uy = math.cos(lat)*math.cos(horizontal), math.cos(lat)*math.sin(horizontal)
-        radius = 0
-        for cx, cy, cz, rx, ry, rz in tufts:
-            aa = (ux/rx)**2 + (uy/ry)**2 + (dz/rz)**2
-            bb = ux*cx/rx**2 + uy*cy/ry**2 + dz*cz/rz**2
-            cc = (cx/rx)**2 + (cy/ry)**2 + (cz/rz)**2 - 1
-            hit = (bb + math.sqrt(bb*bb-aa*cc))/aa
-            blend = max(0, .34-abs(radius-hit))
-            radius = max(hit, radius) + blend*blend/1.36
-        radius += lift
-        x, y, z = spread*dx*radius, dy*radius, 3.12 + dz*radius
-        col = lerp_hex(0x286a4c, 0xa6cc64, tone)
-        return b.add_vert((x, y, z), col)
-
-    bottom = vertex(0, -math.pi/2, 0, .14)
-    previous = []
-    for i, row in enumerate(rows):
-        # Inside each band, the rim rolls outward, the blade swells along
-        # its midrib, then runs flush into the back of the next scallop.
-        for t, relief, rim_light in [(0, -.02, -.18), (.055, .14, .08),
-                                     (.34, .13, .13), (.70, .085, .075), (.91, .01, -.04)]:
-            ring = []
-            for k in range(segments):
-                a = TAU*k/segments
-                low, blade, skew = fan(a, row)
-                high = fan(a, rows[i+1])[0] if i+1 < len(rows) else math.pi/2
-                lat = low + t*(high-low)
-                # The relief narrows at each tip, opening little pockets of
-                # shade between adjacent leaves instead of one continuous frill.
-                width = .26 + .72*math.sin(math.pi*(.08 + .73*t))
-                leaf = max(0, min(1, (width-abs(skew))/.28))
-                leaf = leaf*leaf*(3-2*leaf)
-                ridge = leaf * (.56 + .44*blade)
-                brush = (.17*skew + .13*blade**5)*math.sin(math.pi*t)
-                tint = .10*math.sin(4*a + 1.83*i) + .055*math.cos(9*a - .41*i)
-                tone = .38 + .20*math.sin(lat) + leaf*(rim_light + .22 + brush + tint)
-                ring.append(vertex(a, lat, relief*ridge, tone))
-            if previous:
-                for k in range(segments):
-                    j = (k+1) % segments
-                    b.add_face((previous[k], previous[j], ring[j], ring[k]))
-            else:
-                for k in range(segments):
-                    b.add_face((bottom, ring[(k+1) % segments], ring[k]))
-            previous = ring
-    top = vertex(0, math.pi/2, 0, .84)
+    tiers = [(-1.54, 8, twist, 0), (-.41, 13, twist, .56),
+             (.14, 11, twist+1.7, .24), (.73, 9, twist-1, .14),
+             (1.13, 7, twist+2, .11), (math.pi/2, 1, 0, 0)]
+    levels = [(tier, t) for tier in range(len(tiers)-1) for t in (0, .09, .43, .78)]
+    for tier, t in levels:
+        ring = []
+        for k in range(segments):
+            u = k / segments
+            a = TAU*u
+            lo, blade = margin(a, *tiers[tier])
+            hi, _ = margin(a, *tiers[tier+1])
+            lat = lo + t*(hi-lo)
+            lip = (.20 if tier==1 else .045)*blade * (1 if t==.09 else .40 if t==.43 else 0)
+            wave = .060*math.sin(3*a+twist) + .035*math.cos(5*a-lat)
+            radius = math.cos(lat)*(1 + wave + lip)
+            h = math.sin(lat)*(1+lip)
+            if h < 0:
+                h *= .76
+            h += radius*(.22*math.sin(a+twist) + .056*math.cos(3*a-.6))
+            p = (center[0]+size[0]*(radius*math.cos(a)-.10*math.sin(lat)),
+                 center[1]+size[1]*radius*math.sin(a), center[2]+size[2]*h)
+            sunlight = max(0, min(1, .50 + .46*h + .06*math.cos(a-.7)))
+            ring.append(b.add_vert(p, lerp_hex(tint, 0xfff6d9, sunlight)))
+            texcoords.append((u, .5+lat/math.pi))
+        for k in range(segments):
+            j = (k+1) % segments
+            b.add_face((prev[k], prev[j], ring[j], ring[k]) if prev else (base, ring[j], ring[k]))
+        prev = ring
+    top = b.add_vert((center[0]-.10*size[0], center[1], center[2]+size[2]), 0xfff8dd)
+    texcoords.append((0, 1))
     for k in range(segments):
-        b.add_face((previous[k], previous[(k+1) % segments], top))
+        b.add_face((prev[k], prev[(k+1) % segments], top))
+    obj = b.build_object()
+    obj.data.materials.clear()
+    obj.data.materials.append(material)
+    layer = obj.data.uv_layers.new(name='BarkAndLeaves')
+    for poly in obj.data.polygons:
+        indices = list(poly.vertices)
+        us = [texcoords[i][0] for i in indices if i not in (base, top)]
+        seam = max(us) - min(us) > .5
+        us = [u+1 if seam and u < .5 else u for u in us]
+        for li, i in zip(poly.loop_indices, indices):
+            u,v = texcoords[i]
+            if i in (base, top):
+                u = sum(us)/len(us)
+            elif seam and u < .5:
+                u += 1
+            layer.data[li].uv = (u + twist/TAU, .078 + .91*v)
+    bpy.context.view_layer.objects.active = obj
+    faces = obj.modifiers.new("Planar leaf facets", "TRIANGULATE")
+    bpy.ops.object.modifier_apply(modifier=faces.name)
+    return obj
+
+
+def edge_spray(center, size, twist, material):
+    """Short outward-turning leaf blades interrupt the edge of a painted bough."""
+    rng = random.Random(round(twist*200))
+    b = MeshBuilder('MarginLeaves')
+    for count, latitude in [(9, .19), (5, 1.24)]:
+        for j in range(count):
+            angle = twist + TAU*(j+rng.uniform(-.13,.13))/count
+            sweep = rng.uniform(.19,.37) * (-1 if j%2 else 1)
+            length = rng.uniform(.73,1.07)
+            width = rng.uniform(.145,.20)
+            hue = rng.uniform(.20,.76) + .08*latitude
+            shade = lerp_hex(0x447450,0x76a05b,hue)
+            light = lerp_hex(0x578c59,0x92b66a,hue)
+            ring = []
+            for t, span, ridge in [(0,.03,0),(.24,.80,.024),(.50,1,.033),(.74,.67,.028),(.94,.20,.014),(1,.015,0)]:
+                lat = latitude - length*t
+                a = angle + sweep*t
+                outer = .845 + .28*math.sin(t*1.6)
+                row = []
+                for side, fold, color in [(-1,0,shade),(0,ridge,light),(1,0,light),(0,-.034,shade)]:
+                    az = a + side*width*span/max(.48,math.cos(lat))
+                    r = (outer+fold)*math.cos(lat)
+                    h = (outer+fold)*math.sin(lat)
+                    h += .13*r*math.sin(az+twist) - .09*t*t
+                    row.append(b.add_vert((center[0]+size[0]*(r*math.cos(az)-.10*math.sin(lat)),
+                                           center[1]+size[1]*r*math.sin(az), center[2]+size[2]*h),color))
+                if ring:
+                    for k in range(4):
+                        n = (k+1)%4
+                        b.add_face((ring[n],ring[k],row[k],row[n]))
+                else:
+                    b.add_face(row)
+                ring = row
+            b.add_face(tuple(reversed(ring)))
+    obj = b.build_object()
+    obj.data.materials.clear()
+    obj.data.materials.append(material)
+    uv = obj.data.uv_layers.new(name='BarkAndLeaves')
+    for corner in uv.data:
+        corner.uv = (.5,.025)
+    bpy.context.view_layer.objects.active = obj
+    mod = obj.modifiers.new("Planar blade faces", "TRIANGULATE")
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    return obj
 
 
 def build_hardwood(name, riverbank=False):
-    b = MeshBuilder(name)
     spread = 1.18 if riverbank else 1.0
+    b = MeshBuilder(name)
     hardwood_trunk(b, spread)
-    broadleaf_crown(b, spread)
-    return b.build_object()
+    wood = b.build_object()
+    material = wood.data.materials[0]
+    tree = material.node_tree
+    texture = tree.nodes.new('ShaderNodeTexImage')
+    texture.image = bpy.data.images.load(str(Path(__file__).with_name('broadleaf.png')), check_existing=True)
+    tree.links.new(texture.outputs['Color'], tree.nodes.get('Principled BSDF').inputs['Base Color'])
+    uv = wood.data.uv_layers.new(name='BarkAndLeaves')
+    for corner in uv.data:
+        corner.uv = (.5, .025)
+
+    # One low outstretched arm, a higher shoulder on the other side, and
+    # a young crest leaning off-axis. The back bough closes the silhouette.
+    crowns = []
+    envelopes = []
+    for x,y,z,rx,ry,rz,turn,tint in [
+            (1.26,.38,2.68,1.27,1.17,.81,.62,0xa1b7a2),
+            (-1.01,.76,3.33,1.24,1.15,.84,2.19,0xaac1aa),
+            (-.20,-.91,3.04,1.12,1.11,.78,4.72,0x9db5a6),
+            (-.38,.02,3.84,1.24,1.14,.95,1.55,0xc4d1aa)]:
+        center, size = (x*spread,y,z), (rx*spread,ry,rz)
+        envelopes.append((Vector(center), Vector(1/v for v in size)))
+        crown = leafy_bough(center, size, turn, tint, material)
+        spray = edge_spray(center, size, turn, material)
+        bpy.context.view_layer.objects.active = crown
+        union = crown.modifiers.new('Carve leaf margin', 'BOOLEAN')
+        union.operation = 'UNION'
+        union.solver = 'EXACT'
+        union.use_self = True
+        union.object = spray
+        bpy.ops.object.modifier_apply(modifier=union.name)
+        bpy.data.objects.remove(spray, do_unlink=True)
+        crowns.append(crown)
+
+    # Union keeps only the outer skin, including its painted UVs. There are
+    # no leaf cards or overlapping interior shells at a meeting of boughs.
+    canopy = crowns[0]
+    bpy.context.view_layer.objects.active = canopy
+    for other in crowns[1:]:
+        modifier = canopy.modifiers.new('Join boughs', 'BOOLEAN')
+        modifier.operation = 'UNION'
+        modifier.solver = 'EXACT'
+        modifier.object = other
+        bpy.ops.object.modifier_apply(modifier=modifier.name)
+        bpy.data.objects.remove(other, do_unlink=True)
+    # The folded tips share the soft lighting of the bough they emerge from.
+    # Averaging a thin leaf's front and back normals alone makes a rubbery rim.
+    mesh = canopy.data
+    uv = mesh.uv_layers.active
+    normals = [corner.vector.copy() for corner in mesh.corner_normals]
+    for face in mesh.polygons:
+        if any(abs(uv.data[i].uv.y-.025) > .001 for i in face.loop_indices):
+            continue
+        for i in face.loop_indices:
+            p = mesh.vertices[mesh.loops[i].vertex_index].co
+            center, inverse = min(envelopes, key=lambda e: abs(((p-e[0])*e[1]).length-1))
+            normal = (p-center)*inverse*inverse
+            normals[i] = normal.normalized().lerp(normals[i], .18).normalized()
+    mesh.normals_split_custom_set(normals)
+    bpy.ops.object.select_all(action='DESELECT')
+    wood.select_set(True)
+    canopy.select_set(True)
+    bpy.context.view_layer.objects.active = wood
+    bpy.ops.object.join()
+    return wood
 
 
 def build_utility_pole(name, with_lamp=False):
@@ -736,9 +833,9 @@ bpy.ops.export_scene.gltf(
     filepath=str(out_path),
     export_format='GLB',
     export_yup=True,
-    export_texcoords=False,
+    export_texcoords=True,
     export_normals=True,
     export_vertex_color='ACTIVE',
-    export_materials='NONE',
+    export_materials='EXPORT',
 )
 print(f'Wrote {out_path} ({out_path.stat().st_size / 1024:.1f} KB)')

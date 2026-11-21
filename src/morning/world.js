@@ -38,7 +38,13 @@ export async function createWorld(renderer) {
   ]);
   const countryKit = {};
   countryKitGltf.scene.traverse(o => {
-    if (o.isMesh && o.name) countryKit[o.name] = o.geometry;
+    if (!o.isMesh || !o.name) return;
+    if (o.material.map) {
+      o.material = litMaterial({ map: o.material.map, vertexColors: true, grid: false, roughness: .94 });
+      countryKit[o.name] = o;
+    } else {
+      countryKit[o.name] = o.geometry;
+    }
   });
   display.scene.traverse(o => {
     if (!o.isMesh) return;

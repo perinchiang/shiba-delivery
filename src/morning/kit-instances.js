@@ -5,9 +5,9 @@ const kitPaint = litMaterial({ vertexColors: true, grid: false, roughness: 0.88 
 const dummy = new THREE.Object3D();
 const tint = new THREE.Color();
 
-export function placeInstances(group, geometry, list, castShadow = true, receiveShadow = true) {
-  if (!geometry || !list.length) return;
-  const mesh = new THREE.InstancedMesh(geometry, kitPaint, list.length);
+export function placeInstances(group, asset, list, castShadow = true, receiveShadow = true) {
+  if (!asset || !list.length) return;
+  const mesh = new THREE.InstancedMesh(asset.geometry ?? asset, asset.material ?? kitPaint, list.length);
   for (let i = 0; i < list.length; i++) {
     const [x, y, z, rotY, sx, sy, sz, colorHex] = list[i];
     dummy.position.set(x, y, z);

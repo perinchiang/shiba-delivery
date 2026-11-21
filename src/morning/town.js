@@ -317,7 +317,7 @@ export function createStreet(steamers, banyan) {
   const soilTop = treePits(shopSide);
   const streetTrees = streetTreeXs.map((x, i) => {
     const scale = i === 1 ? .48 : .56 + (i % 3) * .05;
-    return [x, soilTop, treePitZ, i * 2.4, scale, scale, scale];
+    return [x, soilTop, treePitZ, .90 + i * 2.4, scale, scale, scale];
   });
   placeInstances(shopSide, banyan, streetTrees);
   const updateSteam = bunSteam(shopSide, bunFacade.x - 1.83, CURB_H + 1.67, -1.91);
