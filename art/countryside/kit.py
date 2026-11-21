@@ -333,52 +333,28 @@ def build_rice_clump(name, seed, height, blade_count, panicle_count, palette):
     return b.build_object()
 
 
-# Rounded broadleaf trees share a short fluted trunk and overlapping leaf fans.
+# Compact broadleaf trees share one forked trunk and a continuous sculpted crown.
 def hardwood_trunk(b, scale):
     """Grow the boughs out of openings in the trunk's own bark surface."""
     sides = 64
     heights = [-.12, 0, .09, .18, .28] + [.38 + i * .10 for i in range(32)]
-    profile = [(-.12, .43, .42, 0), (.18, .42, .26, 0), (.48, .40, .095, .02),
-               (1, .39, .04, .07), (1.65, .35, .025, .035), (2.48, .30, .012, -.08),
-               (3.50, .19, 0, -.23)]
+    profile = [(-.12, .54, .34, 0), (.18, .57, .34, 0), (.48, .56, .27, .015), (.68, .61, .085, .025),
+               (1, .63, .035, .035), (1.65, .60, .015, .02), (2.48, .44, .008, -.07),
+               (3.50, .24, 0, -.18)]
     # Angular column, height row, half-width in columns, half-height in rows,
     # reach, final height. The forks emerge at unequal heights around the stem.
     forks = [(3, 18, 7, 4, 1.11, 3.15), (26, 23, 6, 4, 1.08, 3.28),
              (45, 25, 5, 3, .96, 3.04)]
-    knots = [(1.55, .87, .31, .27), (3.74, 1.38, .25, .24), (5.63, .71, .27, .18)]
-
     def bark(a, z):
-        # Broad grain bends around a few inset knot eyes. Colour and relief
-        # use the same field, like a shallow gouge with a sunlit shoulder.
-        bend = .13 * math.sin(1.9*z + a) + .07 * math.sin(3.7*z - 2*a)
-        eye = 0
-        for angle, height, width, length in knots:
-            dz = (z - height) / length
-            da = math.remainder(a - angle - .11*dz, TAU) / width
-            d = math.hypot(da, dz)
-            if d < 2.7:
-                bend += .22 * da * math.exp(-.70*d*d)
-                eye += .48 * math.exp(-((d - .92) / .21)**2) + .48 * math.exp(-8*d*d)
-        phase = a + bend
-        groove = (.5 + .5*math.cos(9*phase + .9*math.sin(3*phase)))**4
-        groove *= .38 + .62*(.5 + .5*math.sin(2.8*z + 5*a))
-        broad = math.sin(5*phase + .6*z)
-        # Short tapered bark furrows; some split into a second, shorter
-        # stroke. Restrict these accents to intervals between root and crown.
-        cut = 0
-        lip = 0
-        for start, middle, length in [(.5, 1.45, .58), (1.99, .93, .60),
-                                      (2.31, 1.38, .35), (3.7, .68, .47),
-                                      (4.76, 1.85, .58), (5.35, 1.15, .36)]:
-            v = (z-middle)/length
-            if abs(v) < 1:
-                taper = 1-v*v
-                u = math.remainder(a - start - .16*v - .12*v*v, TAU)
-                width = .065 + .055*taper
-                cut += taper * math.exp(-(u/width)**2)
-                lip += taper * math.exp(-((u-width)/width)**2)
-        tone = .65 + .16*broad - .52*groove - eye - .48*cut + .20*lip
-        return lerp_hex(0x855638, 0xdfae78, tone), .012*broad - .015*groove - .012*eye - .012*cut
+        # A honey-coloured base with a few broad brush marks. Round root toes
+        # carry the silhouette; keep the bark quiet beside the green canopy.
+        sweep = a + .11*math.sin(2*z+a)
+        tone = .67 + .12*math.cos(4*sweep) + .055*math.sin(7*sweep + .6*z)
+        for angle, height in [(1.58, .82), (4.43, 1.23)]:
+            da = math.remainder(a-angle-.17*(z-height), TAU)/.24
+            dz = (z-height)/.26
+            tone -= .28*math.exp(-2*(da*da + dz*dz))
+        return lerp_hex(0xa46c44, 0xe4af72, tone)
 
     # Slightly round the corners of each branch opening on the cylinder.
     rings = []
@@ -405,10 +381,24 @@ def hardwood_trunk(b, scale):
             if inside:
                 ring.append(None)
                 continue
-            color, relief = bark(a, h)
-            root = (.5 + .5*math.cos(5*a + .31*h + .35*math.sin(2*a)))**2
-            rad = scale * (radius + flare*root + relief)
-            ring.append(b.add_vert((shift + rad*math.cos(a), rad*math.sin(a), h), color))
+            color = bark(a, h)
+            root = (.5 + .5*math.cos(4*a + .36*h + .56*math.sin(2*a)))**2
+            rad = radius + flare*root
+            if h < .52:
+                # Four soft root toes nest in the soil. Sample their outer
+                # curves onto this ring rather than attaching separate blobs.
+                for toe in [.18, 1.77, 3.46, 5.03]:
+                    along, across = math.cos(a-toe), math.sin(a-toe)
+                    aa = (along/.35)**2 + (across/.26)**2
+                    bb = .56*along/.35**2
+                    cc = (.56/.35)**2 + ((h-.13)/.35)**2 - 1
+                    disc = bb*bb-aa*cc
+                    if disc > 0 and bb > 0:
+                        reach = (bb+math.sqrt(disc))/aa
+                        blend = max(0, .12-abs(rad-reach))
+                        rad = max(rad, reach) + blend*blend/.48
+            rad *= scale
+            ring.append(b.add_vert((shift + rad*math.cos(a), rad*math.sin(a), .82*h), color))
         rings.append(ring)
 
     for row in range(len(heights)-1):
@@ -431,7 +421,7 @@ def hardwood_trunk(b, scale):
         lateral = Vector((-radial.y, radial.x, 0))
         up = Vector((0, 0, 1))
         base = sum((Vector(b.verts[v]) for v in boundary), Vector()) / len(boundary)
-        tip = radial * (reach*scale) + up*top
+        tip = radial * (reach*scale) + up*(.82*top)
         original_colors = [b.vcols[v] for v in boundary]
         previous = boundary
         for t, radius in [(.14, .235), (.34, .195), (.59, .153), (.82, .115), (1, .075)]:
@@ -443,7 +433,7 @@ def hardwood_trunk(b, scale):
                 a = math.atan2(j/n, i/w)
                 circ = lateral*math.cos(a) + across*math.sin(a)
                 offset = (Vector(b.verts[boundary[k]]) - base).lerp(circ*radius, min(1, t/.42))
-                grain, _ = bark(a + .08*t, center.z)
+                grain = bark(a + .08*t, center.z)
                 mix = min(1, t/.7)
                 color = tuple((1-mix)*x + mix*y for x,y in zip(original_colors[k], grain))
                 ring.append(b.add_vert(center + offset, color))
@@ -454,74 +444,90 @@ def hardwood_trunk(b, scale):
         b.add_face(previous)
 
 
-def leaf_crown(b, center, size, seed):
-    """Leaf fans follow a rounded core, overlapping like shingles down each shoulder."""
-    rng = random.Random(seed)
-    cx, cy, cz = center
-    rx, ry, rz = size
-    b.add_puff(center, size, 16, 8, 0x356952, 0x558656, 0x86aa59,
-               lump=.025, seed=seed, normal_blend=.32)
+def broadleaf_crown(b, spread):
+    """A single closed leafy mantle. Each scalloped margin joins the row above."""
+    segments = 112
+    # Elevation of each leaf row, fan count, rotational offset. The short upper
+    # rows build the crest while the wider lower rows wrap the three shoulders.
+    rows = [(-1.24, 11, .21), (-.82, 15, .08), (-.40, 16, .24),
+            (.01, 15, .01), (.42, 12, .31), (.83, 10, .06), (1.19, 7, .42)]
 
-    def surface(a, latitude, offset):
-        return Vector((cx + rx * (1 + offset) * math.cos(latitude) * math.cos(a),
-                       cy + ry * (1 + offset) * math.cos(latitude) * math.sin(a),
-                       cz + rz * (1 + offset) * math.sin(latitude)))
+    def fan(angle, row):
+        lat, count, turn = row
+        wave = (angle + turn)*count + .67*math.sin(3*angle + lat) + .31*math.sin(5*angle - 2*lat)
+        # Rounded shoulders narrowing to a biased tip. Slightly different
+        # depths prevent the leaf edges reading as level stripes around a ball.
+        blade = (.5 + .5*math.cos(wave))**.56
+        margin = lat - (.15 + .055*math.sin(2*angle + turn*8))*blade
+        margin += .095*math.sin(3*angle + .7*lat) + .044*math.sin(2*angle - 2.1*lat)
+        return margin, blade, math.remainder(wave, TAU)/math.pi
 
-    def leaf_normal(a, latitude, side=0):
-        # Keep the leaf faces in the crown's light field. Averaging with the
-        # back face would give every leaf a dark, inflated rim.
-        a += .26 * side
-        return Vector((math.cos(latitude) * math.cos(a), math.cos(latitude) * math.sin(a),
-                       math.sin(latitude) + .15)).normalized()
+    tufts = [(-.18, .11, .80, 1.29, 1.27, 1.12),
+             (1.02, .25, -.19, 1.38, 1.26, .97),
+             (-.85, .66, -.09, 1.38, 1.26, .99),
+             (-.35, -.97, -.20, 1.31, 1.34, .94)]
 
-    for row, (latitude, count) in enumerate([(-.20, 12), (.30, 11), (.79, 9), (1.21, 6)]):
-        for i in range(count):
-            a = TAU * (i + .44 * row + rng.uniform(-.09, .09)) / count
-            lat = latitude + rng.uniform(-.09, .09)
-            spread = TAU / count * rng.uniform(.47, .61)
-            lean = rng.uniform(-.15, .15)
-            shade = rng.uniform(0, .30) + .14 * row
-            base = lerp_hex(0x366e50, 0x85a958, shade)
-            lit = lerp_hex(0x659b57, 0xa5c66a, shade)
-            # Broad shoulders, curved midrib and a small downward tip. Anchor
-            # and tip sit at different radii so the silhouette has a clear lip.
-            outline = [(0, .30, .015), (-.68, .19, .07), (-1, -.04, .12),
-                       (-.71, -.27, .16), (-.30, -.43, .17), (.06, -.53, .18),
-                       (.34, -.42, .175), (.71, -.28, .16),
-                       (1, -.08, .12), (.74, .16, .075)]
-            rim = []
-            for side, down, lift in outline:
-                pos = surface(a + spread * side - lean * down, lat + down, lift)
-                edge_color = lerp_hex(0x548956, 0x9dbb68, shade - .19 * down + .06 * side)
-                rim.append(b.add_vert(pos, edge_color, leaf_normal(a + spread * side, lat + down, side)))
-            spine = b.add_vert(surface(a, lat + .08, .174), lit, leaf_normal(a - .16, lat + .21))
-            lower_spine = b.add_vert(surface(a + .02, lat - .26, .208), lit, leaf_normal(a - .12, lat - .16))
-            # The upper surface faces outwards. The lip wraps into the dark
-            # underside, hiding the interior even on the lowest row of leaves.
-            underside = b.add_vert(surface(a, lat - .07, .035), base, leaf_normal(a, lat - .45))
-            for k, vertex in enumerate(rim):
-                nxt = rim[(k + 1) % len(rim)]
-                middle = lower_spine if 3 <= k <= 6 else spine
-                b.add_face((vertex, nxt, middle))
-                if k == 2:
-                    b.add_face((nxt, lower_spine, spine))
-                if k == 6:
-                    b.add_face((nxt, spine, lower_spine))
-                b.add_face((nxt, vertex, underside))
+    def vertex(a, lat, lift, tone):
+        # Project the relief onto the outer envelope of four rounded tufts.
+        # The origin lies inside all four, so each ray has exactly one exit
+        # on the combined surface, even at a deep cleft between shoulders.
+        dx, dy, dz = math.cos(lat)*math.cos(a), math.cos(lat)*math.sin(a), math.sin(lat)
+        horizontal = a + .90
+        ux, uy = math.cos(lat)*math.cos(horizontal), math.cos(lat)*math.sin(horizontal)
+        radius = 0
+        for cx, cy, cz, rx, ry, rz in tufts:
+            aa = (ux/rx)**2 + (uy/ry)**2 + (dz/rz)**2
+            bb = ux*cx/rx**2 + uy*cy/ry**2 + dz*cz/rz**2
+            cc = (cx/rx)**2 + (cy/ry)**2 + (cz/rz)**2 - 1
+            hit = (bb + math.sqrt(bb*bb-aa*cc))/aa
+            blend = max(0, .34-abs(radius-hit))
+            radius = max(hit, radius) + blend*blend/1.36
+        radius += lift
+        x, y, z = spread*dx*radius, dy*radius, 3.12 + dz*radius
+        col = lerp_hex(0x286a4c, 0xa6cc64, tone)
+        return b.add_vert((x, y, z), col)
+
+    bottom = vertex(0, -math.pi/2, 0, .14)
+    previous = []
+    for i, row in enumerate(rows):
+        # Inside each band, the rim rolls outward, the blade swells along
+        # its midrib, then runs flush into the back of the next scallop.
+        for t, relief, rim_light in [(0, -.02, -.18), (.055, .14, .08),
+                                     (.34, .13, .13), (.70, .085, .075), (.91, .01, -.04)]:
+            ring = []
+            for k in range(segments):
+                a = TAU*k/segments
+                low, blade, skew = fan(a, row)
+                high = fan(a, rows[i+1])[0] if i+1 < len(rows) else math.pi/2
+                lat = low + t*(high-low)
+                # The relief narrows at each tip, opening little pockets of
+                # shade between adjacent leaves instead of one continuous frill.
+                width = .26 + .72*math.sin(math.pi*(.08 + .73*t))
+                leaf = max(0, min(1, (width-abs(skew))/.28))
+                leaf = leaf*leaf*(3-2*leaf)
+                ridge = leaf * (.56 + .44*blade)
+                brush = (.17*skew + .13*blade**5)*math.sin(math.pi*t)
+                tint = .10*math.sin(4*a + 1.83*i) + .055*math.cos(9*a - .41*i)
+                tone = .38 + .20*math.sin(lat) + leaf*(rim_light + .22 + brush + tint)
+                ring.append(vertex(a, lat, relief*ridge, tone))
+            if previous:
+                for k in range(segments):
+                    j = (k+1) % segments
+                    b.add_face((previous[k], previous[j], ring[j], ring[k]))
+            else:
+                for k in range(segments):
+                    b.add_face((bottom, ring[(k+1) % segments], ring[k]))
+            previous = ring
+    top = vertex(0, math.pi/2, 0, .84)
+    for k in range(segments):
+        b.add_face((previous[k], previous[(k+1) % segments], top))
 
 
 def build_hardwood(name, riverbank=False):
     b = MeshBuilder(name)
-    hardwood_trunk(b, 1.18 if riverbank else 1.0)
     spread = 1.18 if riverbank else 1.0
-    # A high rounded crest over three lower shoulders; vary their elevation so
-    # the crown reads as a single asymmetrical shape from the street below.
-    for i, (angle, reach, z, radius) in enumerate([
-            (.25, 1.11, 3.15, 1.32), (2.51, 1.08, 3.28, 1.39), (4.45, .96, 3.04, 1.24)]):
-        x = math.cos(angle) * reach * spread
-        y = math.sin(angle) * reach * spread
-        leaf_crown(b, (x, y, z), (radius * spread, radius * 1.03, 1.0), 37 + 17 * i)
-    leaf_crown(b, (-.16, .13, 4.10), (1.53 * spread, 1.45, 1.23), 68)
+    hardwood_trunk(b, spread)
+    broadleaf_crown(b, spread)
     return b.build_object()
 
 
