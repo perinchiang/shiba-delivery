@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { angleDiff, clamp01, lerp, smoothstep } from '../core/mathx.js';
 import { STOPS } from './town.js';
 
-const doorwayX = STOPS.pharmacy.x;
+const doorwayX = state => state.order === 'buns' ? STOPS.bunDoor.x : STOPS.pharmacy.x;
 const thresholdInside = -4.36;
 const point = new THREE.Vector3();
 const target = new THREE.Vector3();
@@ -16,7 +16,7 @@ export function beginSequence(state, kind) {
   state.sequence = { kind, elapsed: 0, x: state.x, z: state.z, yaw: state.yaw };
   if (kind === 'exit') {
     state.mode = 'walk';
-    Object.assign(state, { x: doorwayX, z: thresholdInside, yaw: 0 });
+    Object.assign(state, { x: doorwayX(state), z: thresholdInside, yaw: 0 });
   }
 }
 
@@ -28,11 +28,11 @@ export function doorFrame(state, dt, door) {
   door.rotation.y = open * 1.66;
   const oldX = state.x, oldZ = state.z;
   if (exiting) {
-    state.x = doorwayX;
+    state.x = doorwayX(state);
     state.z = lerp(thresholdInside, -0.10, smoothstep(0.26, 0.78, u));
     state.yaw = 0;
   } else {
-    state.x = lerp(seq.x, doorwayX, smoothstep(0, 0.27, u));
+    state.x = lerp(seq.x, doorwayX(state), smoothstep(0, 0.27, u));
     state.z = u < 0.44 ? lerp(seq.z, -0.38, smoothstep(0, 0.27, u))
       : lerp(-0.38, -3.66, smoothstep(0.44, 0.98, u));
     state.yaw = Math.PI;

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { box, cylinder, group, oval, rod, sign } from './shapes.js';
+import { bake, box, cylinder, group, oval, rod, sign } from './shapes.js';
 
 const timber = 0x734931,
   edge = 0xb98151,
@@ -24,7 +24,10 @@ function lantern(g, x, y, z) {
 export function buildBunShop(p, steamers) {
   // Set the service bay back from the arcade. Side jambs and the serving sill
   // frame a real pocket of shadow behind the baskets.
-  box(p, 0, 1.5, -3.35, 6.94, 3, 0.28, 0xa27a54);
+  box(p, -1.16, 1.5, -3.35, 4.62, 3, 0.28, 0xa27a54);
+  box(p, 3.07, 1.5, -3.35, .80, 3, .28, 0xa27a54);
+  box(p, 1.90, 1.25, -4.8, 1.52, 2.50, .16, 0x594538);
+  box(p, 1.90, .055, -3.5, 1.52, .11, 2.6, 0xb48c64);
   for (const x of [-3.27, 3.27]) box(p, x, 1.52, -2.84, 0.4, 3.04, 1.6, plaster);
   box(p, 0, 0.08, -2.28, 6.6, 0.16, 2.05, 0xc29565);
   box(p, 0, 2.84, -2.31, 6.75, 0.15, 1.84, timber);
@@ -80,7 +83,11 @@ export function buildBunShop(p, steamers) {
     rod(p, [x, 2.99, -2.37], [x, 2.74, -1.24], 0.067, i % 3 ? jade : 0x56897a, 0.073, 10);
   }
   for (const x of [-2.86, 2.85]) lantern(p, x, 2.12, -1.5);
-  box(p, 1.9, 1.22, -2.56, 1.48, 2.45, 0.1, 0x4d4336);
+  const door = group(p, 1.15, 0, -2.56);
+  box(door, .75, 1.22, 0, 1.48, 2.45, .10, 0x594537);
+  box(door, .75, .57, .06, 1.25, .88, .025, 0x77503a);
+  rod(door, [1.33,.85,.12], [1.33,1.14,.12], .034, 0xd1ac75);
+  bake(door);
   for (const x of [1.51, 2.26]) {
     box(p, x, 1.94, -2.24, 0.71, 0.91, 0.053, vermilion);
     box(p, x, 1.54, -2.201, 0.68, 0.036, 0.014, 0xe3ac77);
@@ -89,7 +96,8 @@ export function buildBunShop(p, steamers) {
   sign(p, 2.26, 1.99, -2.2, 0.52, 0.52, '作', { bg: '#a94832', ink: '#fff0c9', frame: false });
   box(p, 0.29, 1.96, -2.89, 0.68, 1.13, 0.08, timber);
   sign(p, 0.29, 1.96, -2.84, 0.59, 1.03, '今日鲜肉', { vertical: true, bg: '#edd5aa', ink: '#70432c' });
-  sign(p, -0.95, 0.65, -1.438, 0.74, 0.28, '取餐口', { bg: '#fcdfaa', ink: '#855337' });
+  sign(p, -0.95, 0.65, -1.438, 0.92, 0.28, '进店取餐 →', { bg: '#fcdfaa', ink: '#855337' });
+  return door;
 }
 
 // Transparent billows drift from the open basket and fade below the eaves.

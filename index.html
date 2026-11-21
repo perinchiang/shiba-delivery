@@ -44,11 +44,12 @@
           <div class="phone-scroll">
             <section id="order-screen" aria-label="订单明细">
               <div class="order-pay"><span><span class="service-name">阿柴快送 · </span>配送费</span><strong>¥3.10</strong></div>
+              <button type="button" id="switch-order">换成包子单</button>
               <ol class="stops">
-                <li><i>取</i><div><strong>便民药店</strong><small>榕湾老街 · 找兔药师</small></div></li>
+                <li><i>取</i><div><strong id="pickup-store">便民药店</strong><small id="pickup-person">榕湾老街 · 找兔药师</small></div></li>
                 <li><i>送</i><div><strong>榕树里 3 号</strong><small>猫婆婆在楼下等</small></div></li>
               </ol>
-              <p class="note">备注　药袋请当面交给猫婆婆。</p>
+              <p id="order-note" class="note">备注　药袋请当面交给猫婆婆。</p>
             </section>
             <section id="receipt" aria-label="本单账单" hidden>
               <h2>本单账单</h2>

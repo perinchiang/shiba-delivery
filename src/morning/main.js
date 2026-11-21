@@ -6,15 +6,22 @@ import { approach, clamp, damp, dampAngle } from '../core/mathx.js';
 import { glowMaterial, litMaterial } from '../core/materials.js';
 import { oscVoice } from '../audio/synth.js';
 import { createShiba, createScooter, parcel } from './rider.js';
-import { createStreet, createPharmacy, STOPS, CURB_H, CURB_Z } from './town.js';
+import { createStreet, createPharmacy, createBunRoom, STOPS, CURB_H, CURB_Z } from './town.js';
 import { beginSequence, boxFrame, doorFrame, isBoxSequence, isStandSequence, standFrame, positionParcel } from './sequence.js';
 import { frameRide, resizeRideCamera } from './ride-camera.js';
 import './style.css';
 
 const $ = id => document.getElementById(id);
-const actionNames = {
+const pharmacyActions = {
   phone: '查看新单', brake: '减速停车', pack: '把药袋放进箱子', unpack: '从箱里取药袋', statement: '查看到账', park: '停车下车', mount: '骑上小摩托', enter: '推门进店', exit: '推门出去',
   talk: '找兔药师取件', collect: '收好药袋', deliver: '递给猫婆婆', sign: '确认签收',
+};
+const orders = {
+  pharmacy: { name: '便民药店', door: STOPS.pharmacy, place: '药店内堂', staff: '兔药师', item: '药袋',
+    line: '阿柴，榕树里三号的药袋。猫婆婆在楼下等你呢。', actions: pharmacyActions },
+  buns: { name: '榕记包子铺', door: STOPS.bunDoor, place: '包子铺内堂', staff: '榕记师傅', item: '餐袋',
+    line: '阿柴，猫婆婆订的鲜肉包刚出笼。我装好了，趁热给她送去吧。',
+    actions: { ...pharmacyActions, talk: '找师傅取餐', collect: '接过包子', pack: '把餐袋放进箱子', unpack: '从箱里取餐袋' } },
 };
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 // Leave enough room at the near curb for both boots when hopping off the left peg.
@@ -52,12 +59,13 @@ async function run(renderer) {
     o.material = litMaterial({ vertexColors: true, grid: false });
     o.castShadow = o.receiveShadow = true;
   });
-  const street = createStreet(display.scene), room = createPharmacy();
+  const bunRoom = createBunRoom(display.scene.clone(true));
+  const street = createStreet(display.scene), pharmacy = createPharmacy();
   const shiba = createShiba(courier), scooter = createScooter(motorcycle);
-  scene.add(street.root, room.root, shiba.root, scooter.root);
+  scene.add(street.root, pharmacy.root, bunRoom.root, shiba.root, scooter.root);
   const looseBag = parcel(scene, 0, 0, 0);
   const courierScale = scooter.root.scale.y;
-  for (const bag of [room.bag, looseBag]) bag.scale.copy(shiba.root.scale);
+  for (const bag of [pharmacy.bag, bunRoom.bag, looseBag]) bag.scale.copy(shiba.root.scale);
   const marker = new THREE.Mesh(new THREE.RingGeometry(0.49, 0.54, 48),
     glowMaterial({ color: 0xffdf8a, intensity: 1, transparent: true, opacity: 0.86, depthWrite: false }));
   marker.rotation.x = -Math.PI / 2;
@@ -135,12 +143,13 @@ async function run(renderer) {
   }
 
   const state = {};
+  const order = () => orders[state.order];
   const phone = $('phone'), phoneToggle = $('phone-toggle');
   let phoneExpanded = false;
   const focus = new THREE.Vector3();
   const cameraUp = new THREE.Vector3(0, 1, 0);
   const eyeOffset = new THREE.Vector3();
-  let time = 0, stride = 0, walking = 0, headTurn = 0, lastMode = '', lastAction = '';
+  let time = 0, stride = 0, walking = 0, headTurn = 0, lastMode = '';
   let aspect = 1, view = '', closeUp = false, followYaw = Math.PI / 2;
   const portraitStart = Math.atan2(3.68, 2);
   let portraitAngle = portraitStart, dragX;
@@ -175,12 +184,12 @@ async function run(renderer) {
   function reset() {
     shopReview = '';
     shiba.resetTail();
-    Object.assign(state, { phase: 'offer', mode: 'ride', dialog: null, x: STOPS.start.x, z: STOPS.start.z,
+    Object.assign(state, { order: 'pharmacy', phase: 'offer', mode: 'ride', dialog: null, x: STOPS.start.x, z: STOPS.start.z,
       bikeX: STOPS.start.x, bikeZ: STOPS.start.z, bikeYaw: Math.PI / 2, yaw: Math.PI / 2, speed: 0, steer: 0, returnToBike: false, sequence: null, cargo: 'none', tiptoe: 0, reach: 0, stand: 1, lift: 0, braking: false });
     shiba.root.rotation.y = scooter.root.rotation.y = state.yaw;
     headTurn = .75;
     stride = walking = 0;
-    street.pharmacyDoor.rotation.y = scooter.lid.rotation.z = 0;
+    street.bunDoor.rotation.y = street.pharmacyDoor.rotation.y = scooter.lid.rotation.z = 0;
     setCloseUp(false);
     view = '';
     releaseStick();
@@ -195,6 +204,7 @@ async function run(renderer) {
     counter: { title: '药店柜台', stop: STOPS.counter, z: .42 },
     home: { title: '猫婆婆家', stop: STOPS.home, z: -.25 },
     buns: { title: '包子铺门面', stop: STOPS.bunShop, z: .16 },
+    bunCounter: { title: '包子铺柜台', stop: STOPS.counter, z: .42 },
     steamers: { title: '包子铺蒸笼', stop: STOPS.bunShop, z: .16 },
   };
   const debug = $('scene-debug');
@@ -203,16 +213,17 @@ async function run(renderer) {
     setPhoneExpanded(false);
     reset();
     if (stop) {
-      const home = id === 'home', counter = id === 'counter';
+      const home = id === 'home', counter = id === 'counter' || id === 'bunCounter';
+      if (id === 'buns' || id === 'steamers' || id === 'bunCounter') state.order = 'buns';
       Object.assign(state, {
         mode: counter ? 'shop' : 'walk', phase: home ? 'delivery' : 'pickup',
         cargo: home ? 'hand' : 'none', x: stop.x, z, yaw: Math.PI,
-        bikeX: counter ? STOPS.pharmacy.x : stop.x, bikeZ: STOPS.start.z,
+        bikeX: counter ? order().door.x : stop.x, bikeZ: STOPS.start.z,
       });
       if (id === 'buns' || id === 'steamers') {
         shopReview = id;
         state.x += 1.55;
-        state.bikeX -= 2.9;
+        state.bikeX = STOPS.bunDoor.x + 1;
       }
     }
     debug.open = false;
@@ -238,7 +249,7 @@ async function run(renderer) {
   function availableAction() {
     if (state.sequence || state.braking) return '';
     if (state.phase === 'done') return 'statement';
-    if (state.dialog === 'pharmacist') return 'collect';
+    if (state.dialog === 'shopkeeper') return 'collect';
     if (state.dialog === 'customer') return 'sign';
     if (state.phase === 'offer') return 'phone';
     if (state.mode === 'ride') return Math.abs(state.speed) > 0.85 ? 'brake' : 'park';
@@ -247,7 +258,7 @@ async function run(renderer) {
       if (distance(state, STOPS.exit) < 0.95) return 'exit';
       return '';
     }
-    if (state.phase === 'pickup' && distance(state, STOPS.pharmacy) < 1.02) return 'enter';
+    if (state.phase === 'pickup' && distance(state, order().door) < 1.02) return 'enter';
     if (state.cargo === 'hand' && !state.returnToBike && distance(state, STOPS.home) < 1.04) return 'deliver';
     if (distance(state, bike()) < 1.82) {
       if (state.cargo === 'hand') return state.returnToBike || !parkedAtHome() ? 'pack' : '';
@@ -306,6 +317,11 @@ async function run(renderer) {
     swiped = false;
   });
   $('phone-shade').addEventListener('click', () => setPhoneExpanded(false));
+  $('switch-order').addEventListener('click', () => {
+    if (state.phase !== 'offer') return;
+    state.order = state.order === 'buns' ? 'pharmacy' : 'buns';
+    syncHUD();
+  });
   $('phone-main').addEventListener('click', () => {
     if (state.phase === 'offer') {
       state.phase = 'pickup';
@@ -320,6 +336,7 @@ async function run(renderer) {
     if (phoneExpanded) return;
     const action = availableAction();
     if (!action) return;
+    shopReview = '';
     if (closeUp) setCloseUp(false);
     switch (action) {
       case 'phone':
@@ -341,7 +358,7 @@ async function run(renderer) {
         beginSequence(state, action);
         break;
       case 'talk':
-        state.dialog = 'pharmacist';
+        state.dialog = 'shopkeeper';
         state.yaw = Math.PI;
         break;
       case 'collect':
@@ -411,16 +428,16 @@ async function run(renderer) {
 
   function navigate() {
     if (state.mode === 'shop') return state.phase === 'pickup'
-      ? { name: '找兔药师取件', point: STOPS.counter }
+      ? { name: order().actions.talk, point: STOPS.counter }
       : { name: '回到老街', point: STOPS.exit };
     if (state.phase === 'delivery' || state.phase === 'done') {
       if (state.mode === 'walk' && state.phase !== 'done' && (state.returnToBike || state.cargo === 'box')) {
-        const name = state.returnToBike ? '回车旁装药袋' : (parkedAtHome() ? '从箱里取药袋' : actionNames.mount);
+        const name = state.returnToBike ? '回车旁装' + order().item : (parkedAtHome() ? order().actions.unpack : order().actions.mount);
         return { name, point: bike() };
       }
       return { name: '榕树里 3 号', point: STOPS.home };
     }
-    return { name: '便民药店', point: STOPS.pharmacy };
+    return { name: order().name, point: order().door };
   }
   function write(id, value) {
     const el = $(id);
@@ -440,10 +457,11 @@ async function run(renderer) {
       const turn = Math.abs(angle) < 0.24 ? '↑ 沿街直行' : (angle > 0 ? '← 向左转' : '向右转 →');
       return turn + '　' + Math.ceil(Math.abs(dx)) + ' m';
     }
-    if (state.sequence) return { enter: '正在进店', exit: '正在出门', pack: '正在装进保温箱', unpack: '正在取出药袋' }[state.sequence.kind];
-    if (action && !['mount', 'exit', 'enter'].includes(action)) return actionNames[action];
+    if (state.sequence) return { enter: '正在进店', exit: '正在出门', pack: '正在装进保温箱', unpack: '正在取出' + order().item }[state.sequence.kind];
+    if (action === 'talk') return '已到柜台';
+    if (action && !['mount', 'exit', 'enter'].includes(action)) return order().actions[action];
     if (action === 'enter' || (action === 'exit' && state.phase === 'delivery') ||
-        (action === 'mount' && target.name === actionNames.mount)) return actionNames[action];
+        (action === 'mount' && target.name === order().actions.mount)) return order().actions[action];
     const arrow = Math.abs(dx) > Math.abs(dz) ? (dx < 0 ? '← 往左走' : '往右走 →') : (dz < 0 ? '↑ 往里走' : '↓ 往外走');
     return arrow + '　' + Math.max(1, Math.ceil(distance(state, target.point))) + ' m';
   }
@@ -454,10 +472,15 @@ async function run(renderer) {
     $('stage').setAttribute('aria-busy', String(!!state.sequence || state.braking));
     if (phone.dataset.phase !== state.phase) phone.dataset.phase = state.phase;
     write('order-kind', offer ? '附近来单' : done ? '订单完成' : '当前订单');
-    write('phase', { offer: '待接单', pickup: '去取件', delivery: '去送达', done: '已签收' }[state.phase]);
+    $('switch-order').hidden = !offer;
+    write('switch-order', state.order === 'buns' ? '换成药店单' : '换成包子单');
+    write('pickup-store', order().name);
+    write('pickup-person', '榕湾老街 · 找' + order().staff);
+    write('order-note', state.order === 'buns' ? '备注　鲜肉包一份，请趁热送到。' : '备注　药袋请当面交给猫婆婆。');
+    write('phase', { offer: '待接单', pickup: state.order === 'buns' ? '去取餐' : '去取件', delivery: '去送达', done: '已签收' }[state.phase]);
     write('goal', done ? '猫婆婆已签收' : task.name);
     write('directions', offer ? '送往榕树里 3 号' : done ? '实际到账 ¥0.10' : guidance(task, action));
-    write('place', state.mode === 'shop' ? '药店内堂' : '榕湾老街');
+    write('place', state.mode === 'shop' ? order().place : '榕湾老街');
     write('clock', { offer: '07:12', pickup: '07:14', delivery: '07:20', done: '07:24' }[state.phase]);
     $('action').hidden = !action || action === 'phone' || action === 'statement' || phoneExpanded;
     $('dialogue').hidden = !state.dialog;
@@ -467,16 +490,13 @@ async function run(renderer) {
     $('receipt').hidden = !done;
     $('phone-main').hidden = done;
     $('replay').hidden = !done;
-    write('phone-main', offer ? '接下第一单' : '收起手机');
+    write('phone-main', offer ? (state.order === 'buns' ? '接下包子单' : '接下第一单') : '收起手机');
     if (state.dialog) {
-      const fromShop = state.dialog === 'pharmacist';
-      write('speaker', fromShop ? '兔药师' : '猫婆婆');
-      write('line', fromShop ? '阿柴，榕树里三号的药袋。猫婆婆在楼下等你呢。' : '到啦？辛苦你起这么早。来，歇口气再走。');
+      const fromShop = state.dialog === 'shopkeeper';
+      write('speaker', fromShop ? order().staff : '猫婆婆');
+      write('line', fromShop ? order().line : '到啦？辛苦你起这么早。来，歇口气再走。');
     }
-    if (action !== lastAction) {
-      write('action-text', actionNames[action] || '');
-      lastAction = action;
-    }
+    write('action-text', order().actions[action] || '');
     if (state.mode !== lastMode) {
       write('keys', riding ? 'W/S 油门与刹车　 A/D 转向　 E 互动' : '方向键 / WASD 步行　 E 互动');
       stick.setAttribute('aria-label', riding ? '骑行摇杆，上推加速，下拉刹车或倒车，左右转向' : '步行摇杆，向任意方向拖动');
@@ -511,7 +531,7 @@ async function run(renderer) {
         }
         return;
       }
-      const travel = isBoxSequence(state.sequence) ? boxFrame(state, dt, scooter) : doorFrame(state, dt, street.pharmacyDoor);
+      const travel = isBoxSequence(state.sequence) ? boxFrame(state, dt, scooter) : doorFrame(state, dt, state.order === 'buns' ? street.bunDoor : street.pharmacyDoor);
       walking = Math.min(1, travel / (2.4 * dt || 1));
       stride += travel * 5.4;
       return;
@@ -567,7 +587,9 @@ async function run(renderer) {
       state.braking && !state.speed ? 'stand' : state.sequence ? (handling ? 'stand' : packing ? 'box' : 'door') :
       (shopReview || (closeUp ? 'portrait' : inside ? 'shop' : !riding ? 'street' : state.phase === 'offer' ? 'intro' : 'chase'));
     const snap = nextView !== view;
-    room.root.visible = inside;
+    const room = state.order === 'buns' ? bunRoom : pharmacy;
+    bunRoom.root.visible = inside && room === bunRoom;
+    pharmacy.root.visible = inside && room === pharmacy;
     room.bag.visible = state.phase === 'pickup';
     street.root.visible = !inside;
     scooter.root.visible = !inside;
@@ -623,7 +645,7 @@ async function run(renderer) {
         scooter.root.localToWorld(eye.set(.35, 2.35, -4.35));
         eyeOffset.copy(eye).sub(desiredFocus);
       } else if (nextView === 'door') {
-        desiredFocus.set(STOPS.pharmacy.x, 1.27, -1.48);
+        desiredFocus.set(order().door.x, 1.27, -1.48);
         eyeOffset.set(1.55, 2.05, 8.7);
       } else if (shopReview) {
         const detail = shopReview === 'steamers';

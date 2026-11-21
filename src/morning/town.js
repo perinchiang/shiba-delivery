@@ -8,6 +8,7 @@ import { ear, parcel } from './rider.js';
 export const STOPS = {
   bunShop: { x: -5, z: 0.2 },
   start: { x: 0, z: 2.05 },
+  bunDoor: { x: -3.10, z: -0.61 },
   pharmacy: { x: 10.55, z: -0.61 },
   home: { x: 28.15, z: -0.88 },
   counter: { x: 0.37, z: -0.02 },
@@ -139,9 +140,9 @@ function streetShop(g, spec, i, steamers) {
   }
 
   if (steamers) {
-    buildBunShop(p, steamers);
+    const door = buildBunShop(p, steamers);
     bake(p);
-    return;
+    return door;
   }
   box(p, 0, 3.20, -2.01, 6.39, 0.76, 0.22, spec.base, 0.047);
   sign(p, 0, 3.2, -1.887, 6.25, 0.654, name, { bg: spec.sign, ink, sub });
@@ -274,9 +275,10 @@ export function createStreet(steamers) {
   }
   bake(road);
   const shopSide = group(root);
-  let pharmacyDoor;
+  let pharmacyDoor, bunDoor;
   shops.forEach((shop, i) => {
     const door = streetShop(shopSide, shop, i, shop.name === '榕记包子铺' ? steamers : null);
+    if (shop.name === '榕记包子铺') bunDoor = door;
     if (shop.name === '便民药店') pharmacyDoor = door;
   });
   // The chase camera sees both sides of the road and the bend at its far end.
@@ -308,7 +310,7 @@ export function createStreet(steamers) {
   cat.rotation.y = -0.23;
   const steam = [];
   for (let i = 0; i < 4; i++) steam.push(oval(shopSide, 0, 0, 0, 0.07, 0.13, 0.07, 0xffebcb));
-  return { root, shopSide, opposite, pharmacyDoor, update(t) {
+  return { root, shopSide, opposite, pharmacyDoor, bunDoor, update(t) {
     updateSteam(t);
     steam.forEach((puff, i) => {
       const life = (t * 0.53 + i * 0.25) % 1;
@@ -320,7 +322,7 @@ export function createStreet(steamers) {
   } };
 }
 
-export function createPharmacy() {
+function shopRoom() {
   const root = new THREE.Group();
   const room = group(root);
   box(room, 0, -0.20, 0, 8.7, 0.38, 6.50, 0xbc9474, 0.12);
@@ -333,6 +335,12 @@ export function createPharmacy() {
   box(room, 0, 1.28, -2.90, 8.58, 0.086, 0.14, 0x4d8273);
   box(room, -4.24, 1.10, -0.20, 0.15, 2.20, 5.64, 0xb7cbb3);
   box(room, 4.24, 0.40, -0.20, 0.15, 0.80, 5.64, 0xb7cbb3);
+  box(room, 0, 0.012, 2.48, 1.70, 0.024, 0.70, 0x8b9c82);
+  return { root, room };
+}
+
+export function createPharmacy() {
+  const { root, room } = shopRoom();
   box(room, -0.15, 3.47, -2.92, 3.93, 0.84, 0.15, wood, 0.05);
   sign(room, -0.15, 3.47, -2.832, 3.80, 0.72, '便民药店', { ink: '#326953', sub: '街 坊 老 店' });
 
@@ -365,7 +373,64 @@ export function createPharmacy() {
   counter.scale.y = 0.71;
   plant(room, -3.37, 0, -0.83, 1.35);
   const bag = parcel(root, 0.64, 0.776, -0.88);
-  box(room, 0, 0.012, 2.48, 1.70, 0.024, 0.70, 0x8b9c82);
   bake(room);
   return { root, bag, update(t) { rabbit.rotation.z = Math.sin(t * 1.7) * 0.025; } };
+}
+
+export function createBunRoom(display) {
+  const { root, room } = shopRoom();
+  // Timber posts frame a prep window into the kitchen.
+  for (const x of [-3.98, -1.35, 1.58, 3.98]) box(room, x, 2.03, -2.87, .14, 4.02, .19, wood);
+  box(room, 0, 3.89, -2.83, 8.18, .17, .23, wood);
+  box(room, 0, 3.07, -2.83, 2.62, .77, .17, wood, .045);
+  sign(room, 0, 3.07, -2.733, 2.50, .67, '榕记包子铺', { bg: '#26594c', ink: '#ffe1a2' });
+  for (const x of [-2.65, 2.72]) {
+    box(room, x, 2.03, -2.85, 2.18, 1.35, .16, wood);
+    box(room, x, 2.03, -2.75, 1.98, 1.16, .06, 0xa8c3ae);
+    for (const dx of [-.47, 0, .47]) box(room, x + dx, 2.03, -2.70, .055, 1.16, .055, wood);
+    box(room, x, 2.19, -2.70, 2, .055, .055, wood);
+  }
+  // A stove and removable bamboo stacks sit next to the short handoff counter.
+  box(room, -2.42, .47, -1.14, 2.55, .94, 1.34, 0x397367, .06);
+  box(room, -2.42, .97, -1.14, 2.66, .10, 1.42, 0xb28c62, .04);
+  display.scale.setScalar(.78);
+  display.position.set(-2.40, 1.02, -1.12);
+  room.add(display);
+  const steam = bunSteam(root, -3, 1.49, -1.21);
+  box(room, .83, .36, -1.10, 3.85, .72, .96, 0xc49762, .04);
+  for (let i = 0; i < 16; i++) box(room, -.96 + i * .24, .38, -.607, .033, .64, .032, 0xa9764e);
+  box(room, .83, .75, -1.10, 4, .10, 1.09, wood, .04);
+  sign(room, .90, .42, -.58, 1.17, .37, '骑手取餐', { bg: '#25594e', ink: '#ffe5af' });
+  const bag = parcel(root, .75, .80, -.81);
+  // Folded paper sacks and the red towel mark the packing end of the counter.
+  for (let i = 0; i < 4; i++) {
+    const sack = box(room, .94 + i * .012, .815 + i * .022, -1.29, .39, .019, .24, 0xd7ad78);
+    sack.rotation.y = .04 * i;
+  }
+  box(room, 1.41, .784, -.64, .35, .055, .24, 0xb3684c);
+  box(room, 1.41, .639, -.547, .35, .30, .041, 0xb3684c);
+  for (const y of [.53,.57]) box(room, 1.41, y, -.523, .35, .016, .012, cream);
+  sign(room, -2.24, .50, -.448, .50, .48, '蒸', { bg: '#305f54', ink: '#e7bf83' });
+  // The rolling pin, flour and freshly portioned dough read at counter height.
+  box(room, 2.07, .828, -1.10, 1.14, .055, .70, 0xddb67d, .035);
+  rod(room, [1.61,.93,-1.30], [2.38,.93,-1.20], .080, 0xbd8452);
+  rod(room, [1.48,.93,-1.32], [2.50,.93,-1.185], .034, wood);
+  for (let i = 0; i < 3; i++) oval(room, 1.74 + i * .29, .91, -.96, .118, .065, .105, cream);
+  for (const [i, name] of ['鲜肉包', '香菇包', '豆沙包'].entries()) {
+    const x = -.87 + i * .62;
+    box(room, x, 2.02, -2.82, .51, 1.12, .10, wood, .025);
+    sign(room, x, 2.02, -2.757, .44, 1.04, name, { bg: '#ecd1a1', ink: '#75452e', vertical: true });
+  }
+  // Keep the cook visible above the service top, with a low work platform at his feet.
+  box(room, -.57, .14, -1.87, 1.10, .28, .73, wood);
+  const chef = neighbor(root, -.57, .29, -1.85, false);
+  cylinder(chef, 0, 1.29, 0, .32, .38, .15, cream);
+  for (const x of [-.21, 0, .21]) oval(chef, x, 1.41, 0, .19, .15, .21, 0xffebc7);
+  box(chef, 0, .46, .221, .38, .46, .044, 0x537d6c, .026);
+  bake(chef);
+  bake(room);
+  return { root, bag, update(time) {
+    steam(time);
+    chef.rotation.z = Math.sin(time * 1.8) * .022;
+  } };
 }
