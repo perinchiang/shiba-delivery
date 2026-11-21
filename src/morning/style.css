@@ -177,3 +177,8 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
   #dialogue { position:absolute; right:0; bottom:calc(var(--stick-size) + 12px); }
 }
 @media(prefers-reduced-motion:reduce) { #phone { transition:none; } }
+
+#scene-debug { position:absolute; left:var(--dock-left); top:max(var(--edge),env(safe-area-inset-top)); z-index:1; pointer-events:auto; color:#fff5de; background:#203933ed; border-radius:13px; font-size:13px; }
+#scene-debug summary { padding:10px 13px; min-height:44px; cursor:pointer; }
+#scene-debug div { display:grid; grid-template-columns:repeat(2,1fr); gap:5px; padding:0 8px 8px; }
+#scene-debug button { min-height:44px; border-radius:7px; background:#f9edd2; color:#29473b; }

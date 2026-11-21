@@ -23,6 +23,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+        env:
+          VITE_SCENE_DEBUG: "1"
       - name: Preserve the published comparison URLs
         uses: actions/checkout@v7
         with:

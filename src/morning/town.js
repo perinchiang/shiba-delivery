@@ -2,9 +2,11 @@
 import * as THREE from 'three';
 import { RNG } from '../core/rng.js';
 import { bake, box, curve, cylinder, group, oval, rod, sign } from './shapes.js';
+import { buildBunShop, bunSteam } from './bun-shop.js';
 import { ear, parcel } from './rider.js';
 
 export const STOPS = {
+  bunShop: { x: -5, z: 0.2 },
   start: { x: 0, z: 2.05 },
   pharmacy: { x: 10.55, z: -0.61 },
   home: { x: 28.15, z: -0.88 },
@@ -97,7 +99,7 @@ function porch(g, residential) {
   }
 }
 
-function streetShop(g, spec, i) {
+function streetShop(g, spec, i, steamers) {
   const { x, name, sub, wall, stripe, ink } = spec;
   const p = group(g, x, CURB_H, 0);
   const top = 5.10 + (i % 3) * 0.42;
@@ -110,8 +112,12 @@ function streetShop(g, spec, i) {
     box(p, (jambLeft - half) / 2, y, z, half + jambLeft, height, depth, color);
     box(p, (jambRight + half) / 2, y, z, half - jambRight, height, depth, color);
   }
-  facade(top / 2, -3.75, 6.94, top, 3.26, wall);
-  facade(0.40, -2.10, 6.91, 0.80, 0.12, spec.base);
+  if (steamers) {
+    box(p, 0, (top + 2.84) / 2, -3.75, 6.94, top - 2.84, 3.26, wall);
+  } else {
+    facade(top / 2, -3.75, 6.94, top, 3.26, wall);
+    facade(0.40, -2.10, 6.91, 0.80, 0.12, spec.base);
+  }
   if (pharmacy) {
     box(p, 1.55, (top + 2.40) / 2, -3.75, 1.78, top - 2.40, 3.26, wall);
     box(p, 1.55, 1.19, -5.24, 1.78, 2.40, 0.12, 0x876e50);
@@ -132,6 +138,11 @@ function streetShop(g, spec, i) {
     for (let j = 0; j < 3; j++) box(p, -1.83 + j * 0.46, top + 0.40, -3.1, 0.33, 0.47, 0.045, [cream, stripe, spec.base][j]);
   }
 
+  if (steamers) {
+    buildBunShop(p, steamers);
+    bake(p);
+    return;
+  }
   box(p, 0, 3.20, -2.01, 6.39, 0.76, 0.22, spec.base, 0.047);
   sign(p, 0, 3.2, -1.887, 6.25, 0.654, name, { bg: spec.sign, ink, sub });
   if (name === '便民药店' || name === '榕树里') porch(p, name === '榕树里');
@@ -197,13 +208,14 @@ function streetShop(g, spec, i) {
 
 const shops = [
   [-12, '石湾茶楼', '一盅两件', 0xe1c897, 0x8ea382, 0x6e9584, '#f4e2b5', '#436753'],
-  [-5, '永安冰室', '冻柠茶　·　菠萝油', 0xb9ccc0, 0x7daba3, 0xc07b61, '#f4dfbc', '#934f43'],
+  [STOPS.bunShop.x, '榕记包子铺', '手作现蒸', 0xb9ccc0, 0x7daba3, 0xc07b61, '#f4dfbc', '#934f43'],
   [2, '陈记肠粉', '石 磨 米 浆', 0xf3ce9f, 0xb77c54, 0xce7653, '#f7e4b9', '#883f32'],
   [9, '便民药店', '榕湾老街　·　早七时开门', 0xc0d2b2, 0x518d7c, 0x6fa891, '#306e66', '#ffebbe'],
   [16, '榕湾邮局', '信 件 收 寄', 0xe2d5af, 0x668b70, 0x708a6a, '#eee5c6', '#4d715d'],
   [23, '阿娟花档', '时 花 鲜 切', 0xe8c2b0, 0xc08579, 0xe4a29a, '#f5d7bd', '#924c48'],
   [30, '榕树里', '街 坊 住 宅', 0xe1c49d, 0x9c805e, 0x7aa18b, '#eddec3', '#4a6655'],
   [37, '南记糖水', '陈皮绿豆沙', 0xc6d3bd, 0x6d9183, 0x95ac84, '#eddfbd', '#507263'],
+  [44, '永安冰室', '冻柠茶　·　菠萝油', 0xb9ccc0, 0x7daba3, 0xc07b61, '#f4dfbc', '#934f43'],
 ].map(([x, name, sub, wall, base, stripe, signColor, ink]) =>
   ({ x, name, sub, wall, base, stripe, sign: signColor, ink }));
 
@@ -243,7 +255,7 @@ function neighbor(g, x, y, z, rabbit) {
   return n;
 }
 
-export function createStreet() {
+export function createStreet(steamers) {
   const root = new THREE.Group();
   const road = group(root);
   box(road, 12, -0.17, 2, 80, 0.33, 23, 0xaaa598);
@@ -264,7 +276,7 @@ export function createStreet() {
   const shopSide = group(root);
   let pharmacyDoor;
   shops.forEach((shop, i) => {
-    const door = streetShop(shopSide, shop, i);
+    const door = streetShop(shopSide, shop, i, shop.name === '榕记包子铺' ? steamers : null);
     if (shop.name === '便民药店') pharmacyDoor = door;
   });
   // The chase camera sees both sides of the road and the bend at its far end.
@@ -288,14 +300,16 @@ export function createStreet() {
     for (let k = 0; k < 3; k++) box(skyline, x + k - 1, h - 1.1, -10.71 - i % 3, 0.45, 0.75, 0.07, 0x93afa3);
   }
   bake(skyline);
-  for (const [i, x] of [-9.1, -2.75, 5.58, 12.57, 19.51, 26.5, 33.55, 40.4].entries()) {
-    tree(shopSide, x, -1.26, 0.84 + (i % 3) * 0.08, i + 21);
+  for (const [i, x] of [-9.1, -1.56, 5.58, 12.57, 19.51, 26.5, 33.55, 40.4].entries()) {
+    tree(shopSide, x, -1.26, i === 1 ? 0.72 : 0.84 + (i % 3) * 0.08, i + 21);
   }
+  const updateSteam = bunSteam(shopSide, STOPS.bunShop.x - 1.83, CURB_H + 1.67, -1.91);
   const cat = neighbor(shopSide, STOPS.home.x, CURB_H, STOPS.home.z - 0.40, false);
   cat.rotation.y = -0.23;
   const steam = [];
   for (let i = 0; i < 4; i++) steam.push(oval(shopSide, 0, 0, 0, 0.07, 0.13, 0.07, 0xffebcb));
   return { root, shopSide, opposite, pharmacyDoor, update(t) {
+    updateSteam(t);
     steam.forEach((puff, i) => {
       const life = (t * 0.53 + i * 0.25) % 1;
       const r = (0.048 + life * 0.08) * Math.sin(life * Math.PI);

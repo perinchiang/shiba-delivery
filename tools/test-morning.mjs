@@ -192,6 +192,27 @@ try {
   await touch('touchEnd', [leftThumb]);
   await mobile.getByRole('button', { name: '骑上小摩托' }).waitFor();
   console.log('PASS: steering and tapping the action with two thumbs.');
+  const scenes = mobile.locator('#scene-debug');
+  if (await scenes.isVisible()) {
+    async function jump(name) {
+      await scenes.locator('summary').tap();
+      await scenes.getByRole('button', { name, exact: true }).tap();
+      assert.equal(await scenes.getAttribute('open'), null);
+    }
+    await jump('药店门口');
+    await mobile.getByRole('button', { name: '推门进店' }).tap();
+    // Interrupt the doorway animation and verify the next scene can act immediately.
+    await jump('药店柜台');
+    await mobile.getByRole('button', { name: '找兔药师取件' }).tap();
+    await jump('猫婆婆家');
+    await mobile.getByRole('button', { name: '递给猫婆婆' }).tap();
+    await mobile.getByRole('button', { name: '确认签收' }).tap();
+    await jump('包子铺门面');
+    await jump('包子铺蒸笼');
+    await jump('老街起点');
+    assert.equal(await mobile.locator('#phone').getAttribute('data-phase'), 'offer');
+    console.log('PASS: all scene jumps, interrupted door, counter pickup and customer signature.');
+  }
 } finally {
   await browser.close();
 }

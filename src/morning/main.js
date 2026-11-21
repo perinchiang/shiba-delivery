@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Input } from '../core/input.js';
 import { approach, clamp, damp, dampAngle } from '../core/mathx.js';
-import { glowMaterial } from '../core/materials.js';
+import { glowMaterial, litMaterial } from '../core/materials.js';
 import { oscVoice } from '../audio/synth.js';
 import { createShiba, createScooter, parcel } from './rider.js';
 import { createStreet, createPharmacy, STOPS, CURB_H, CURB_Z } from './town.js';
@@ -41,12 +41,18 @@ async function run(renderer) {
   sun.shadow.radius = 2;
   scene.add(sun, sun.target);
 
-  const street = createStreet(), room = createPharmacy();
   const loader = new GLTFLoader();
-  const [courier, motorcycle] = await Promise.all([
+  const [courier, motorcycle, display] = await Promise.all([
     loader.loadAsync(new URL('../../art/morning/shiba-courier.glb', import.meta.url).href),
     loader.loadAsync(new URL('../../art/morning/monkey-delivery.glb', import.meta.url).href),
+    loader.loadAsync(new URL('../../art/bun-shop/steamers.glb', import.meta.url).href),
   ]);
+  display.scene.traverse(o => {
+    if (!o.isMesh) return;
+    o.material = litMaterial({ vertexColors: true, grid: false });
+    o.castShadow = o.receiveShadow = true;
+  });
+  const street = createStreet(display.scene), room = createPharmacy();
   const shiba = createShiba(courier), scooter = createScooter(motorcycle);
   scene.add(street.root, room.root, shiba.root, scooter.root);
   const looseBag = parcel(scene, 0, 0, 0);
@@ -159,10 +165,15 @@ async function run(renderer) {
   });
   stage.addEventListener('lostpointercapture', () => { dragX = undefined; });
   function look() {
-    if (!state.dialog && !state.sequence && !phoneExpanded) setCloseUp(!closeUp);
+    if (!state.dialog && !state.sequence && !phoneExpanded) {
+      shopReview = '';
+      setCloseUp(!closeUp);
+    }
   }
   $('look').addEventListener('click', look);
+  let shopReview = '';
   function reset() {
+    shopReview = '';
     shiba.resetTail();
     Object.assign(state, { phase: 'offer', mode: 'ride', dialog: null, x: STOPS.start.x, z: STOPS.start.z,
       bikeX: STOPS.start.x, bikeZ: STOPS.start.z, bikeYaw: Math.PI / 2, yaw: Math.PI / 2, speed: 0, steer: 0, returnToBike: false, sequence: null, cargo: 'none', tiptoe: 0, reach: 0, stand: 1, lift: 0, braking: false });
@@ -176,6 +187,50 @@ async function run(renderer) {
     input.clearVirtual();
     $('receipt').hidden = true;
     $('announcement').textContent = '阿柴快送。第一单，便民药店取件。';
+  }
+
+  const sceneJumps = {
+    street: { title: '老街起点' },
+    pharmacy: { title: '药店门口', stop: STOPS.pharmacy, z: -.32 },
+    counter: { title: '药店柜台', stop: STOPS.counter, z: .42 },
+    home: { title: '猫婆婆家', stop: STOPS.home, z: -.25 },
+    buns: { title: '包子铺门面', stop: STOPS.bunShop, z: .16 },
+    steamers: { title: '包子铺蒸笼', stop: STOPS.bunShop, z: .16 },
+  };
+  const debug = $('scene-debug');
+  function jumpScene(id) {
+    const { stop, z } = sceneJumps[id];
+    setPhoneExpanded(false);
+    reset();
+    if (stop) {
+      const home = id === 'home', counter = id === 'counter';
+      Object.assign(state, {
+        mode: counter ? 'shop' : 'walk', phase: home ? 'delivery' : 'pickup',
+        cargo: home ? 'hand' : 'none', x: stop.x, z, yaw: Math.PI,
+        bikeX: counter ? STOPS.pharmacy.x : stop.x, bikeZ: STOPS.start.z,
+      });
+      if (id === 'buns' || id === 'steamers') {
+        shopReview = id;
+        state.x += 1.55;
+        state.bikeX -= 2.9;
+      }
+    }
+    debug.open = false;
+    syncHUD();
+  }
+  const params = new URLSearchParams(location.search);
+  if (import.meta.env.DEV || import.meta.env.VITE_SCENE_DEBUG === '1' || params.get('debug') === '1') {
+    debug.hidden = false;
+    for (const [id, scene] of Object.entries(sceneJumps)) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = scene.title;
+      button.addEventListener('click', () => {
+        jumpScene(id);
+        debug.querySelector('summary').focus({ preventScroll: true });
+      });
+      debug.querySelector('div').append(button);
+    }
   }
 
   const bike = () => ({ x: state.bikeX, z: state.bikeZ });
@@ -205,6 +260,7 @@ async function run(renderer) {
   function setPhoneExpanded(expanded) {
     if (expanded === phoneExpanded || (expanded && (state.sequence || state.dialog || state.braking))) return;
     phoneExpanded = expanded;
+    if (expanded) debug.open = false;
     if (expanded) state.speed = 0;
     releaseStick();
     input.clearVirtual();
@@ -324,6 +380,13 @@ async function run(renderer) {
     }, true);
   }
   window.addEventListener('keydown', e => {
+    if (debug.contains(e.target) && ['Tab', 'Enter', 'Space', 'Escape'].includes(e.code)) {
+      if (e.code === 'Escape') {
+        debug.open = false;
+        debug.querySelector('summary').focus();
+      }
+      return;
+    }
     if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.code === 'KeyQ' || (e.code === 'Tab' && !phoneExpanded && !e.shiftKey && e.target.tagName !== 'BUTTON')) {
       e.preventDefault();
@@ -455,6 +518,7 @@ async function run(renderer) {
     }
     if (state.phase === 'offer' || state.phase === 'done' || state.dialog || phoneExpanded) return;
     const dx = input.axis('left', 'right'), dz = input.axis('up', 'down');
+    if (dx || dz) shopReview = '';
     if (closeUp && (dx || dz)) setCloseUp(false);
     if (state.mode === 'ride') {
       const throttle = state.braking ? 0 : -dz;
@@ -501,7 +565,7 @@ async function run(renderer) {
     const seatBlend = handling ? state.sequence.seat ?? (riding ? 1 : 0) : Number(riding);
     const nextView = state.sequence?.approaching ? 'street' :
       state.braking && !state.speed ? 'stand' : state.sequence ? (handling ? 'stand' : packing ? 'box' : 'door') :
-      (closeUp ? 'portrait' : inside ? 'shop' : !riding ? 'street' : state.phase === 'offer' ? 'intro' : 'chase');
+      (shopReview || (closeUp ? 'portrait' : inside ? 'shop' : !riding ? 'street' : state.phase === 'offer' ? 'intro' : 'chase'));
     const snap = nextView !== view;
     room.root.visible = inside;
     room.bag.visible = state.phase === 'pickup';
@@ -533,8 +597,8 @@ async function run(renderer) {
       scene.background = new THREE.Color(inside ? 0xe2cfaa : 0xc1dcd8);
       scene.fog = new THREE.FogExp2(inside ? 0xe2cfaa : 0xd9dfc9, inside ? 0.014 : 0.031);
       followYaw = state.bikeYaw;
-      const heights = { portrait: 3.30, intro: 4.8, door: 4.05, stand: 2.95, box: 3.6, shop: 5.56, street: 6.15 };
-      const widths = { portrait: 3.2, intro: 4.0, door: 3.25, stand: 3.00, box: 3.2, shop: 7.1, street: 5.2 };
+      const heights = { buns: 4.9, steamers: 2.1, portrait: 3.30, intro: 4.8, door: 4.05, stand: 2.95, box: 3.6, shop: 5.56, street: 6.15 };
+      const widths = { buns: 7.05, steamers: 3.65, portrait: 3.2, intro: 4.0, door: 3.25, stand: 3.00, box: 3.2, shop: 7.1, street: 5.2 };
       if (nextView !== 'chase') {
         const detailScale = nextView === 'portrait' || nextView === 'box' ? courierScale : 1;
         const h = Math.max(heights[nextView], Math.min(11.4, widths[nextView] / aspect)) * detailScale;
@@ -561,6 +625,10 @@ async function run(renderer) {
       } else if (nextView === 'door') {
         desiredFocus.set(STOPS.pharmacy.x, 1.27, -1.48);
         eyeOffset.set(1.55, 2.05, 8.7);
+      } else if (shopReview) {
+        const detail = shopReview === 'steamers';
+        desiredFocus.set(STOPS.bunShop.x - (detail ? 1.07 : 0), detail ? 1.54 : 2.26, -1.74);
+        eyeOffset.set(detail ? 1.8 : 1.3, detail ? 4.8 : 2.0, 10);
       } else if (posed) {
         desiredFocus.set(state.x, (riding ? 1.21 : 1.10) * courierScale, state.z);
         if (riding) {
@@ -597,7 +665,9 @@ async function run(renderer) {
     view = '';
   }
   window.addEventListener('resize', () => { releaseStick(); resize(); });
-  reset();
+  const requestedScene = params.get('scene');
+  if (!debug.hidden && Object.hasOwn(sceneJumps, requestedScene)) jumpScene(requestedScene);
+  else reset();
   resize();
   let previous;
   renderer.setAnimationLoop(now => {
