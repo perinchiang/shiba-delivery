@@ -48,6 +48,7 @@ npm run build
 ## 文档与美术资产
 
 - [`docs/GAME.md`](docs/GAME.md)：唯一现行产品设计基线；区分已确定、待验证、当前原型及明确不做。
+- [`docs/ROADMAP.md`](docs/ROADMAP.md)：开发阶段顺序、当前进度与各阶段过关标准。
 - [`AGENTS.md`](AGENTS.md)：AI 开发与文档同步规则。
 - [`art/morning/README.md`](art/morning/README.md)：Blender 角色、摩托车、动画、贴图及导出流程。
 - [`art/morning/Rongwan-Courier.blend`](art/morning/Rongwan-Courier.blend)：可编辑的原始场景。
