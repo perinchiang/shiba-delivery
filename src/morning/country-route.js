@@ -14,6 +14,23 @@ export const bridgeJointXs = [894, 910, 930, 950];
 // One deliberately bounded road-edge study area. Keeping this in the route
 // module lets the road mesh and paddy generator share the same cross-section.
 export const paddyShoulderSample = { start: 748, end: 812 };
+export const paddyShoulderCrossSection = {
+  roadOuter: 1.82,
+  cut: 1.98,
+  ditch: 2.38,
+  berm: 2.82,
+  root: 3.12,
+};
+export function paddyShoulderWeight(x) {
+  return smoothstep(x, paddyShoulderSample.start - 10, paddyShoulderSample.start)
+    * (1 - smoothstep(x, paddyShoulderSample.end, paddyShoulderSample.end + 10));
+}
+export function paddyRoadOuterOffset(x) {
+  return halfWidth(x) + lerp(1.75, paddyShoulderCrossSection.roadOuter, paddyShoulderWeight(x));
+}
+export function paddyRoadOuterHeight(x) {
+  return roadHeight(x) + lerp(-0.07, -0.15, paddyShoulderWeight(x));
+}
 export const roadEnd = knots.at(-1)[0];
 function tangent(i) {
   if (knots[i][0] <= 120) return 0;

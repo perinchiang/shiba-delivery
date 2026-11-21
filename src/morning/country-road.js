@@ -2,7 +2,7 @@
 // Transitions smoothly from Old Street / City Crossing into dark slate rural asphalt and stone bridge deck.
 import * as THREE from 'three';
 import { litMaterial } from '../core/materials.js';
-import { centerZ, crossing, halfWidth, roadHeight, paddyShoulderSample } from './country-route.js';
+import { centerZ, crossing, halfWidth, roadHeight, paddyShoulderCrossSection, paddyShoulderWeight } from './country-route.js';
 
 import { harvestStart, harvestEnd } from './harvest-field.js';
 
@@ -189,9 +189,8 @@ export function buildCountryRoad(start, end) {
     const midShoulder = river ? 0.45 : 0.68;
     const skirtDrop = river ? 0 : nearCross ? -0.18 : tallZone ? -0.07 : -0.22;
     const shDrop = river ? 0 : nearCross ? -0.04 : -0.025;
-    const sample = THREE.MathUtils.smoothstep(x, paddyShoulderSample.start - 10, paddyShoulderSample.start)
-      * (1 - THREE.MathUtils.smoothstep(x, paddyShoulderSample.end, paddyShoulderSample.end + 10));
-    const sampleSkirt = 1.82;
+    const sample = paddyShoulderWeight(x);
+    const sampleSkirt = paddyShoulderCrossSection.roadOuter;
     const outer = THREE.MathUtils.lerp(skirtWidth, sampleSkirt, sample);
     const mid = THREE.MathUtils.lerp(midShoulder, 0.72, sample);
     const ditch = THREE.MathUtils.lerp(midShoulder, 1.34, sample);
@@ -199,9 +198,9 @@ export function buildCountryRoad(start, end) {
       -(hw + outer), -(hw + ditch), -(hw + mid), -hw, -hw * 0.5, 0,
       hw * 0.5, hw, hw + mid, hw + ditch, hw + outer,
     ];
-    const actualDrops = sample > 0.001
-      ? [-0.15, -0.30, -0.18, -0.06, 0, 0, 0, -0.06, -0.18, -0.30, -0.15]
-      : [skirtDrop, shDrop, 0, 0, 0, 0, 0, 0, shDrop, shDrop, skirtDrop];
+    const oldDrops = [skirtDrop, shDrop, 0, 0, 0, 0, 0, 0, shDrop, shDrop, skirtDrop];
+    const sampleDrops = [-0.15, -0.30, -0.18, -0.06, 0, 0, 0, -0.06, -0.18, -0.30, -0.15];
+    const actualDrops = oldDrops.map((drop, index) => THREE.MathUtils.lerp(drop, sampleDrops[index], sample));
 
     // Tangent / normal estimate along the grade
     const dh = (roadHeight(x + 1) - roadHeight(prevX(x))) * 0.5;

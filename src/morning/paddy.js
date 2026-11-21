@@ -7,7 +7,7 @@ import { GeoBuilder } from '../core/geo.js';
 import { litMaterial } from '../core/materials.js';
 import { rngFrom } from '../core/rng.js';
 import { addHarvest, harvestSheaves, harvestStart, harvestEnd, harvestWeight, inHarvest } from './harvest-field.js';
-import { centerZ, halfWidth, paddyShoulderSample, roadHeight } from './country-route.js';
+import { centerZ, halfWidth } from './country-route.js';
 
 export const fieldStart = 196;
 export const tallStart = 570;
@@ -17,11 +17,6 @@ export const eastFieldStart = 956;
 export const eastFieldEnd = 1068;
 
 export const fieldWindTime = { value: 0 };
-
-export function shoulderSampleWeight(x) {
-  return THREE.MathUtils.smoothstep(x, paddyShoulderSample.start - 10, paddyShoulderSample.start)
-    * (1 - THREE.MathUtils.smoothstep(x, paddyShoulderSample.end, paddyShoulderSample.end + 10));
-}
 
 // 6-slot trailing wake ring buffer + live rider state shared across all paddy shaders.
 const WAKE_COUNT = 6;
@@ -172,8 +167,7 @@ function nearEdge(x, side) {
   const hw = halfWidth(x);
   // Open water-paddy sits a bit further out so you see the glinting water channel & bund;
   // Tall golden rice corridor hugs right up next to the warm dirt shoulder for immersive envelopment!
-  const sample = shoulderSampleWeight(x);
-  const base = THREE.MathUtils.lerp(hw + 1.95, hw + 1.08, tw) + sample * 1.20;
+  const base = THREE.MathUtils.lerp(hw + 1.95, hw + 1.08, tw);
   return base + 0.24 * Math.sin(x * 0.065 + side * 1.4) + 0.15 * Math.cos(x * 0.12);
 }
 
@@ -211,24 +205,11 @@ function addZone(group, ground, crowns, tallA, tallB, lowList, from, to, rng) {
     for (const side of [-1, 1]) {
       const e0 = nearEdge(x, side);
       const e1 = nearEdge(nx, side);
-      const sample = shoulderSampleWeight(xm);
 
       // Gentle grassy verge from road skirt to paddy edge
       const roadSkirt = halfWidth(x) + 1.65;
       const roadSkirtN = halfWidth(nx) + 1.65;
-      if (sample > 0.01) {
-        // A short section with a legible road-to-field section: the road
-        // drops into a dark cut, then climbs a rounded bund before the root
-        // zone. The faces are part of the existing ground batch.
-        const cut0 = roadSkirt, cut1 = halfWidth(x) + 1.98;
-        const cut0N = roadSkirtN, cut1N = halfWidth(nx) + 1.98;
-        const cut2 = halfWidth(x) + 2.38, cut2N = halfWidth(nx) + 2.38;
-        const berm = halfWidth(x) + 2.82, bermN = halfWidth(nx) + 2.82;
-        strip(ground, x, nx, side, cut0, cut1, cut0N, cut1N, roadHeight(x) - .10, roadHeight(nx) - .10, 0x59482d);
-        strip(ground, x, nx, side, cut1, cut2, cut1N, cut2N, roadHeight(x) - .10, roadHeight(nx) - .25, 0x3c3626);
-        strip(ground, x, nx, side, cut2, berm, cut2N, bermN, roadHeight(x) - .25, sy + .05, 0x80663d);
-        strip(ground, x, nx, side, berm, e0, bermN, e1, sy + .02, sy, 0x71884a);
-      } else if (e0 > roadSkirt + 0.05) {
+      if (e0 > roadSkirt + 0.05) {
         strip(ground, x, nx, side, roadSkirt, e0, roadSkirtN, e1, sy, syN, 0x6ea04f);
       }
 
@@ -245,9 +226,7 @@ function addZone(group, ground, crowns, tallA, tallB, lowList, from, to, rng) {
         strip(ground, x, nx, side, ditchHi + 1.45, e0 + 24.0, ditchHiN + 1.45, e1 + 24.0, sy + 0.02, syN + 0.02, 0x56a8b7);
       } else {
         // Zone 2: Warm rich olive ground tucked beneath the towering golden rice sea
-        const base = e0 + (sample > 0.01 ? 0.12 : -0.30);
-        const baseN = e1 + (sample > 0.01 ? 0.12 : -0.30);
-        strip(ground, x, nx, side, base, e0 + 24.0, baseN, e1 + 24.0, sy, syN, 0x5f8541);
+        strip(ground, x, nx, side, e0 - 0.30, e0 + 24.0, e1 - 0.30, e1 + 24.0, sy, syN, 0x5f8541);
       }
 
       // Seamless undulating mid-to-far plush canopy stretching to the distant treeline (10m .. 135m)
@@ -296,14 +275,12 @@ function addZone(group, ground, crowns, tallA, tallB, lowList, from, to, rng) {
       const inDivider = !isTall && ((x % parcelLen) < 2.2);
       if (!inDivider) {
         const edge = nearEdge(x, side);
-        const sample = shoulderSampleWeight(x);
-        const startOff = isTall ? THREE.MathUtils.lerp(0.18, 0.46, sample) : 1.70;
+        const startOff = isTall ? 0.18 : 1.70;
         const rows = isTall ? 13 : 9;
         const rowPitch = isTall ? 1.08 : 1.24;
         for (let r = 0; r < rows; r++) {
           // Feather outer rows softly into the far golden canopy so there is zero straight boundary
           if (r >= 6 && r < 10 && (Math.floor(x) + r) % 2 === 1) continue;
-          if (sample > 0.01 && isTall && r < 3 && !rng.chance(.48 + r * .10)) continue;
           if (r >= 10 && !rng.chance(0.32)) continue;
           const jitterX = rng.range(-0.36, 0.36);
           const jitterZ = rng.range(-0.32, 0.32);
@@ -316,8 +293,7 @@ function addZone(group, ground, crowns, tallA, tallB, lowList, from, to, rng) {
             const ramp = THREE.MathUtils.lerp(0.76, 1.0, tw);
             // Front-most edge slightly fuller and playfully arching over the shoulder
             const frontBoost = r === 0 ? 1.06 : 1.0;
-            const syScale = ramp * frontBoost * rng.range(sample > 0.01 && r < 3 ? .72 : .94,
-              sample > 0.01 && r < 3 ? 1.08 : 1.16);
+            const syScale = ramp * frontBoost * rng.range(.94, 1.16);
             const sxScale = rng.range(1.06, 1.28);
             const target = ((Math.floor(x * 3) + r + (side > 0 ? 1 : 0)) % 2 === 0) ? tallA : tallB;
             const blend = harvestWeight(px);

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GeoBuilder } from '../core/geo.js';
 import { rngFrom } from '../core/rng.js';
-import { centerZ, halfWidth, paddyShoulderSample } from './country-route.js';
+import { centerZ, halfWidth, paddyRoadOuterHeight, paddyRoadOuterOffset, paddyShoulderCrossSection, paddyShoulderWeight, roadHeight } from './country-route.js';
 import sheafUrl from '../../art/countryside/harvest-rice.png?url';
 
 export const harvestStart = 686;
@@ -14,8 +14,7 @@ export function harvestWeight(x, feather = 12) {
 
 // The furrow widens in pockets along the inside of each bend.
 function margin(x, side) {
-  const sample = THREE.MathUtils.smoothstep(x, paddyShoulderSample.start - 10, paddyShoulderSample.start)
-    * (1 - THREE.MathUtils.smoothstep(x, paddyShoulderSample.end, paddyShoulderSample.end + 10));
+  const sample = paddyShoulderWeight(x);
   return halfWidth(x) + 1.55 + sample * 1.05
     + .75 * Math.sin(x * .092 + side) + .26 * Math.cos(x * .21 - side);
 }
@@ -54,18 +53,49 @@ export function addHarvest(ground, crowns, from, to) {
   for (const side of [-1, 1]) {
     const distances = [-2, -.32, .12, .53, 1.28, 2.7, 4.4, 7, 10, 14, 19, 25, 34, 46, 63, 83, 108, 132, 134, 235];
     function vertex(x, d) {
-      const sample = THREE.MathUtils.smoothstep(x, paddyShoulderSample.start - 10, paddyShoulderSample.start)
-        * (1 - THREE.MathUtils.smoothstep(x, paddyShoulderSample.end, paddyShoulderSample.end + 10));
-      const skirt = halfWidth(x) + 1.75 + sample * .85;
-      const furrow = Math.max(skirt + .28, margin(x, side) + .65);
-      const offset = d < 0 ? THREE.MathUtils.lerp(skirt, furrow, (d + 2) / 2) : furrow + d;
+      const sample = paddyShoulderWeight(x);
+      // The harvested field owns this whole interval. Its first surface
+      // starts at the same shoulder boundary as the road mesh, then reaches
+      // the root zone after the cut and bund. This prevents a hidden gap
+      // when addZone intentionally skips ripe-rice rows.
+      const skirt = paddyRoadOuterOffset(x);
+      const furrow = sample > .01
+        ? halfWidth(x) + paddyShoulderCrossSection.root
+          + .32 * Math.sin(x * .092 + side) + .12 * Math.cos(x * .21 - side)
+        : Math.max(skirt + .28, margin(x, side) + .65);
+      let offset = d < 0 ? THREE.MathUtils.lerp(skirt, furrow, (d + 2) / 2) : furrow + d;
+      if (sample > .01 && d >= 1) offset = halfWidth(x) + paddyShoulderCrossSection.root + (d - 1);
+      let profileHeight = roadHeight(x) - .15;
+      if (sample > .01 && d < 1) {
+        const profile = [
+          [-2, paddyShoulderCrossSection.roadOuter, paddyRoadOuterHeight(x)],
+          [-.8, paddyShoulderCrossSection.cut, paddyRoadOuterHeight(x)],
+          [-.2, paddyShoulderCrossSection.ditch, roadHeight(x) - .27],
+          [.35, paddyShoulderCrossSection.berm, roadHeight(x) - .03],
+          [1, paddyShoulderCrossSection.root, -.04],
+        ];
+        for (let p = 1; p < profile.length; p++) {
+          if (d > profile[p][0]) continue;
+          const a = profile[p - 1], b = profile[p];
+          const t = THREE.MathUtils.clamp((d - a[0]) / (b[0] - a[0]), 0, 1);
+          offset = halfWidth(x) + THREE.MathUtils.lerp(a[1], b[1], t);
+          profileHeight = THREE.MathUtils.lerp(a[2], b[2], t);
+          break;
+        }
+      }
       const z = centerZ(x) + side * offset;
       const blend = harvestWeight(x);
       const roll = swell(x, d, side);
       let h, col;
       if (d < 1) {
-        h = d === -2 ? -.07 : d < .2 ? -.19 : -.10;
-        col = d < -.3 ? 0xa29872 : d < .2 ? 0x939677 : 0x999653;
+        if (sample > .01) {
+          h = profileHeight;
+          col = new THREE.Color(0x5a472d).lerp(new THREE.Color(0x6e874b),
+            THREE.MathUtils.clamp((d + 2) / 3, 0, 1));
+        } else {
+          h = d === -2 ? -.07 : d < .2 ? -.19 : -.10;
+          col = d < -.3 ? 0xa29872 : d < .2 ? 0x939677 : 0x999653;
+        }
       } else {
         const rise = THREE.MathUtils.smoothstep(d, 1, 4.8);
         const far = THREE.MathUtils.smoothstep(d, 18, 65);
@@ -74,7 +104,8 @@ export function addHarvest(ground, crowns, from, to) {
       }
       const oldHeight = d > 132 ? -.24 : THREE.MathUtils.lerp(-.06, 1.18, THREE.MathUtils.smoothstep(d, 9.5, 13.8));
       const oldColor = d < 10 ? 0x5f8541 : d > 132 ? 0x6ea062 : 0xdfb94b;
-      return {p:[x,d === -2 ? -.07 : THREE.MathUtils.lerp(oldHeight,h,blend),z], col:new THREE.Color(oldColor).lerp(new THREE.Color(col),blend)};
+      const outerY = paddyRoadOuterHeight(x);
+      return {p:[x,d === -2 ? outerY : THREE.MathUtils.lerp(oldHeight,h,blend),z], col:new THREE.Color(oldColor).lerp(new THREE.Color(col),blend)};
     }
     for (let x = from; x < to; x += 2) {
       const next = Math.min(to,x+2);
