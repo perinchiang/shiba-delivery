@@ -5,7 +5,8 @@ import { CURB_H, CURB_Z } from './town.js';
 import { isStandSequence } from './sequence.js';
 import { distance } from './delivery.js';
 import { rideMinZ } from './movement.js';
-import { formatPay, nextOrder } from './orders.js';
+import { formatPay, nextOrder, orders } from './orders.js';
+import { mountBunHandoff } from './bun-handoff.jsx';
 import { drawRouteMap } from './route-map.js';
 import { distanceAlong, roadEnd, roadPlace, routeDistances } from './country-route.js';
 import { drawStreetMap } from './street-map.js';
@@ -14,7 +15,10 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
   const { availableAction, navigate } = delivery;
   const debug = $('scene-debug');
   const dialogue = $('dialogue');
+  const bunDialogue = $('bun-dialogue');
   const interaction = dialogue.parentElement;
+  const actionButton = $('action');
+  mountBunHandoff(bunDialogue, orders.find(order => order.id === 'buns'));
   let lastMode = '';
   let audio;
   function bell(notes) {
@@ -152,10 +156,10 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     bell(action === 'sign' ? [523, 659, 784] : [action === 'enter' || action === 'exit' ? 740 : 587]);
     syncHUD();
   }
-  $('action').addEventListener('click', perform);
+  actionButton.addEventListener('click', perform);
   // Some touch browsers only synthesize a click for the first finger. Let the
   // other thumb tap a control while the stick still owns the first pointer.
-  for (const button of [$('action'), phoneToggle]) {
+  for (const button of [actionButton, phoneToggle]) {
     let secondaryTap = false;
     button.addEventListener('pointerdown', () => { secondaryTap = false; });
     button.addEventListener('pointerup', event => {
@@ -266,9 +270,15 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     write('order-summary', free ? Math.round(Math.abs(state.speed)*3.6) + (state.speed < 0 ? ' km/h · 倒车' : ' km/h · 自由骑行') : done ? '实际到账 ' + net : '送往' + state.order.customer.address);
     write('place', free ? '榕湾村道' : state.mode === 'shop' ? state.order.room.name : '榕湾老街');
     write('clock', free ? '清晨' : state.order.clock[state.phase]);
-    $('action').hidden = !action || action === 'phone' || action === 'statement' || phoneExpanded;
-    dialogue.hidden = !state.dialog;
-    interaction.classList.toggle('bun-handoff', state.order.id === 'buns' && state.dialog === 'shopkeeper');
+    actionButton.hidden = !action || action === 'phone' || action === 'statement' || phoneExpanded;
+    const bunHandoff = state.order.id === 'buns' && state.dialog === 'shopkeeper';
+    dialogue.hidden = !state.dialog || bunHandoff;
+    if (bunDialogue.hidden === bunHandoff) {
+      bunDialogue.hidden = !bunHandoff;
+      interaction.classList.toggle('bun-handoff', bunHandoff);
+      if (bunHandoff) actionButton.setAttribute('aria-describedby', bunDialogue.id);
+      else actionButton.removeAttribute('aria-describedby');
+    }
     $('look').hidden = !!state.dialog || !!state.sequence || state.braking;
     phoneToggle.disabled = !!state.dialog || !!state.sequence || state.braking;
     $('order-screen').hidden = done || free;
@@ -276,7 +286,7 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     $('phone-main').hidden = done;
     $('replay').hidden = !done;
     write('phone-main', offer ? state.order.accept : '收起手机');
-    if (state.dialog) {
+    if (state.dialog && !bunHandoff) {
       const fromShop = state.dialog === 'shopkeeper';
       write('speaker', fromShop ? state.order.staff : state.order.customer.name);
       write('line', fromShop ? state.order.line : state.order.customer.line);

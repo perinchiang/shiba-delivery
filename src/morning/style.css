@@ -1,3 +1,6 @@
+@import "animal-island-ui/es/components/Card/card.module.css";
+@import "animal-island-ui/es/components/Tag/tag.module.css";
+
 :root {
   font:15px/1.45 "PingFang SC","Microsoft YaHei",system-ui,sans-serif;
   color:#362d26; --ink:#362d26; --cream:#fff8e8; --shell:#46392f; --yellow:#f7c52a;
@@ -171,26 +174,31 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
 }
 @media(prefers-reduced-motion:reduce) { #phone { transition:none; } }
 
+/* Animal Island UI 4.0.0 Noto Sans SC, subset to the current counter dialogue. */
+@font-face {
+  font-family:"Noto Sans SC"; font-style:normal; font-weight:500; font-display:swap;
+  src:url("./fonts/noto-sans-sc-bun-500.woff2") format("woff2");
+}
+@font-face {
+  font-family:"Noto Sans SC"; font-style:normal; font-weight:700; font-display:swap;
+  src:url("./fonts/noto-sans-sc-bun-700.woff2") format("woff2");
+}
 .interaction.bun-handoff {
-  --handoff-edge:#73503a;
   left:50%; right:auto; bottom:calc(var(--dock-gap) + 7px); transform:translateX(-50%);
-  width:min(500px,calc(100vw - 2 * max(var(--dock-left),var(--dock-right))));
-  min-height:108px; max-width:none; padding:23px 42px 17px 20px; align-items:center;
-  background:#fff7e3; color:#493529; border:2px solid var(--handoff-edge);
-  border-radius:20px 24px 18px 23px / 21px 19px 22px 17px;
-  box-shadow:inset 0 0 0 3px #eddcbc, 0 4px 0 #73503a, 0 8px 20px #32261f42;
+  width:min(550px,calc(100vw - 2 * max(var(--dock-left),var(--dock-right))));
+  max-width:none; justify-items:stretch;
 }
-.bun-handoff #dialogue { position:static; width:100%; background:none; padding:0 2px; border-radius:0; }
-.bun-handoff #speaker {
-  position:absolute; top:0; left:16px; transform:translateY(-55%) rotate(-2deg);
-  padding:3px 12px; border:2px solid #324d46; border-radius:7px 9px 8px 6px;
-  background:#4b7669; color:#fff9e9; box-shadow:0 2px 0 #324d46;
-  font-size:13px; letter-spacing:.05em;
+.bun-dialogue-card {
+  min-height:116px;
+  font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
 }
-.bun-handoff #line { margin:0; font-size:clamp(16px,2.2vw,18px); line-height:1.55; }
+.bun-dialogue-card p {
+  margin:7px 12px 0 0;
+  font-size:clamp(16px,2.2vw,19px); line-height:1.5; text-wrap:balance;
+}
 .bun-handoff #action {
   position:absolute; inset:0; width:100%; height:100%; padding:0;
-  background:transparent; color:var(--handoff-edge); border:0; border-radius:inherit;
+  background:transparent; color:#725d42; border:0; border-radius:20px;
   box-shadow:none; -webkit-tap-highlight-color:transparent;
 }
 .bun-handoff #action kbd { display:none; }
@@ -202,7 +210,7 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
   width:9px; height:9px; border:solid currentColor; border-width:0 2px 2px 0;
   transform:rotate(45deg);
 }
-.bun-handoff #action:active { background:#8b5d3714; }
+.bun-handoff #action:active { background:#725d4214; }
 @media (any-pointer:coarse), (max-width:760px) {
   #hud:has(.bun-handoff) :is(#phone,#joystick) { visibility:hidden; }
 }

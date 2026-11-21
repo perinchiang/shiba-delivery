@@ -189,7 +189,9 @@ try {
   await walkTo('找师傅取餐');
   await shot('09-bun-counter');
   await interact('找师傅取餐');
-  assert.equal(await page.locator('#speaker').innerText(), '榕记师傅');
+  const bunCard = page.locator('#bun-dialogue .bun-dialogue-card');
+  await bunCard.getByText('榕记师傅', { exact: true }).waitFor();
+  assert.match(await bunCard.evaluate(card => getComputedStyle(card).backgroundImage), /radial-gradient/);
   await interact('接过包子');
   await walkTo('推门出去');
   await interact('推门出去');
@@ -254,7 +256,8 @@ try {
     assert.equal(await mobile.locator('#map-pickup').innerText(), '榕记包子铺');
     await mobile.locator('#map-close').tap();
     await mobile.getByRole('button', { name: '找师傅取餐' }).tap();
-    await mobile.getByRole('button', { name: '接过包子' }).tap();
+    await mobile.locator('#bun-dialogue').getByText('榕记师傅', { exact: true }).waitFor();
+    await mobile.getByRole('button', { name: '接过包子' }).tap({ position: { x: 36, y: 26 } });
     assert.equal(await mobile.locator('#phone').getAttribute('data-phase'), 'delivery');
     await jump('老街起点');
     assert.equal(await mobile.locator('#phone').getAttribute('data-phase'), 'offer');

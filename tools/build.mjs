@@ -23,12 +23,18 @@ const styleTag = /<link\b[^>]*rel="stylesheet"[^>]*>/;
 assert.match(entry, scriptTag);
 assert.match(entry, styleTag);
 
-const license = await readFile('node_modules/three/LICENSE', 'utf8');
+const notices = await Promise.all([
+  ['Three.js', 'node_modules/three/LICENSE'],
+  ['Animal Island UI', 'node_modules/animal-island-ui/LICENSE'],
+  ['React, React DOM and Scheduler', 'node_modules/react/LICENSE'],
+  ['classnames', 'node_modules/classnames/LICENSE'],
+  ['Noto Sans SC', 'src/morning/fonts/OFL-NotoSansSC.txt'],
+].map(async ([name, path]) => name + '\n' + (await readFile(path, 'utf8')).trim()));
 const js = scripts[0].code.replace(/<\/script/gi, '<\\/script');
 const html = entry
   .replace(scriptTag, () => '<script type="module">' + js + '</script>')
   .replace(styleTag, () => '<style>' + styles[0].source + '</style>')
-  .replace('</head>', () => '<!-- Three.js\n' + license.trim() + '\n-->\n</head>');
+  .replace('</head>', () => '<!--\n' + notices.join('\n\n') + '\n-->\n</head>');
 
 await mkdir('dist', { recursive: true });
 await writeFile('dist/index.html', html);
