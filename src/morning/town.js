@@ -316,7 +316,7 @@ export function createStreet(steamers, banyan) {
   bake(skyline);
   const soilTop = treePits(shopSide);
   const streetTrees = streetTreeXs.map((x, i) => {
-    const scale = i === 1 ? .48 : .56 + (i % 3) * .05;
+    const scale = .53 + (i % 3) * .025;
     return [x, soilTop, treePitZ, .90 + i * 2.4, scale, scale, scale];
   });
   placeInstances(shopSide, banyan, streetTrees);
