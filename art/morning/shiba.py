@@ -294,21 +294,34 @@ def make_character(collection, rig, coat_path):
 
         p, end = part("Sleeve_" + t, sleeve)
         p.oval(shoulder + V((s * 0.023, -0.105, 0.016)), (0.105, 0.162, 0.112), jacket)
-        # Turn just the high cap under the collar. Keep the original round
-        # upper-arm and cuff sections below it, including their elbow weights.
+        # Tailor only the sleeve head. Its inner edge slips under the collar,
+        # while the outer crown stays plump over the shoulder pivot.
         for i, point in enumerate(p.p):
             u = max(0, min(1, (point.y - .720) / .107))
             if u == 0:
                 continue
             blend = smooth(0, 1, u)
             slope = 6 * u * (1 - u) / .107
-            point.x -= s * .130 * blend
-            point.y -= .045 * blend
-            # Transform the smooth normal by the inverse transpose of this bend.
+            # Fan the high rings across the shoulder instead of flattening
+            # an entire ring against the narrow neckline.
+            lateral = s * point.x - .299
+            shift = .079 - .32 * lateral
+            # The neckline-side half sits below the printed band. Lift the
+            # opposite half into a rounded crown along the shoulder outline.
+            drop = .017 - .21 * lateral
+            point.x -= s * shift * blend
+            point.y -= drop * blend
             normal = p.n[i]
-            normal.y = (normal.y + s * .130 * slope * normal.x) / (1 - .045 * slope)
+            # Apply the inverse transpose of the two-dimensional deformation.
+            xx, xy = 1 + .32 * blend, -s * shift * slope
+            yx, yy = s * .21 * blend, 1 - drop * slope
+            det = xx * yy - xy * yx
+            nx, ny = normal.x, normal.y
+            normal.x = (yy * nx - yx * ny) / det
+            normal.y = (xx * ny - xy * nx) / det
             normal.normalize()
-            anchor = .70 * blend
+            # Anchor the crown before the elbow-driven part folds on a high reach.
+            anchor = smooth(0, .71, u)
             p.weights[i] = {"Chest": anchor, "UpperArm_" + t: 1 - anchor}
         end()
         p, end = part("Mitten_" + t, "Paw_" + t)

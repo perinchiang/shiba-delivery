@@ -8,10 +8,14 @@ export function sleeveChecks(root) {
   const rings = ['L', 'R'].map(tag => {
     const mesh = root.getObjectByName('Sleeve_' + tag);
     const { position, skinIndex, skinWeight } = mesh.geometry.attributes;
-    const ring = [];
+    const ring = [], crown = [];
     let anchoredCap = false;
     for (let i = 0; i < position.count; i++) {
       const y = position.getY(i);
+      // The crown above the shoulder pivot must span the front and back
+      // of the sleeve. A full elbow section alone can hide a flattened cap.
+      const lateral = Math.abs(position.getX(i));
+      if (lateral > .29 && lateral < .33 && y > .784) crown.push(i);
       if (Math.abs(y - .69313) < .0001) ring.push(i);
       for (let j = 0; j < 4; j++) {
         if (mesh.skeleton.bones[skinIndex.getComponent(i, j)].name !== 'Chest') continue;
@@ -25,6 +29,9 @@ export function sleeveChecks(root) {
       const sorted = ring.slice().sort((a, b) => position[axis](a) - position[axis](b));
       return { lo: sorted[0], hi: sorted.at(-1), minimum };
     });
+    assert.ok(crown.length > 1, 'upper outer shoulder is filled above the arm pivot');
+    crown.sort((a, b) => position.getZ(a) - position.getZ(b));
+    diameters.push({ lo: crown[0], hi: crown.at(-1), minimum: .065 });
     return { mesh, diameters };
   });
   const a = new Vector3(), b = new Vector3();
@@ -34,7 +41,8 @@ export function sleeveChecks(root) {
         mesh.getVertexPosition(lo, a);
         mesh.getVertexPosition(hi, b);
         // Original diameters at this latitude are .207 and .221 in rig space.
-        assert.ok(a.distanceTo(b) > minimum, 'round sleeve retains width and depth in the posed mesh');
+        const span = a.distanceTo(b);
+        assert.ok(span > minimum, mesh.name + ' span ' + span.toFixed(3) + ' must exceed ' + minimum);
       }
     }
   };
