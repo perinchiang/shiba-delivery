@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { frameRide, resizeRideCamera } from './ride-camera.js';
-import { countryCamera, rideTuning } from './free-ride.js';
+import { createRideMotion } from './ride-motion.js';
+import { countryCamera, maxTrialSpeed } from './free-ride.js';
 import { roadHeight } from './country-route.js';
 import { $ } from './dom.js';
 import { clamp, damp, dampAngle } from '../core/mathx.js';
@@ -11,6 +12,7 @@ export function createView(renderer, state, world) {
   const { scene, country, camera, chase, sun, rooms, street, shiba, scooter, looseBag, marker, contact } = world;
   const roomList = Object.values(rooms);
   const courierScale = scooter.root.scale.y;
+  const suspension = createRideMotion(scooter.frontZ, scooter.rearZ);
   let headTurn = .75, shopReview;
   const focus = new THREE.Vector3();
   const cameraUp = new THREE.Vector3(0, 1, 0);
@@ -49,6 +51,7 @@ export function createView(renderer, state, world) {
     view = '';
     setCloseUp(false);
     shiba.resetTail();
+    suspension.reset();
     shiba.root.rotation.y = scooter.root.rotation.y = state.yaw;
     scooter.lid.rotation.z = 0;
     for (const door of street.doors.values()) door.rotation.y = 0;
@@ -63,6 +66,8 @@ export function createView(renderer, state, world) {
     const nextView = state.sequence?.approaching ? 'street' :
       state.braking && !state.speed ? 'stand' : state.sequence ? (handling ? 'stand' : packing ? 'box' : 'door') :
       (shopReview ? 'inspection' : (closeUp ? 'portrait' : inside ? 'shop' : !riding ? 'street' : state.phase === 'offer' ? 'intro' : 'chase'));
+    const fieldInspection = nextView === 'inspection' && shopReview.fov;
+    const activeCamera = nextView === 'chase' || fieldInspection ? chase : camera;
     const snap = nextView !== view;
     const room = rooms[state.order.room.template];
     for (const candidate of roomList) candidate.root.visible = inside && candidate === room;
@@ -70,7 +75,7 @@ export function createView(renderer, state, world) {
     const free = state.phase === 'free';
     const outsideTown = free && state.x > 52;
     country.root.visible = free;
-    if (free) country.update(state.x);
+    if (free) country.update(state.x, time);
     street.eastTrees.visible = !free;
     street.root.visible = !inside && (!free || state.x < 240);
     scooter.root.visible = !inside;
@@ -84,17 +89,20 @@ export function createView(renderer, state, world) {
     scooter.steer(state.steer);
     scooter.setStand(state.stand);
     const grade = free ? roadHeight(state.bikeX+.5)-roadHeight(state.bikeX-.5) : 0;
-    scooter.root.rotation.x = -Math.atan(grade*Math.sin(state.bikeYaw));
+    const rideMotion = free && riding && !state.sequence ? suspension.update(state, dt) : null;
+    scooter.setSuspension(rideMotion?.frontTravel ?? 0, rideMotion?.rearTravel ?? 0);
+    scooter.root.position.y += rideMotion?.height ?? 0;
+    scooter.root.rotation.x = -Math.atan(grade*Math.sin(state.bikeYaw)) + (rideMotion?.pitch ?? 0);
     scooter.root.rotation.z += free && riding ? state.bank : 0;
     shiba.root.rotation.order = 'YXZ';
     shiba.root.rotation.x = riding ? scooter.root.rotation.x : 0;
     shiba.root.rotation.z = free && riding ? state.bank : 0;
-    shiba.root.position.set(state.x, riding ? ground : height, state.z);
+    shiba.root.position.set(state.x, riding ? scooter.root.position.y : height, state.z);
     const posed = nextView === 'portrait' || nextView === 'intro';
     const lookTowardCamera = nextView === 'stand' ? .42 : posed ? .78 : -.12;
     headTurn = damp(headTurn, riding || nextView === 'stand' ? lookTowardCamera : 0, 10, dt);
     shiba.pose({ time, dt, stride, walking, headTurn, speed: state.speed, lift: state.lift, tiptoe: state.tiptoe, reach: state.reach,
-      seatBlend,
+      seatBlend, rideMotion,
       rise: handling ? state.sequence.rise : 0, hop: handling ? state.sequence.hop : 0,
       swing: handling ? state.sequence.swing : 0,
       mount: seatBlend > 0 ? scooter.mount : null, carrying: packing || state.cargo === 'hand' });
@@ -109,7 +117,11 @@ export function createView(renderer, state, world) {
       followYaw = state.bikeYaw;
       const heights = { portrait: 3.30, intro: 4.8, door: 4.05, stand: 2.95, box: 3.6, shop: 5.56, street: 6.15 };
       const widths = { portrait: 3.2, intro: 4.0, door: 3.25, stand: 3.00, box: 3.2, shop: 7.1, street: 5.2 };
-      if (nextView !== 'chase') {
+      if (fieldInspection) {
+        chase.fov = shopReview.fov;
+        chase.far = 245;
+        chase.updateProjectionMatrix();
+      } else if (nextView !== 'chase') {
         const detailScale = nextView === 'portrait' || nextView === 'box' ? courierScale : 1;
         const h = nextView === 'inspection' ? shopReview.height : heights[nextView];
         const w = nextView === 'inspection' ? shopReview.width : widths[nextView];
@@ -121,7 +133,7 @@ export function createView(renderer, state, world) {
     }
     if (nextView === 'chase') {
       followYaw = dampAngle(followYaw, state.bikeYaw, 5.4, dt);
-      const fov = (aspect < .85 ? 63 : 55) + (free ? 7*(state.speed/rideTuning.topSpeed)**2 : 0);
+      const fov = (aspect < .85 ? 63 : 55) + (free ? 7*Math.min(1, Math.abs(state.speed)/maxTrialSpeed)**2 : 0);
       if (Math.abs(chase.fov-fov) > .03) { chase.fov = fov; chase.updateProjectionMatrix(); }
       const far = free ? 245 : 100;
       if (chase.far !== far) { chase.far = far; chase.updateProjectionMatrix(); }
@@ -158,8 +170,8 @@ export function createView(renderer, state, world) {
         eyeOffset.set(inside ? -3.3 : 2.95, inside ? 4.60 : 3.9, 11);
       }
       if (snap) focus.copy(desiredFocus); else focus.lerp(desiredFocus, 1 - Math.exp(-7 * dt));
-      camera.position.copy(focus).add(eyeOffset);
-      camera.lookAt(focus);
+      activeCamera.position.copy(focus).add(eyeOffset);
+      activeCamera.lookAt(focus);
     }
     // Dress the far side of a close-up; the shop row behind the lens can
     // otherwise put a counter or a tree across the boots and stand.
@@ -169,10 +181,10 @@ export function createView(renderer, state, world) {
     const lightX = Math.round(focus.x * 2) / 2;
     const lightZ = free ? Math.round(focus.z*2)/2 : 0;
     sun.target.position.set(lightX, ground+.3, lightZ);
-    sun.position.set(lightX-6, ground+11.5, lightZ+7.5);
+    const openCountry = free ? THREE.MathUtils.smoothstep(state.x, 52, 170) : 0;
+    sun.position.set(lightX - 6 + 20*openCountry, ground + 11.5 - 4*openCountry, lightZ + 7.5 - 13*openCountry);
     if (free) scene.fog.density = .031 - .023 * THREE.MathUtils.smoothstep(state.x, 28, 100);
     view = nextView;
-    const activeCamera = view === 'chase' ? chase : camera;
     if (free) country.sky.position.copy(activeCamera.position);
     renderer.render(scene, activeCamera);
   }

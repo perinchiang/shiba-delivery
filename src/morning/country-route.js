@@ -7,6 +7,7 @@ const knots = [
   [440, 52], [570, -8], [685, -24], [810, 12], [915, 34], [1030, 24],
   [1130, -2], [1210, -5],
 ];
+export const bridgeJointXs = [894, 910, 930, 950];
 export const roadEnd = knots.at(-1)[0];
 function tangent(i) {
   const [xa, za] = knots[Math.max(0, i - 1)], [xb, zb] = knots[Math.min(knots.length - 1, i + 1)];

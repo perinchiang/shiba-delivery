@@ -1,4 +1,4 @@
-import { rideTuning } from './free-ride.js';
+import { rideTuning, trialLimitsKmh } from './free-ride.js';
 import { centerZ, roadYaw, landmarks } from './country-route.js';
 import { orders, start, bunFacade } from './orders.js';
 
@@ -12,9 +12,19 @@ const bakeryFront = {
   order: buns, mode: 'walk', phase: 'pickup', x: bunFacade.x + 1.55, z: .16, ...parked(buns.door.x + 1),
 };
 
+function onCountryRoad(x) {
+  const z = centerZ(x), yaw = roadYaw(x);
+  return { phase: 'free', mode: 'ride', x, z, bikeX: x, bikeZ: z, yaw, bikeYaw: yaw };
+}
+
 // State overrides are applied to a fresh delivery. Optional camera presets are cleared on movement.
 export const sceneJumps = {
   street: { title: '老街起点' },
+  riceBend: { title: '稻浪到石桥', state: onCountryRoad(792) },
+  riceClose: {
+    title: '田埂看稻穗', state: onCountryRoad(835),
+    camera: { fov: 48, focus: [846, .48, centerZ(846) + 10.4], offset: [-4.9, .78, -1.60] },
+  },
   pharmacy: { title: '药店门口', state: { order: pharmacy, mode: 'walk', phase: 'pickup',
     x: pharmacy.door.x, z: -.32, ...parked(pharmacy.door.x) } },
   counter: { title: '药店柜台', state: atCounter(pharmacy) },
@@ -28,8 +38,7 @@ export const sceneJumps = {
 };
 
 for (const { id, name, x } of landmarks.slice(1)) {
-  const z = centerZ(x), yaw = roadYaw(x);
-  sceneJumps[id] = { title: name, state: { phase: 'free', mode: 'ride', x, z, bikeX: x, bikeZ: z, yaw, bikeYaw: yaw } };
+  sceneJumps[id] = { title: name, state: onCountryRoad(x) };
 }
 
 export function setupSceneDebug(reset, renderer, state) {
@@ -54,12 +63,13 @@ export function setupSceneDebug(reset, renderer, state) {
   reset(enabled && Object.hasOwn(sceneJumps, id) ? sceneJumps[id] : sceneJumps.street);
 
   const speedButton = document.getElementById('test-speed');
-  const limits = [25, 32.4, 35];
-  let speedIndex = 1;
+  let speedIndex = 0;
+  const showLimit = () => { speedButton.textContent = '切换试骑限速 · ' + trialLimitsKmh[speedIndex] + ' km/h'; };
+  showLimit();
   speedButton.addEventListener('click', () => {
-    speedIndex = (speedIndex + 1) % limits.length;
-    rideTuning.topSpeed = limits[speedIndex] / 3.6;
-    speedButton.textContent = '切换试骑限速 · ' + limits[speedIndex] + ' km/h';
+    speedIndex = (speedIndex + 1) % trialLimitsKmh.length;
+    rideTuning.topSpeed = trialLimitsKmh[speedIndex] / 3.6;
+    showLimit();
   });
 
   const readout = document.getElementById('scene-perf');

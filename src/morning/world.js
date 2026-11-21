@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { glowMaterial, litMaterial } from '../core/materials.js';
 import { createShiba, createScooter, parcel } from './rider.js';
 import { createStreet, createPharmacy, createBunRoom } from './town.js';
+import { centerZ, roadHeight, halfWidth, roadYaw } from './country-route.js';
 import { createCountryside } from './countryside.js';
 import { $ } from './dom.js';
 
@@ -28,10 +29,11 @@ export async function createWorld(renderer) {
   scene.add(sun, sun.target);
 
   const loader = new GLTFLoader();
-  const [courier, motorcycle, display] = await Promise.all([
+  const [courier, motorcycle, display, bridgeBuffalo] = await Promise.all([
     loader.loadAsync(new URL('../../art/morning/shiba-courier.glb', import.meta.url).href),
     loader.loadAsync(new URL('../../art/morning/monkey-delivery.glb', import.meta.url).href),
     loader.loadAsync(new URL('../../art/bun-shop/steamers.glb', import.meta.url).href),
+    loader.loadAsync(new URL('../../art/countryside/bridge-buffalo.glb', import.meta.url).href),
   ]);
   display.scene.traverse(o => {
     if (!o.isMesh) return;
@@ -41,6 +43,17 @@ export async function createWorld(renderer) {
   const rooms = { pharmacy: createPharmacy(), bakery: createBunRoom(display.scene.clone(true)) };
   const street = createStreet(display.scene);
   const country = createCountryside();
+  bridgeBuffalo.scene.traverse(node => {
+    if (node.isMesh) node.castShadow = node.receiveShadow = true;
+  });
+  const bridgeEntry = 894.5;
+  for (const side of [-1, 1]) {
+    const carving = bridgeBuffalo.scene.clone();
+    carving.position.set(bridgeEntry, roadHeight(bridgeEntry),
+      centerZ(bridgeEntry) + side * (halfWidth(bridgeEntry) + .69));
+    carving.rotation.y = roadYaw(bridgeEntry) + Math.PI - side * .18;
+    country.root.add(carving);
+  }
   scene.add(country.root);
   const shiba = createShiba(courier), scooter = createScooter(motorcycle);
   scene.add(street.root, ...Object.values(rooms).map(room => room.root), shiba.root, scooter.root);

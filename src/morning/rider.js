@@ -167,7 +167,7 @@ export function createShiba(asset) {
     greetingAge = 0;
   }
 
-  function pose({ time, stride, walking, mount, carrying, headTurn, lift = 0, speed = 0, tiptoe = 0, reach = 0, seatBlend = 1, rise = 0, swing = 0, hop = 0, dt = 0 }) {
+  function pose({ time, stride, walking, mount, carrying, headTurn, lift = 0, speed = 0, tiptoe = 0, reach = 0, seatBlend = 1, rise = 0, swing = 0, hop = 0, dt = 0, rideMotion }) {
     chest.position.copy(chestOffset);
     const motion = mount ? 'ride' : walking > 0 ? 'walk' : 'stand';
     const onboard = Boolean(mount);
@@ -246,6 +246,12 @@ export function createShiba(asset) {
         turn(chest, xAxis, -.40 * rise);
         turn(head, xAxis, -.52 * rise);
         if (tail.length) turn(tail[0], xAxis, .65 * rise);
+      }
+      if (rideMotion) {
+        // Tip from the seated hips before solving the arms against the grips.
+        chest.position.applyAxisAngle(xAxis, rideMotion.torso);
+        turn(chest, xAxis, rideMotion.torso);
+        turn(head, xAxis, rideMotion.head);
       }
       turn(chest, yAxis, mount.turn * .86 * (1 - hop));
       const worldScale = root.getWorldScale(v).y;
@@ -344,7 +350,10 @@ export function createShiba(asset) {
       }
     }
     if (mount && clothEnds) {
-      turn(clothEnds, xAxis, .19 * rolling);
+      const airflow = rideMotion ? THREE.MathUtils.smoothstep(speed, 30/3.6, 50/3.6) : 0;
+      const flutter = .018*Math.sin(time*13) + .01*Math.sin(time*21);
+      turn(clothEnds, xAxis, .19 * rolling + airflow*(.032 + flutter));
+      turn(clothEnds, zAxis, airflow*.027*Math.sin(time*10 + 1.4));
       turn(clothEnds, yAxis, -.20 * rolling * mount.turn);
     }
     if (hinge && gogglesTime < 1) {
@@ -392,6 +401,8 @@ export function createScooter(asset) {
   const swivel = node('Steering'), front = node('Wheel_F'), rear = node('Wheel_R');
   const inRoot = o => root.worldToLocal(o.getWorldPosition(new THREE.Vector3()));
   const frontAxle = inRoot(front), rearAxle = inRoot(rear);
+  const frontFender = node('Mudguards001');
+  const rearRestY = rear.position.y, frontRestY = front.position.y, fenderRestY = frontFender.position.y;
   const axis = inRoot(swivel).sub(inRoot(node('SteerAxisLower'))).normalize();
   const stand = node('Side_Stand');
   const standAxis = inRoot(node('Stand_Axis')).sub(inRoot(stand)).normalize();
@@ -413,6 +424,12 @@ export function createScooter(asset) {
   const cargo = { floor: inRoot(node('Cargo_Floor')), approach: inRoot(node('Cargo_Approach')), rim: inRoot(node('Cargo_Lid')).y };
   root.scale.setScalar(courierScale);
   return { root, mount, cargo, lid: node('Cargo_Lid'), wheelbase: frontAxle.z - rearAxle.z,
+    frontZ: frontAxle.z * courierScale, rearZ: rearAxle.z * courierScale,
+    setSuspension(frontTravel, rearTravel) {
+      front.position.y = frontRestY + frontTravel / courierScale;
+      frontFender.position.y = fenderRestY + frontTravel / courierScale;
+      rear.position.y = rearRestY + rearTravel / courierScale;
+    },
     setStand(progress) {
       // Lift the heel to the tang first, then swing the stand down and settle on it.
       const deployed = THREE.MathUtils.smoothstep(progress, .20, .85);

@@ -1,8 +1,11 @@
 import { approach, clamp, damp, dampAngle, lerp, smoothstep } from '../core/mathx.js';
 import { centerZ, constrainToRoad, roadHeight, roadYaw } from './country-route.js';
 
+export const trialLimitsKmh = [50, 32.4, 25, 35];
+export const maxTrialSpeed = trialLimitsKmh[0] / 3.6;
+
 export const rideTuning = {
-  topSpeed: 9, reverse: 1.6, reverseDelay: .35,
+  topSpeed: maxTrialSpeed, reverse: 1.6, reverseDelay: .35,
   launchAccel: 4.7, powerPerKg: 2800 / 150, brake: 7,
   steerAngle: .43, lateralAcceleration: 5.7,
 };
@@ -64,7 +67,7 @@ export function stepFreeRide(state, dx, dz, wheelbase, dt) {
 }
 
 export function countryCamera(camera, state, yaw, focus) {
-  const speed = Math.min(1, Math.abs(state.speed)/rideTuning.topSpeed);
+  const speed = Math.min(1, Math.abs(state.speed)/maxTrialSpeed);
   const radius = 6.6+1.35*speed;
   const x = state.x - Math.sin(yaw)*radius, z = state.z - Math.cos(yaw)*radius;
   const elevation = roadHeight(state.x);

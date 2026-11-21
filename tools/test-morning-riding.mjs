@@ -7,6 +7,8 @@ import { readFile } from 'node:fs/promises';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createScooter, createShiba, parcel } from '../src/morning/rider.js';
+import { createRideMotion } from '../src/morning/ride-motion.js';
+import { bridgeJointXs } from '../src/morning/country-route.js';
 import { standFrame, beginSequence, boxFrame, positionParcel } from '../src/morning/sequence.js';
 import { frameRide, resizeRideCamera } from '../src/morning/ride-camera.js';
 
@@ -490,6 +492,44 @@ for (const mounted of [false,true,false]) {
   }
 }
 assert.ok(maxSeam < .010, 'the jacket and trousers meet at the tail base through steering');
+// Drive both ways over the visible first joint with the real axle spacing.
+// Check both the suspension's timing and the rig contacts while the load moves.
+for (const dir of [-1, 1]) {
+  const response = createRideMotion(scooter.frontZ, scooter.rearZ);
+  const dt = 1/60, speed = 50/3.6, joint = bridgeJointXs[0];
+  const state = { bikeX: joint - 4*dir, bikeYaw: dir*Math.PI/2, speed };
+  let frontHit, rearHit, helmetMoves = false;
+  scooter.setStand(0);
+  scooter.steer(0);
+  for (let i = 0; i < 36; i++) {
+    const rideMotion = response.update(state, dt);
+    if (rideMotion.frontTravel > .024) frontHit ??= i;
+    if (rideMotion.rearTravel > .024) rearHit ??= i;
+    helmetMoves ||= Math.abs(rideMotion.head) > .025;
+    for (const root of [scooter.root, rider.root]) {
+      root.rotation.order = 'YXZ';
+      root.position.set(state.bikeX, rideMotion.height, 0);
+      root.rotation.set(rideMotion.pitch, state.bikeYaw, 0);
+    }
+    scooter.setSuspension(rideMotion.frontTravel, rideMotion.rearTravel);
+    rider.pose({ ...basePose, dt, time:i*dt, speed, mount, rideMotion });
+    for (const [i, tag] of hips.entries()) {
+      const palm = at(dog('Paw_'+tag));
+      assert.ok(palm.distanceTo(at(mount.palms[i])) < .001, 'grip stays closed over the joint');
+      const ankle = mount.feet[i].worldToLocal(at(dog('Foot_'+tag)));
+      assert.ok(ankle.distanceTo(new THREE.Vector3(0,.079,0)) < .002, 'shoe stays on moving peg');
+    }
+    if (i % 6 === 0) {
+      checkSleeves();
+      assertClearsBodyPart(bike('Fork_Headlamp_and_Mirrors'), head, new THREE.Vector3(0,1.25,.035), new THREE.Vector3(.574,.492,.463));
+    }
+    state.bikeX += speed*dt*dir;
+  }
+  assert.ok(frontHit !== undefined && rearHit > frontHit && helmetMoves, 'two successive axle hits, independent helmet motion');
+}
+scooter.setSuspension(0,0);
+for (const root of [scooter.root, rider.root]) { root.rotation.set(0,0,0); root.position.set(0,0,0); }
+rider.resetTail();
 console.log('Maximum gap between garment surfaces at the tail root', (1000*maxSeam).toFixed(2), 'mm');
 checkAccessories(rider, scooter);
 console.log('PASS: Blender clips, loadable skin, fixed limb lengths, rump/foot/grip contact, solo box, hinge and camera.');

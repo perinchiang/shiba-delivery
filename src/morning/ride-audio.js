@@ -1,4 +1,5 @@
 import { noiseSource, oscVoice, fmVoice, midiHz } from '../audio/synth.js';
+import { maxTrialSpeed } from './free-ride.js';
 import { clamp, smoothstep } from '../core/mathx.js';
 
 // Unlock inside a gesture. The mixer is shared for the entire ride and suspended
@@ -41,7 +42,7 @@ export function createRideAudio() {
     },
     update(state, modal) {
       if (!active || !enabled || !ctx || ctx.state !== 'running') return;
-      const t = ctx.currentTime, speed = clamp(Math.abs(state.speed)/9, 0, 1);
+      const t = ctx.currentTime, speed = clamp(Math.abs(state.speed)/maxTrialSpeed, 0, 1);
       const river = smoothstep(820, 902, state.x)*(1-smoothstep(945, 1010, state.x));
       const field = smoothstep(165, 242, state.x)*(1-smoothstep(820, 907, state.x));
       master.gain.setTargetAtTime(modal ? .25 : .62,t,.2);

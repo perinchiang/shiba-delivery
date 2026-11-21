@@ -2,8 +2,11 @@ import * as THREE from 'three';
 import { GeoBuilder } from '../core/geo.js';
 import { rngFrom } from '../core/rng.js';
 import { litMaterial } from '../core/materials.js';
-import { centerZ, halfWidth, roadEnd, roadHeight } from './country-route.js';
+import { bridgeJointXs, centerZ, halfWidth, roadEnd, roadHeight } from './country-route.js';
 import { sign } from './shapes.js';
+import { addPaddies, fieldStart, fieldEnd, fieldWindTime } from './paddy.js';
+import { addGravelVerge, addWornSurface } from './road-verge.js';
+import { addBankWillows } from './sample-trees.js';
 
 const paint = litMaterial({ vertexColors: true, grid: false });
 const instancePaint = litMaterial({ grid: false });
@@ -14,9 +17,9 @@ const pole = new THREE.CylinderGeometry(1, 1.12, 1, 7);
 const dummy = new THREE.Object3D();
 const tint = new THREE.Color();
 
-function instances(group, geometry, pieces) {
+function instances(group, geometry, pieces, material = instancePaint, castShadow = true) {
   if (!pieces.length) return;
-  const mesh = new THREE.InstancedMesh(geometry, instancePaint, pieces.length);
+  const mesh = new THREE.InstancedMesh(geometry, material, pieces.length);
   pieces.forEach(([x, y, z, w, h, d, color], i) => {
     dummy.position.set(x, y, z);
     dummy.scale.set(w, h, d);
@@ -25,7 +28,8 @@ function instances(group, geometry, pieces) {
     mesh.setMatrixAt(i, dummy.matrix);
     mesh.setColorAt(i, tint.setHex(color));
   });
-  mesh.castShadow = mesh.receiveShadow = true;
+  mesh.castShadow = castShadow;
+  mesh.receiveShadow = true;
   mesh.computeBoundingSphere();
   group.add(mesh);
 }
@@ -76,16 +80,19 @@ function waymark(group, builder, x, text, sub) {
   plaque.rotation.y = -Math.PI/2;
 }
 
-// Each near-field tuft is crossed blades and bent seed heads in the same vertex-colour batch.
-function riceTuft(geo, x, z, rng) {
-  const h = rng.range(.35,.63), ground = -.22;
+// One two-sided tuft for the whole route. The field chunks vary its height,
+// orientation and tint without allocating thousands of copies of the vertices.
+function riceGeometry() {
+  const geo = new GeoBuilder();
   for (const dir of [-1,1]) {
-    const tip = [x+dir*.17,ground+h,z+.09];
-    geo.quad([x-.045,ground,z],[x+.045,ground,z],tip,tip,{color:0x849844});
-    geo.quad(tip,tip,[x+.045,ground,z],[x-.045,ground,z],{color:0x849844});
-    geo.box(x+dir*.19,ground+h-.045,z+.09,.06,.135,.055,{color:0xcbb452});
+    const tip = [dir*.17,.5,.09];
+    geo.quad([-.045,0,0],[.045,0,0],tip,tip,{color:0x849844});
+    geo.quad(tip,tip,[.045,0,0],[-.045,0,0],{color:0x849844});
+    geo.box(dir*.19,.455,.09,.06,.135,.055,{color:0xcbb452});
   }
+  return geo.build();
 }
+const rice = riceGeometry();
 
 function banyan(geo, crowns, x, z) {
   const limb = (a, b, bottom, top) => {
@@ -140,8 +147,73 @@ function villagePavilion(group, geo) {
   sign(group,x-2.52,3.42,z,2.28,.58,'榕下歇脚亭',{bg:'#685743',ink:'#f0da99'}).rotation.y=-Math.PI/2;
 }
 
+// Dressed arch rings cross the water beneath the deck. Both faces use the same
+// arch profile so the intrados is visible through each opening from the bank.
+function addStoneBridge(geo,start,end) {
+  const stone = [0x948d74,0xb0a28a,0xa39a83,0xb5ac92,0x9c967f];
+  const rim = 3.68, bottom = -.94;
+  for (let x=894; x<950; x+=8) {
+    if (x<start || x>=end) continue;
+    for(let k=0;k<10;k++) {
+      const a=x+k*.8,b=a+.8;
+      const ring=(i)=>-.70+1.78*Math.sin(Math.PI*i/10)**.66;
+      for(const side of [-1,1]){
+        const face=(px,y,offset)=>[px,y,centerZ(px)+side*(rim+offset)];
+        const h0=Math.min(roadHeight(a)-.33,ring(k));
+        const h1=Math.min(roadHeight(b)-.33,ring(k+1));
+        const panel=[face(a,h0,0),face(b,h1,0),face(b,roadHeight(b)-.12,0),face(a,roadHeight(a)-.12,0)];
+        if(side<0) panel.reverse();
+        geo.quad(...panel,{color:stone[(k+1)%5]});
+        const lip=[face(a,h0,.05),face(b-.015,h1,.05),face(b-.015,h1+.21,.05),face(a,h0+.21,.05)];
+        if(side<0) lip.reverse();
+        geo.quad(...lip,{color:stone[(k+3)%5]});
+        if(k===0) {
+          geo.box(a, (h0+bottom)/2,centerZ(a)+side*rim,.52,h0-bottom,.35,{color:stone[1]});
+        }
+        if(side===1) {
+          geo.quad(face(a,h0,0),[a,h0,centerZ(a)-rim],[b,h1,centerZ(b)-rim],face(b,h1,0),{color:0x736f61});
+        }
+      }
+    }
+    for(const side of [-1,1]) {
+      const balustrade = (px,y)=>[px,roadHeight(px)+y,centerZ(px)+side*3.18];
+      for(let i=0;i<4;i++){
+        const px=x+i*2+.94,z=centerZ(px)+side*3.18,h=roadHeight(px);
+        geo.cylinder(px,h+.12,z,.12,.105,.53,{color:stone[(i+2)%5],seg:6});
+        geo.box(px,h+.66,z,.24,.11,.26,{color:stone[2]});
+      }
+      for(const [y,thick] of [[.09,.13],[.82,.16]]){
+        for(let n=0;n<8;n+=2){
+          const a=x+n, b=a+2;
+          const z0=balustrade(a,y)[2],z1=balustrade(b,y)[2];
+          const top0=roadHeight(a)+y,top1=roadHeight(b)+y;
+          const w=y>.5?.22:.16;
+          geo.quad([a,top0,z0-w],[a,top0,z0+w],[b,top1,z1+w],[b,top1,z1-w],{color:0xb9ac92});
+          for(const f of [-1,1]){
+            const face=[[a,top0-thick,z0+f*w],[b,top1-thick,z1+f*w],[b,top1,z1+f*w],[a,top0,z0+f*w]];
+            if(f<0) face.reverse();
+            geo.quad(...face,{color:0x9f947d});
+          }
+        }
+      }
+    }
+  }
+  for (const joint of bridgeJointXs) {
+    if (joint<start || joint>=end) continue;
+    const steps=[[-.58,.007],[-.29,.036],[0,.07],[.29,.036],[.58,.007]];
+    for(let i=1;i<steps.length;i++){
+      const [oa,ha]=steps[i-1], [ob,hb]=steps[i], a=joint+oa,b=joint+ob;
+      for(let slab=0;slab<4;slab++){
+        const lo=-2.97+slab*1.49,hi=lo+1.48,ya=roadHeight(a)+ha,yb=roadHeight(b)+hb;
+        geo.quad([a,ya,centerZ(a)+lo],[a,ya,centerZ(a)+hi],[b,yb,centerZ(b)+hi],[b,yb,centerZ(b)+lo],
+          {color:[0xaa9f87,0xb3a88f,0xb6ab91,0xa99e86][slab]});
+      }
+    }
+  }
+}
+
 function buildChunk(start, end) {
-  const group = new THREE.Group(), geo = new GeoBuilder(), crowns = [], poles = [];
+  const group = new THREE.Group(), geo = new GeoBuilder(), crowns = [], poles = [], shoots = [];
   const rng = rngFrom('榕湾村道', start);
   function ribbon(x, next, left, right, leftNext, rightNext, y0, y1, color) {
     const z = centerZ(x), z1 = centerZ(next);
@@ -162,7 +234,9 @@ function buildChunk(start, end) {
     const river = x >= 894 && x < 950;
     const field = x >= 190 && x < 1090;
     const surface = river ? 0xb4aa95 : field ? 0xb9b39f : 0xaaa598;
-    ribbon(x,nx,-width,width,-width1,width1,h,h1,surface);
+    const inSample = x>=fieldStart && x<fieldEnd;
+    if (inSample) addWornSurface(geo,x,nx);
+    else ribbon(x,nx,-width,width,-width1,width1,h,h1,surface);
     for (const side of [-1,1]) {
       const band = (lo,hi,lo1,hi1,y,y1,color) => side > 0
         ? ribbon(x,nx,lo,hi,lo1,hi1,y,y1,color)
@@ -190,10 +264,15 @@ function buildChunk(start, end) {
       }
       // Grade the outer shoulder down to the paddy rather than leaving a floating edge.
       function bankPoint(px, lateral, y) { return [px,y,centerZ(px)+side*lateral]; }
-      const bank = [bankPoint(x,width+.75,h),bankPoint(x,8,-.22),
-        bankPoint(nx,8,-.22),bankPoint(nx,width1+.75,h1)];
+      const foot = inSample ? 5.0 : 8;
+      const bank = [bankPoint(x,width+.75,h),bankPoint(x,foot,-.22),
+        bankPoint(nx,foot,-.22),bankPoint(nx,width1+.75,h1)];
       if (side < 0) bank.reverse();
       geo.quad(...bank,{color:0x9ca36a});
+      if (inSample) {
+        band(foot,225,foot,225,-.235,-.235,0x8b975d);
+        continue;
+      }
       for (let row=0; row<4; row++) {
         const lo = 8 + 19*row, hi = lo+19;
         const parcel = Math.floor((x+13*row)/42);
@@ -210,7 +289,7 @@ function buildChunk(start, end) {
       band(84,225,84,225,-.24,-.24,0xa3b58c);
     }
     if (x<200 && x%12<4) ribbon(x,nx,-.075,.075,-.075,.075,h+.012,h1+.012,0xe7dcb7);
-    if (river && x%4===0) ribbon(x,x+.12,-width,width,-width,width,h+.012,h+.012,0x9c9686);
+
   }
   for (let x=start+.6;x<end;x+=1.3) {
     if (x>=894 && x<950) {
@@ -220,11 +299,13 @@ function buildChunk(start, end) {
       }
       continue;
     }
-    if (x<214 || x>1050) continue;
+    if (x<214 || x>1050 || (x>=fieldStart && x<fieldEnd)) continue;
     for (const side of [-1,1]) {
       const z = centerZ(x);
       for (let row=0;row<7;row++) {
-        riceTuft(geo,x+rng.range(-.26,.26),z+side*(8.8+row*1.65+rng.range(-.14,.14)),rng);
+        const px = x + rng.range(-.26,.26);
+        const pz = z + side*(8.8 + row*1.65 + rng.range(-.14,.14));
+        shoots.push([px,-.22,pz,1,rng.range(.7,1.26),1,0xffffff]);
       }
     }
   }
@@ -242,7 +323,7 @@ function buildChunk(start, end) {
       house(geo,x,z+side*rng.range(8.4,13.8),side,rng);
       if (rng.chance(.55)) house(geo,x+2,z-side*rng.range(12,22),-side,rng);
     }
-    if (rng.chance(.75)) tree(x, z-side*rng.range(5.8,20), rng.range(1.0,2.25));
+    if (rng.chance(.75) && (x<fieldStart || x>=fieldEnd)) tree(x, z-side*rng.range(5.8,20), rng.range(1.0,2.25));
     if (rng.chance(.32)) tree(x+5, z+side*rng.range(18,47), rng.range(1.2,2.4));
   }
   // Chunk boundaries share pole locations; each span belongs to its western end.
@@ -297,11 +378,16 @@ function buildChunk(start, end) {
     }
     geo.box(roadEnd+29,-.42,centerZ(roadEnd),58,.36,185,{color:0xa3b58c});
   }
+  addPaddies(group,geo,start,end);
+  addStoneBridge(geo,start,end);
+  addGravelVerge(geo,start,end);
+  addBankWillows(geo,start,end);
   const mesh = geo.mesh(paint);
   mesh.castShadow = mesh.receiveShadow = true;
   group.add(mesh);
   instances(group,crown,crowns);
   instances(group,pole,poles);
+  instances(group,rice,shoots,paint,false);
   return group;
 }
 
@@ -323,6 +409,16 @@ function morningSky() {
         vec3 dir = normalize(direction);
         float height = smoothstep(-.035, .46, dir.y);
         vec3 daylight = mix(horizon, zenith, height);
+        // Distant ridges are fixed on the compass even when the rider turns back.
+        float az = atan(dir.z, dir.x);
+        float ridge = .058 + .038*sin(3.*az+.6) + .023*cos(7.*az-1.) + .010*sin(15.*az);
+        float foothill = .027 + .021*cos(4.*az+1.2) + .013*sin(9.*az+.3);
+        float cloudHeight = dir.y - (.205 + .016*sin(5.*az));
+        float wisps = exp(-cloudHeight*cloudHeight*3400.) *
+          smoothstep(.50,1.05,cos(3.*az-.55) + .23*sin(10.*az));
+        daylight = mix(daylight, vec3(.94,.89,.70), .42*wisps);
+        daylight = mix(daylight, vec3(.52,.61,.54), .65*(1.-smoothstep(ridge-.002,ridge+.002,dir.y)));
+        daylight = mix(daylight, vec3(.39,.51,.42), .51*(1.-smoothstep(foothill-.002,foothill+.002,dir.y)));
         float sun = max(0.0, dot(dir, normalize(vec3(.95,.21,-.38))));
         daylight += vec3(.4,.22,.06)*pow(sun,24.) + vec3(1.6,1.2,.8)*smoothstep(.9996,.99994,sun);
         gl_FragColor = vec4(daylight,1.);
@@ -342,7 +438,8 @@ export function createCountryside() {
   const sky = morningSky();
   root.add(sky);
   // The street's base slab ends at x=52. Generate only nearby stretches as needed.
-  return { root, sky, update(x) {
+  return { root, sky, update(x, time) {
+    fieldWindTime.value = time;
     const current = Math.floor((x-52)/100);
     for (let i=Math.max(0,current-2); i<=current+2 && 52+i*100<roadEnd; i++) {
       if (chunks.has(i)) continue;
