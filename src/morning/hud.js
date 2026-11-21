@@ -6,9 +6,11 @@ import { isStandSequence } from './sequence.js';
 import { distance } from './delivery.js';
 import { rideMinZ } from './movement.js';
 import { formatPay, nextOrder } from './orders.js';
+import { drawRouteMap } from './route-map.js';
+import { distanceAlong, roadEnd, roadPlace } from './country-route.js';
 import { drawStreetMap } from './street-map.js';
 
-export function createHUD(state, delivery, view, { shiba, marker }, { input, stick, releaseStick }, reset) {
+export function createHUD(state, delivery, view, { shiba, marker }, { input, stick, releaseStick }, reset, rideAudio) {
   const { availableAction, navigate } = delivery;
   const debug = $('scene-debug');
   let lastMode = '';
@@ -26,7 +28,8 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
   const map = $('street-map');
   function paintMap() {
     if (!map.open) return;
-    drawStreetMap($('street-plan'), state, navigate().point);
+    if (state.phase === 'free') drawRouteMap($('street-plan'), state);
+    else drawStreetMap($('street-plan'), state, navigate().point);
   }
   new ResizeObserver(paintMap).observe($('street-plan'));
   function openMap() {
@@ -40,6 +43,10 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     write('map-delivery', state.order.customer.address);
     const where = state.mode === 'shop' ? state.order.room.name : '榕湾老街';
     write('map-location', '当前位置 · ' + where + '　　目标 · ' + navigate().name);
+    const free = state.phase === 'free';
+    write('map-title', free ? '榕湾村道' : '榕湾老街');
+    $('map-stops').hidden = free;
+    if (free) write('map-location', '当前位置 · ' + roadPlace(state.x) + '　全长 ' + (distanceAlong(roadEnd)/1000).toFixed(2) + ' km');
     paintMap();
   }
   $('map-open').addEventListener('click', openMap);
@@ -113,6 +120,15 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
       bell([659, 784]);
     }
     setPhoneExpanded(false);
+  });
+  $('free-ride').addEventListener('click', () => {
+    if (state.phase === 'offer') reset({ state: { phase: 'free' } });
+    else if (state.phase === 'free') reset();
+  });
+  $('ride-sound').addEventListener('click', () => {
+    rideAudio.toggle();
+    $('ride-sound').setAttribute('aria-pressed', String(rideAudio.enabled));
+    write('ride-sound', rideAudio.enabled ? '声音已开启' : '声音已关闭');
   });
   $('replay').addEventListener('click', () => { setPhoneExpanded(false); reset(); syncHUD(); });
 
@@ -215,18 +231,22 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
 
   function syncHUD() {
     const task = navigate(), action = availableAction();
-    const offer = state.phase === 'offer', done = state.phase === 'done', riding = state.mode === 'ride';
+    const free = state.phase === 'free', offer = state.phase === 'offer', done = state.phase === 'done', riding = state.mode === 'ride';
     $('stage').setAttribute('aria-busy', String(!!state.sequence || state.braking));
     if (phone.dataset.phase !== state.phase) phone.dataset.phase = state.phase;
-    write('order-kind', offer ? '附近来单' : done ? '订单完成' : '当前订单');
+    write('order-kind', free ? '自由骑行' : offer ? '附近来单' : done ? '订单完成' : '当前订单');
     $('switch-order').hidden = !offer;
     write('switch-order', '换成' + nextOrder(state.order).label);
     write('pickup-store', state.order.name);
     write('pickup-person', '榕湾老街 · 找' + state.order.staff);
     write('order-note', '备注　' + state.order.note);
-    write('phase', { offer: '待接单', pickup: state.order.pickupPhase, delivery: '去送达', done: '已签收' }[state.phase]);
-    write('goal', done ? state.order.customer.name + '已签收' : task.name);
-    const hint = offer || done ? '' : guidance(task, action);
+    $('free-ride').hidden = !offer && !free;
+    write('free-ride', free ? '回老街接单' : '自由骑行');
+    $('ride-info').hidden = !free;
+    if (free) write('ride-distance', '距老街 ' + Math.round(distanceAlong(state.x)) + ' m　距村口 ' + Math.round(distanceAlong(roadEnd)-distanceAlong(state.x)) + ' m');
+    write('phase', { free: '骑行', offer: '待接单', pickup: state.order.pickupPhase, delivery: '去送达', done: '已签收' }[state.phase]);
+    write('goal', free ? roadPlace(state.x) : done ? state.order.customer.name + '已签收' : task.name);
+    const hint = offer || done || free ? '' : guidance(task, action);
     write('directions', hint);
     $('directions').hidden = !riding || !hint || hint.startsWith('↑') || !!state.sequence || state.braking || phoneExpanded;
     $('map-open').disabled = !!state.dialog || !!state.sequence || state.braking;
@@ -238,14 +258,14 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     write('receipt-insurance', '− ' + formatPay(state.order.insuranceCents));
     write('receipt-net', net);
     write('receipt-note', state.order.receiptNote);
-    write('order-summary', done ? '实际到账 ' + net : '送往' + state.order.customer.address);
-    write('place', state.mode === 'shop' ? state.order.room.name : '榕湾老街');
-    write('clock', state.order.clock[state.phase]);
+    write('order-summary', free ? Math.round(Math.abs(state.speed)*3.6) + ' km/h · 自由骑行' : done ? '实际到账 ' + net : '送往' + state.order.customer.address);
+    write('place', free ? '榕湾村道' : state.mode === 'shop' ? state.order.room.name : '榕湾老街');
+    write('clock', free ? '清晨' : state.order.clock[state.phase]);
     $('action').hidden = !action || action === 'phone' || action === 'statement' || phoneExpanded;
     $('dialogue').hidden = !state.dialog;
     $('look').hidden = !!state.dialog || !!state.sequence || state.braking;
     phoneToggle.disabled = !!state.dialog || !!state.sequence || state.braking;
-    $('order-screen').hidden = done;
+    $('order-screen').hidden = done || free;
     $('receipt').hidden = !done;
     $('phone-main').hidden = done;
     $('replay').hidden = !done;
@@ -266,7 +286,7 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
       stick.setAttribute('aria-disabled', String(stickDisabled));
       if (stickDisabled) releaseStick();
     }
-    marker.visible = !offer && !done && !state.dialog && !state.sequence;
+    marker.visible = !free && !offer && !done && !state.dialog && !state.sequence;
     const point = task.point;
     const onSidewalk = state.mode !== 'shop' && point.z < CURB_Z;
     marker.position.set(point.x, (onSidewalk ? CURB_H : 0) + 0.028, point.z);

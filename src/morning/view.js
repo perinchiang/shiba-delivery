@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import { frameRide, resizeRideCamera } from './ride-camera.js';
+import { countryCamera, rideTuning } from './free-ride.js';
+import { roadHeight } from './country-route.js';
 import { $ } from './dom.js';
 import { clamp, damp, dampAngle } from '../core/mathx.js';
 import { isBoxSequence, isStandSequence, positionParcel } from './sequence.js';
 import { CURB_H, CURB_Z } from './town.js';
 
 export function createView(renderer, state, world) {
-  const { scene, camera, chase, sun, rooms, street, shiba, scooter, looseBag, marker, contact } = world;
+  const { scene, country, camera, chase, sun, rooms, street, shiba, scooter, looseBag, marker, contact } = world;
   const roomList = Object.values(rooms);
   const courierScale = scooter.root.scale.y;
   let headTurn = .75, shopReview;
@@ -65,17 +67,29 @@ export function createView(renderer, state, world) {
     const room = rooms[state.order.room.template];
     for (const candidate of roomList) candidate.root.visible = inside && candidate === room;
     room.bag.visible = state.phase === 'pickup';
-    street.root.visible = !inside;
+    const free = state.phase === 'free';
+    const outsideTown = free && state.x > 52;
+    country.root.visible = free;
+    if (free) country.update(state.x);
+    street.eastTrees.visible = !free;
+    street.root.visible = !inside && (!free || state.x < 240);
     scooter.root.visible = !inside;
     if (inside) room.update(time); else street.update(time);
-    const height = !inside && state.z < CURB_Z ? CURB_H : 0;
+    const ground = free ? roadHeight(state.x) : 0;
+    const height = ground + (!inside && !outsideTown && state.z < CURB_Z ? CURB_H : 0);
     const facing = closeUp && !riding ? 0.45 : state.yaw;
     shiba.root.rotation.y = riding || handling || snap ? facing : dampAngle(shiba.root.rotation.y, facing, 15, dt);
     scooter.root.rotation.y = state.bikeYaw;
-    scooter.root.position.set(state.bikeX, 0, state.bikeZ);
+    scooter.root.position.set(state.bikeX, free ? roadHeight(state.bikeX) : 0, state.bikeZ);
     scooter.steer(state.steer);
     scooter.setStand(state.stand);
-    shiba.root.position.set(state.x, riding ? 0 : height, state.z);
+    const grade = free ? roadHeight(state.bikeX+.5)-roadHeight(state.bikeX-.5) : 0;
+    scooter.root.rotation.x = -Math.atan(grade*Math.sin(state.bikeYaw));
+    scooter.root.rotation.z += free && riding ? state.bank : 0;
+    shiba.root.rotation.order = 'YXZ';
+    shiba.root.rotation.x = riding ? scooter.root.rotation.x : 0;
+    shiba.root.rotation.z = free && riding ? state.bank : 0;
+    shiba.root.position.set(state.x, riding ? ground : height, state.z);
     const posed = nextView === 'portrait' || nextView === 'intro';
     const lookTowardCamera = nextView === 'stand' ? .42 : posed ? .78 : -.12;
     headTurn = damp(headTurn, riding || nextView === 'stand' ? lookTowardCamera : 0, 10, dt);
@@ -85,7 +99,7 @@ export function createView(renderer, state, world) {
       swing: handling ? state.sequence.swing : 0,
       mount: seatBlend > 0 ? scooter.mount : null, carrying: packing || state.cargo === 'hand' });
     positionParcel(state, shiba, scooter, looseBag);
-    contact.position.set(state.x, (!inside && state.z < CURB_Z ? CURB_H : 0) + 0.025, state.z);
+    contact.position.set(state.x, height + 0.025, state.z);
     contact.scale.set(riding ? 1.9 : 0.90, riding ? 0.84 : 0.65, 1).multiplyScalar(courierScale);
     contact.rotation.z = riding ? state.bikeYaw - Math.PI / 2 : 0;
     marker.scale.setScalar(1 + 0.065 * Math.sin(time * 3.4));
@@ -107,14 +121,19 @@ export function createView(renderer, state, world) {
     }
     if (nextView === 'chase') {
       followYaw = dampAngle(followYaw, state.bikeYaw, 5.4, dt);
-      frameRide(chase, state, followYaw, focus);
+      const fov = (aspect < .85 ? 63 : 55) + (free ? 7*(state.speed/rideTuning.topSpeed)**2 : 0);
+      if (Math.abs(chase.fov-fov) > .03) { chase.fov = fov; chase.updateProjectionMatrix(); }
+      const far = free ? 245 : 100;
+      if (chase.far !== far) { chase.far = far; chase.updateProjectionMatrix(); }
+      if (outsideTown) countryCamera(chase, state, followYaw, focus);
+      else frameRide(chase, state, followYaw, focus);
     } else {
       if (nextView === 'stand') {
         scooter.root.localToWorld(desiredFocus.set(.32, 1.05, -.16));
         if (aspect < .85) desiredFocus.y -= .24;
         eye.set(4.65, 2.88, -2.25).applyAxisAngle(cameraUp, state.bikeYaw)
           .multiplyScalar(courierScale).add(scooter.root.position);
-        eye.z = Math.max(eye.z, -.95);
+        if (!outsideTown) eye.z = Math.max(eye.z, -.95);
         eyeOffset.copy(eye).sub(desiredFocus);
       } else if (nextView === 'box') {
         scooter.root.localToWorld(desiredFocus.set(-0.24, 1.07, scooter.cargo.floor.z + 0.15));
@@ -127,15 +146,15 @@ export function createView(renderer, state, world) {
         desiredFocus.fromArray(shopReview.focus);
         eyeOffset.fromArray(shopReview.offset);
       } else if (posed) {
-        desiredFocus.set(state.x, (riding ? 1.21 : 1.10) * courierScale, state.z);
+        desiredFocus.set(state.x, ground + (riding ? 1.21 : 1.10) * courierScale, state.z);
         if (riding) {
           eye.set(4.19 * Math.sin(portraitAngle), 1.92, 4.19 * Math.cos(portraitAngle))
             .applyAxisAngle(cameraUp, state.bikeYaw).multiplyScalar(courierScale).add(scooter.root.position);
-          eye.z = Math.max(eye.z, -.95);
+          if (!outsideTown) eye.z = Math.max(eye.z, -.95);
           eyeOffset.copy(eye).sub(desiredFocus);
         } else eyeOffset.set(0.8, 2.5, 9.2);
       } else {
-        desiredFocus.set(inside ? 0 : state.x, inside ? 1.50 : 1.74, inside ? -0.12 : state.z - 0.63);
+        desiredFocus.set(inside ? 0 : state.x, inside ? 1.50 : ground+1.74, inside ? -0.12 : state.z - 0.63);
         eyeOffset.set(inside ? -3.3 : 2.95, inside ? 4.60 : 3.9, 11);
       }
       if (snap) focus.copy(desiredFocus); else focus.lerp(desiredFocus, 1 - Math.exp(-7 * dt));
@@ -148,8 +167,10 @@ export function createView(renderer, state, world) {
     street.shopSide.visible = !fromShopSide;
     street.opposite.visible = nextView === 'chase' || fromShopSide;
     const lightX = Math.round(focus.x * 2) / 2;
-    sun.target.position.set(lightX, 0.3, 0);
-    sun.position.set(lightX - 6, 11.5, 7.5);
+    const lightZ = free ? Math.round(focus.z*2)/2 : 0;
+    sun.target.position.set(lightX, ground+.3, lightZ);
+    sun.position.set(lightX-6, ground+11.5, lightZ+7.5);
+    if (free) scene.fog.density = .031 - .023 * THREE.MathUtils.smoothstep(state.x, 28, 100);
     view = nextView;
     renderer.render(scene, view === 'chase' ? chase : camera);
   }

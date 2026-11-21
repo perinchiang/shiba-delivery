@@ -1,3 +1,4 @@
+import { centerZ, roadYaw, landmarks } from './country-route.js';
 import { orders, start, bunFacade } from './orders.js';
 
 const pharmacy = orders.find(order => order.id === 'pharmacy');
@@ -24,6 +25,11 @@ export const sceneJumps = {
   steamers: { title: '包子铺蒸笼', state: bakeryFront,
     camera: { height: 2.1, width: 3.65, focus: [bunFacade.x - 1.07, 1.54, -1.74], offset: [1.8, 4.8, 10] } },
 };
+
+for (const { id, name, x } of landmarks.slice(1)) {
+  const z = centerZ(x), yaw = roadYaw(x);
+  sceneJumps[id] = { title: name, state: { phase: 'free', mode: 'ride', x, z, bikeX: x, bikeZ: z, yaw, bikeYaw: yaw } };
+}
 
 export function setupSceneDebug(reset, renderer) {
   const panel = document.getElementById('scene-debug');

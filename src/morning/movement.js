@@ -1,4 +1,6 @@
 import { approach, clamp, damp } from '../core/mathx.js';
+import { stepFreeRide } from './free-ride.js';
+import { constrainToRoad } from './country-route.js';
 import { CURB_Z } from './town.js';
 import { beginSequence, isStandSequence, standFrame, isBoxSequence, boxFrame, doorFrame } from './sequence.js';
 
@@ -10,6 +12,16 @@ export function createMovement(state, { street, scooter }, input) {
   const courierScale = scooter.root.scale.y;
 
   function ride(dx, dz, dt) {
+    if (state.phase === 'free') {
+      const travel = stepFreeRide(state, dx, dz, scooter.wheelbase*courierScale, dt);
+      scooter.roll(Math.sign(state.speed)*travel);
+      stride += travel*3.4;
+      if (state.braking && state.stand === 1) {
+        state.braking = false;
+        beginSequence(state, 'park');
+      }
+      return;
+    }
     const throttle = state.braking ? 0 : -dz;
     // Let the boot fold the stand and return to the peg before the wheels move.
     if (throttle) state.stand = approach(state.stand, 0, dt / .28);
@@ -39,8 +51,11 @@ export function createMovement(state, { street, scooter }, input) {
     const length = Math.hypot(dx, dz), step = 2.45 * dt / Math.max(1, length);
     const inside = state.mode === 'shop';
     const oldX = state.x, oldZ = state.z;
-    state.x = clamp(state.x + dx * step, inside ? -2.75 : -8.3, inside ? 2.75 : 37.7);
-    state.z = clamp(state.z + dz * step, inside ? -0.18 : -0.72, inside ? 2.66 : 7.1);
+    if (state.phase === 'free') Object.assign(state, constrainToRoad(oldX+dx*step, oldZ+dz*step, true));
+    else {
+      state.x = clamp(oldX + dx * step, inside ? -2.75 : -8.3, inside ? 2.75 : 37.7);
+      state.z = clamp(oldZ + dz * step, inside ? -0.18 : -0.72, inside ? 2.66 : 7.1);
+    }
     state.yaw = Math.atan2(dx, dz);
     const travel = Math.hypot(state.x - oldX, state.z - oldZ);
     walking = Math.min(1, travel / (2.45 * dt || 1));

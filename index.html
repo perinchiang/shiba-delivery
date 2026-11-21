@@ -53,6 +53,11 @@
               </ol>
               <p id="order-note" class="note">备注　药袋请当面交给猫婆婆。</p>
             </section>
+            <section id="ride-info" hidden>
+              <h2>榕湾村道</h2><p>沿老街往东，经稻田和石桥到村口。沿原路可骑回老街。</p>
+              <p id="ride-distance"></p>
+              <button id="ride-sound" type="button" aria-pressed="true">声音已开启</button>
+            </section>
             <section id="receipt" aria-label="本单账单" hidden>
               <h2>本单账单</h2>
               <dl><div><dt>配送费</dt><dd id="receipt-fee">+ ¥3.10</dd></div><div><dt>今日首单保险</dt><dd id="receipt-insurance">− ¥3.00</dd></div>
@@ -61,6 +66,7 @@
             </section>
           </div>
           <footer class="phone-footer">
+            <button id="free-ride" type="button">自由骑行</button>
             <button id="phone-main" type="button">接下第一单</button>
             <button id="replay" type="button" hidden>再跑一趟 ↻</button>
             <span class="home-line" aria-hidden="true"></span>
@@ -71,7 +77,7 @@
     <dialog id="street-map" aria-labelledby="map-title">
       <header><h2 id="map-title">榕湾老街</h2><button type="button" id="map-close" aria-label="关闭地图">关闭 ×</button></header>
       <canvas id="street-plan" aria-label="老街平面图，显示阿柴与取送点"></canvas>
-      <footer><div class="map-stops"><span><b>取</b><strong id="map-pickup"></strong></span><span><b>送</b><strong id="map-delivery">榕树里 3 号</strong></span></div><p id="map-location"></p></footer>
+      <footer><div class="map-stops" id="map-stops"><span><b>取</b><strong id="map-pickup"></strong></span><span><b>送</b><strong id="map-delivery">榕树里 3 号</strong></span></div><p id="map-location"></p></footer>
     </dialog>
     <p id="loading" role="status">正在打开榕湾老街…</p>
     <p id="announcement" class="sr" aria-live="polite"></p>

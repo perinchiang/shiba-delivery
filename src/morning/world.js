@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { glowMaterial, litMaterial } from '../core/materials.js';
 import { createShiba, createScooter, parcel } from './rider.js';
 import { createStreet, createPharmacy, createBunRoom } from './town.js';
+import { createCountryside } from './countryside.js';
 import { $ } from './dom.js';
 
 export async function createWorld(renderer) {
@@ -39,6 +40,8 @@ export async function createWorld(renderer) {
   });
   const rooms = { pharmacy: createPharmacy(), bakery: createBunRoom(display.scene.clone(true)) };
   const street = createStreet(display.scene);
+  const country = createCountryside();
+  scene.add(country.root);
   const shiba = createShiba(courier), scooter = createScooter(motorcycle);
   scene.add(street.root, ...Object.values(rooms).map(room => room.root), shiba.root, scooter.root);
   const looseBag = parcel(scene, 0, 0, 0);
@@ -61,5 +64,5 @@ export async function createWorld(renderer) {
     glowMaterial({ map: shadowTexture, intensity: 1, transparent: true, depthWrite: false }));
   contact.rotation.x = -Math.PI / 2;
   scene.add(contact);
-  return { scene, camera, chase, sun, rooms, street, shiba, scooter, looseBag, marker, contact };
+  return { scene, country, camera, chase, sun, rooms, street, shiba, scooter, looseBag, marker, contact };
 }

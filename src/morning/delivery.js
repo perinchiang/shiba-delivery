@@ -7,7 +7,7 @@ export function initialState() {
   return {
     order: orders[0], phase: 'offer', mode: 'ride', cargo: 'none', dialog: null, sequence: null,
     ...start, bikeX: start.x, bikeZ: start.z, bikeYaw: Math.PI / 2, yaw: Math.PI / 2,
-    speed: 0, steer: 0, returnToBike: false, tiptoe: 0, reach: 0, stand: 1, lift: 0, braking: false,
+    speed: 0, bank: 0, steer: 0, returnToBike: false, tiptoe: 0, reach: 0, stand: 1, lift: 0, braking: false,
   };
 }
 
@@ -16,6 +16,9 @@ export function createDelivery(state) {
   const parkedAtHome = () => Math.abs(state.bikeX - state.order.customer.point.x) < 4.1;
   function availableAction() {
     if (state.sequence || state.braking) return '';
+    if (state.phase === 'free' && state.mode === 'walk') {
+      return distance(state, bike()) < 1.82 ? 'mount' : '';
+    }
     if (state.phase === 'done') return 'statement';
     if (state.dialog === 'shopkeeper') return 'collect';
     if (state.dialog === 'customer') return 'sign';
@@ -37,6 +40,7 @@ export function createDelivery(state) {
   }
 
   function navigate() {
+    if (state.phase === 'free') return { name: '自由骑行', point: state };
     if (state.mode === 'shop') return state.phase === 'pickup'
       ? { name: state.order.actions.talk, point: state.order.room.counter }
       : { name: '回到老街', point: state.order.room.exit };

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { $ } from './dom.js';
 import { createWorld } from './world.js';
+import { createRideAudio } from './ride-audio.js';
 import { createView } from './view.js';
 import { createDelivery, initialState } from './delivery.js';
 import { createControls } from './controls.js';
@@ -16,11 +17,13 @@ async function run(renderer) {
   const controls = createControls();
   const movement = createMovement(state, world, controls.input);
   const delivery = createDelivery(state);
-  const hud = createHUD(state, delivery, view, world, controls, reset);
+  const rideAudio = createRideAudio();
+  const hud = createHUD(state, delivery, view, world, controls, reset, rideAudio);
 
   function reset(scene) {
     hud.close();
     Object.assign(state, initialState(), scene?.state);
+    rideAudio.setActive(state.phase === 'free');
     controls.releaseStick();
     controls.input.clearVirtual();
     movement.reset();
@@ -38,6 +41,7 @@ async function run(renderer) {
     time += dt;
     movement.move(dt, hud.modalOpen, view.clearInspection);
     hud.sync();
+    rideAudio.update(state, hud.modalOpen);
     view.draw(dt, time, movement);
     updateStats(now);
     controls.input.endFrame();

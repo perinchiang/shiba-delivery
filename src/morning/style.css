@@ -173,6 +173,12 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
 
 #scene-debug { position:absolute; left:var(--dock-left); top:max(var(--edge),env(safe-area-inset-top)); z-index:1; pointer-events:auto; color:#fff5de; background:#203933ed; border-radius:13px; font-size:13px; }
 #scene-perf { display:block; padding:0 10px 6px; font-variant-numeric:tabular-nums; }
+#scene-debug[open] { max-height:calc(100dvh - 2 * var(--edge)); overflow:auto; }
+#free-ride, #ride-sound { min-height:40px; border-radius:10px; background:#e7e3cc; color:#345a4e; font-weight:700; }
+.phone-footer:has(#free-ride:not([hidden])) { display:grid; grid-template-columns:auto 1fr; gap:4px; }
+.phone-footer .home-line { grid-column:1 / -1; }
+#ride-info { padding:4px 10px 14px; line-height:1.5; }
+#ride-info h2 { font-size:20px; }
 #scene-debug summary { padding:10px 13px; min-height:44px; cursor:pointer; }
 #scene-debug div { display:grid; grid-template-columns:repeat(2,1fr); gap:5px; padding:0 8px 8px; }
 #scene-debug button { min-height:44px; border-radius:7px; background:#f9edd2; color:#29473b; }

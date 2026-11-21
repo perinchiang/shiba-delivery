@@ -281,11 +281,13 @@ export function createStreet(steamers) {
   });
   const far = group(root);
   // Leave clearance beyond both ends of the playable street for the longer chase boom.
+  const eastTrees = group(root);
   for (const x of [-19, 49.5]) {
-    for (const z of [1.7, 5.9, 10.4]) tree(far, x, z, 1.55, 40 + z);
+    for (const z of [1.7, 5.9, 10.4]) tree(x > 0 ? eastTrees : far, x, z, 1.55, 40 + z);
   }
   box(far, 13, 0.07, 8.43, 68, 0.15, 2.78, 0xd3c2a4);
   bake(far);
+  bake(eastTrees);
   const rng = new RNG('morning-roofs');
   const skyline = group(root);
   for (let i = -6; i <= 17; i++) {
@@ -302,7 +304,7 @@ export function createStreet(steamers) {
   cat.rotation.y = -0.23;
   const steam = [];
   for (let i = 0; i < 4; i++) steam.push(oval(shopSide, 0, 0, 0, 0.07, 0.13, 0.07, 0xffebcb));
-  return { root, shopSide, opposite, doors, update(t) {
+  return { root, shopSide, opposite, eastTrees, doors, update(t) {
     updateSteam(t);
     steam.forEach((puff, i) => {
       const life = (t * 0.53 + i * 0.25) % 1;

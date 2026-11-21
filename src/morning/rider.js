@@ -402,7 +402,7 @@ export function createScooter(asset) {
     const yaw = root.rotation.y, cos = Math.cos(yaw), sin = Math.sin(yaw), s = root.scale.x;
     return out.set(
       root.position.x + (besideLocal.x * cos + besideLocal.z * sin) * s,
-      0,
+      root.position.y,
       root.position.z + (-besideLocal.x * sin + besideLocal.z * cos) * s,
     );
   };
