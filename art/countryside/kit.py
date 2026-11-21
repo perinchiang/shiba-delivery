@@ -1,8 +1,7 @@
 """Blender --background --factory-startup --python-exit-code 2 --python kit.py
 
 Build the stylized solid-3D countryside asset kit (countryside-kit.glb) for Shiba Delivery.
-The solid tree meshes use vertex colour and an embedded opaque broadleaf atlas.
-Regenerate broadleaf.png with paint-broadleaf.py when revising its leaf shapes.
+The solid tree meshes use vertex colour, including closed, sculpted broad leaves.
 Blender Z-up exports to glTF Y-up with each named mesh centered at the ground origin.
 """
 import math
@@ -489,7 +488,8 @@ def build_hardwood(name, riverbank=False):
             point = (spread*(center+r*math.cos(a)), .87*r*math.sin(a)+.18*t, z)
             normal = Vector((math.cos(a), math.sin(a)/.87, (z-3.05)*1.4))
             crease = {5: .33, 9: .38}.get(row, 0) * (1-.85*shoulder)
-            ring.append(b.add_vert(point, lerp_hex(0xb4c8b7, 0xfff5d6, .80+.18*t-crease), normal))
+            shade = max(0, min(1, .20 + .70*t - crease*.38))
+            ring.append(b.add_vert(point, lerp_hex(0x356952, 0x86aa59, shade), normal))
         if previous:
             for k in range(segments):
                 j = (k+1)%segments
@@ -498,15 +498,10 @@ def build_hardwood(name, riverbank=False):
             b.add_face(tuple(reversed(ring)))
         previous = ring
     b.add_face(previous)
-    wood = b.build_object()
-    material = wood.data.materials[0]
-    tree = material.node_tree
-    texture = tree.nodes.new('ShaderNodeTexImage')
-    texture.image = bpy.data.images.load(str(Path(__file__).with_name('broadleaf.png')), check_existing=True)
-    tree.links.new(texture.outputs['Color'], tree.nodes.get('Principled BSDF').inputs['Base Color'])
-    uv = wood.data.uv_layers.new(name='BarkAndLeaves')
-    # Distance along each meridian keeps a leaf the same size over a rolled
-    # shoulder and under a branch, where level spacing varies considerably.
+    # Keep 2f367ab's continuous envelope and stout, connected trunk. Re-lay
+    # cf3a67f's closed broad leaves on this surface, rather than restoring its
+    # separate spherical crowns. Arc-length spacing avoids stretched leaves
+    # on the rolled shoulders and on the underside of the lower bough.
     meridians = []
     for col in range(segments):
         lengths = [0.0]
@@ -514,20 +509,74 @@ def build_hardwood(name, riverbank=False):
             i = first + row*segments + col
             lengths.append(lengths[-1] + (Vector(b.verts[i])-Vector(b.verts[i-segments])).length)
         meridians.append([d/lengths[-1] for d in lengths])
-    for face in wood.data.polygons:
-        indices = list(face.vertices)
-        if indices[0] < first:
-            for li in face.loop_indices:
-                uv.data[li].uv = (.5, .025)
-            continue
-        columns = [(i-first) % segments for i in indices]
-        seam = 0 in columns and segments-1 in columns
-        for li, i, col in zip(face.loop_indices, indices, columns):
-            row = (i-first)//segments
-            u = (col+segments if seam and col == 0 else col)/segments
-            v = meridians[col][row]
-            uv.data[li].uv = (u, .08 + .90*v)
-    return wood
+
+    def surface(a, distance, lift=0):
+        distance = max(.015, min(.992, distance))
+        column = (a % TAU) * segments / TAU
+        left = int(column)
+        across = column - left
+        points, normals = [], []
+        for col in (left, (left+1) % segments):
+            arc = meridians[col]
+            row = next(i for i in range(len(arc)-1) if distance <= arc[i+1])
+            along = (distance-arc[row]) / (arc[row+1]-arc[row])
+            lo, hi = first+row*segments+col, first+(row+1)*segments+col
+            points.append(Vector(b.verts[lo]).lerp(Vector(b.verts[hi]), along))
+            normals.append(b.custom_nor[lo].lerp(b.custom_nor[hi], along).normalized())
+        normal = normals[0].lerp(normals[1], across).normalized()
+        return points[0].lerp(points[1], across) + normal*lift, normal
+
+    rng = random.Random(67)
+    # The original rounded shoulders, little hanging tip, two raised midrib
+    # points and sealed back face. Keep the silhouette relief shallow enough
+    # for the single crown to remain legible at playing distance.
+    outline = [(0, .30, .015), (-.68, .19, .07), (-1, -.04, .12),
+               (-.71, -.27, .16), (-.30, -.43, .17), (.06, -.53, .18),
+               (.34, -.42, .175), (.71, -.28, .16),
+               (1, -.08, .12), (.74, .16, .075)]
+    # Round each original shoulder with one interpolated point. The large
+    # leaf shape and hanging tip stay intact without a cut-paper polygon edge.
+    rounded = []
+    for k, p1 in enumerate(outline):
+        p0, p2, p3 = [outline[j % len(outline)] for j in (k-1, k+1, k+2)]
+        rounded.append(p1)
+        rounded.append(tuple((9*(p1[j]+p2[j])-p0[j]-p3[j])/16 for j in range(3)))
+    for row, (distance, count) in enumerate([
+            (.17, 14), (.29, 18), (.42, 17), (.55, 15),
+            (.68, 12), (.81, 8), (.92, 4)]):
+        for i in range(count):
+            a = TAU*(i + .44*row + rng.uniform(-.12, .12))/count
+            at = distance + rng.uniform(-.017, .017)
+            spread_angle = TAU/count*rng.uniform(.49, .59)
+            length = rng.uniform(.155, .180)
+            lean = rng.uniform(-.15, .15)
+            shade = rng.uniform(0, .20) + .095*row
+            base = lerp_hex(0x366e50, 0x85a958, shade)
+            lit = lerp_hex(0x659b57, 0xa5c66a, shade)
+
+            def vertex(side, down, lift, color):
+                p, n = surface(a + spread_angle*side - lean*down,
+                               at + length*down, .015 + lift*.80)
+                # Transfer crown lighting to the leaf faces, as cf3a67f did;
+                # separate back faces must not darken their outer silhouette.
+                return b.add_vert(p, color, n)
+
+            rim = [vertex(side, down, lift,
+                          lerp_hex(0x548956, 0x9dbb68, shade-.19*down+.06*side))
+                   for side, down, lift in rounded]
+            spine = vertex(0, .08, .174, lit)
+            lower_spine = vertex(.02, -.26, .208, lit)
+            underside = vertex(0, -.07, .004, base)
+            for k, vi in enumerate(rim):
+                nxt = rim[(k+1) % len(rim)]
+                middle = lower_spine if 6 <= k <= 13 else spine
+                b.add_face((vi, nxt, middle))
+                if k == 5:
+                    b.add_face((nxt, lower_spine, spine))
+                if k == 13:
+                    b.add_face((nxt, spine, lower_spine))
+                b.add_face((nxt, vi, underside))
+    return b.build_object()
 
 
 def build_utility_pole(name, with_lamp=False):
