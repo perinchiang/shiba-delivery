@@ -1,3 +1,4 @@
+import { rideMinZ } from './street-layout.js';
 // Eastbound centreline in world metres. X always increases, so projection also works
 // immediately after a teleport or when the rider travels west back to town.
 import { clamp, lerp, smoothstep } from '../core/mathx.js';
@@ -71,7 +72,7 @@ export function constrainToRoad(x, z, walking) {
   const edge = x > 890 && x < 952 ? (walking ? .2 : .92) : (walking ? -1.3 : .45);
   const blend = smoothstep(44, 65, x);
   const mainZ = clamp(z,
-    lerp(walking ? -.72 : 1.89, centerZ(x) - half + edge, blend),
+    lerp(walking ? -.72 : rideMinZ, centerZ(x) - half + edge, blend),
     lerp(walking ? 7.1 : 6.45, centerZ(x) + half - edge, blend));
   if (mainZ === z || Math.abs(x - crossing.x) > 18) return { x, z: mainZ };
   // Project to the nearer road at an inside corner. This works in either direction.

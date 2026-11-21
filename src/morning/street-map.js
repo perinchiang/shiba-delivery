@@ -1,4 +1,4 @@
-import { CURB_Z } from './town.js';
+import { CURB_Z, rideMinZ } from './street-layout.js';
 
 import { orders } from './orders.js';
 
@@ -47,7 +47,7 @@ export function drawStreetMap(canvas, state, target) {
   }
   block(-100,-1.6,110,8.8,'#dfdcc9');
   block(-100,CURB_Z,110,7.05,'#fff9eb');
-  path([{x:-100,z:4},{x:110,z:4}],'#d3c8aa',1.5,[8,7]);
+  path([{x:-100,z:(CURB_Z + 7.05) / 2},{x:110,z:(CURB_Z + 7.05) / 2}],'#d3c8aa',1.5,[8,7]);
   for (let i = -12; i <= 44; i += 7) {
     block(i-3.18,-6,i+3.18,-1.7,'#aec6b8');
     if (i < 44) block(27-i-3.18,8.9,27-i+3.18,13,'#bed0bd');
@@ -56,7 +56,7 @@ export function drawStreetMap(canvas, state, target) {
   const inside = state.mode === 'shop';
   const rider = inside ? pickup : state;
   const destination = inside ? pickup : target;
-  const lane = p => ({x:p.x,z:2.8});
+  const lane = p => ({x:p.x,z:rideMinZ + .2});
   if (state.phase === 'offer' || state.phase === 'pickup') {
     path([pickup,lane(pickup),lane(customer.point),customer.point],'#559478',2.5,[4,5]);
   }

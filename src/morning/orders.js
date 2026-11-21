@@ -1,5 +1,7 @@
+import { rideMinZ } from './street-layout.js';
+
 // Shared physical landmarks. Orders may reuse a storefront, room and customer.
-export const start = { x: 0, z: 2.05 };
+export const start = { x: 0, z: rideMinZ + .16 };
 export const bunFacade = { x: -5, z: .2 };
 const smallRoom = { counter: { x: .37, z: -.02 }, exit: { x: 0, z: 2.40 } };
 const customer = {

@@ -1,10 +1,9 @@
 import { $, write } from './dom.js';
 import { oscVoice } from '../audio/synth.js';
 import { clamp } from '../core/mathx.js';
-import { CURB_H, CURB_Z } from './town.js';
+import { CURB_H, CURB_Z, rideMinZ, treeCrossingDirection } from './street-layout.js';
 import { isStandSequence } from './sequence.js';
 import { distance } from './delivery.js';
-import { rideMinZ } from './movement.js';
 import { formatPay, nextOrder, orders } from './orders.js';
 import { mountBunHandoff } from './bun-handoff.jsx';
 import { drawRouteMap } from './route-map.js';
@@ -231,7 +230,9 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     if (action && !['mount', 'exit', 'enter'].includes(action)) return state.order.actions[action];
     if (action === 'enter' || (action === 'exit' && state.phase === 'delivery') ||
         (action === 'mount' && target.name === state.order.actions.mount)) return state.order.actions[action];
-    const arrow = Math.abs(dx) > Math.abs(dz) ? (dx < 0 ? '← 往左走' : '往右走 →') : (dz < 0 ? '↑ 往里走' : '↓ 往外走');
+    const step = state.mode === 'walk' && treeCrossingDirection(state, target.point);
+    const x = step ? step.x : dx, z = step ? step.z : dz;
+    const arrow = Math.abs(x) > Math.abs(z) ? (x < 0 ? '← 往左走' : '往右走 →') : (z < 0 ? '↑ 往里走' : '↓ 往外走');
     return arrow + '　' + Math.max(1, Math.ceil(distance(state, target.point))) + ' m';
   }
 

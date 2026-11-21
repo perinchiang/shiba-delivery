@@ -1,3 +1,4 @@
+import { CURB_Z } from './street-layout.js';
 import { clamp, lerp, smoothstep } from '../core/mathx.js';
 
 export function resizeRideCamera(camera, aspect) {
@@ -11,7 +12,7 @@ export function frameRide(camera, bike, yaw, focus) {
   const radius = 7.9, pivotHeight = 1.04, rise = 2.54;
   const bearing = yaw + 0.17 * Math.sin(yaw);
   const along = Math.sin(bearing), across = Math.cos(bearing);
-  const dz = clamp(-across * radius, 0.42 - bike.z, 8.18 - bike.z);
+  const dz = clamp(-across * radius, CURB_Z + .64 - bike.z, 8.18 - bike.z);
   // Slide along the curb when the rear quarter is blocked. When crossing the road or
   // turning all the way around, the boom arcs over the rider to reach the other side.
   const alongCurb = -Math.sign(along) * Math.sqrt(Math.max(0, radius * radius - dz * dz));

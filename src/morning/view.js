@@ -7,7 +7,7 @@ import { constrainToRoad, crossing, halfWidth, roadHeight } from './country-rout
 import { $ } from './dom.js';
 import { clamp, damp, dampAngle } from '../core/mathx.js';
 import { isBoxSequence, isStandSequence, positionParcel } from './sequence.js';
-import { CURB_H, CURB_Z } from './town.js';
+import { CURB_H, CURB_Z } from './street-layout.js';
 
 export function createView(renderer, state, world) {
   const { scene, country, camera, chase, sun, rooms, street, shiba, scooter, looseBag, marker, contact } = world;

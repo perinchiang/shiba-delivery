@@ -21,7 +21,7 @@ function onCountryRoad(x, laneOffset = 0) {
 export const sceneJumps = {
   street: { title: '老街起点' },
   banyan: { title: '街边小榕树', state: bakeryFront,
-    camera: { height: 4.25, width: 4.4, focus: [-2.15, 1.45, -.94], offset: [-2.2, 1.4, 8] } },
+    camera: { height: 4.9, width: 5.8, focus: [-2.4, 1.23, .86], offset: [2.2, 3.5, 8] } },
   willow: { title: '桥头阔叶树', state: onCountryRoad(892),
     camera: { fov: 40, fitWidth: true, focus: [891.5, 3.6, centerZ(891.5) + 11.2], offset: [-10, 2.4, -13] } },
   crossing: { title: '城市十字路口', state: onCountryRoad(70, 2.2) },

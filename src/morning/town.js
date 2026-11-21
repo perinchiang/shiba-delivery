@@ -2,14 +2,13 @@
 import * as THREE from 'three';
 import { placeInstances } from './kit-instances.js';
 import { RNG } from '../core/rng.js';
-import { bake, box, curve, cylinder, group, oval, rod, sign } from './shapes.js';
+import { bake, box, curve, cylinder, group, oval, piece, rod, sign } from './shapes.js';
 import { buildBunShop, bunSteam } from './bun-shop.js';
 import { ear, parcel } from './rider.js';
 
 import { bunFacade, streetResident } from './orders.js';
 
-export const CURB_Z = 0.95;
-export const CURB_H = 0.14;
+import { CURB_H, CURB_Z, treePitRadius, treePitZ, streetTreeXs } from './street-layout.js';
 const cream = 0xffecc5, wood = 0x986643, teal = 0x397d73;
 const glass = 0x547c77, glassLight = 0x86a9a0, charcoal = 0x485953;
 
@@ -232,22 +231,57 @@ function neighbor(g, x, y, z, rabbit) {
   return n;
 }
 
+// One moulded wedge per brick, with an open soil bed and a recessed mortar joint.
+function treePits(parent) {
+  const beds = group(parent);
+  const count = 16, pitch = Math.PI * 2 / count;
+  const inner = treePitRadius - .17, joint = .025;
+  const shape = new THREE.Shape();
+  shape.absarc(0, 0, treePitRadius - .012, joint, pitch - joint, false);
+  shape.absarc(0, 0, inner + .012, pitch - joint, joint, true);
+  shape.closePath();
+  const brick = new THREE.ExtrudeGeometry(shape, {
+    depth: .18, curveSegments: 2, bevelEnabled: true, bevelSegments: 1, bevelSize: .012, bevelThickness: .012,
+  });
+  brick.rotateX(-Math.PI / 2);
+  const clay = [0xb87957, 0xc18763, 0xae7255, 0xc08a68];
+  const soilHeight = .105;
+  for (const [i, x] of streetTreeXs.entries()) {
+    const bed = group(beds, x, CURB_H, treePitZ);
+    // The dark base sits behind the joints. Soil meets the inside brick face.
+    cylinder(bed, 0, .05, 0, treePitRadius - .023, treePitRadius - .023, .10, 0x715441, 48);
+    cylinder(bed, 0, soilHeight, 0, inner + .014, inner + .014, .020, 0x71513a, 48);
+    for (let j = 0; j < count; j++) {
+      piece(bed, brick, clay[(j + Math.floor(j / 3) + i) % clay.length], 0, .015, 0).rotation.y = pitch * j;
+    }
+    const rng = new RNG('street-soil-' + i);
+    for (let j = 0; j < 11; j++) {
+      const a = j * 2.4, r = rng.range(.32, inner - .06);
+      oval(bed, r * Math.cos(a), soilHeight + .011, r * Math.sin(a), rng.range(.023, .046), .012, .027,
+        rng.pick([0x806047, 0x947257, 0x6a4c36]), true);
+    }
+  }
+  bake(beds);
+  return CURB_H + soilHeight + .01;
+}
+
 export function createStreet(steamers, banyan) {
   const root = new THREE.Group();
   const road = group(root);
   box(road, 12, -0.17, 2, 80, 0.33, 23, 0xaaa598);
-  box(road, 12, 0.05, -0.60, 73, 0.18, 3.10, 0xd5c2a1);
+  const back = -2.15, pavementWidth = CURB_Z - back;
+  box(road, 12, .05, (back + CURB_Z) / 2, 73, .18, pavementWidth, 0xd5c2a1);
   for (let i = -17; i < 51; i++) {
-    box(road, i, 0.064, 0.94, 0.978, 0.138, 0.21, i % 4 === 0 ? 0xd4bf99 : 0xe3cfab);
-    if (i % 2 === 0) box(road, i, 0.144, -0.36, 0.018, 0.004, 2.58, 0xbcae94);
-    if (i % 3 === 0) box(road, i, 0.005, 3.64, 1.18, 0.009, 0.075, 0xe2d4b8);
+    box(road, i, 0.076, CURB_Z - .105, 0.978, 0.138, 0.21, i % 4 === 0 ? 0xd4bf99 : 0xe3cfab);
+    if (i % 2 === 0) box(road, i, .141, (back + CURB_Z - .22) / 2, .018, .003, pavementWidth - .22, 0xbcae94);
+    if (i % 3 === 0) box(road, i, 0.005, (CURB_Z + 7.05) / 2, 1.18, 0.009, 0.075, 0xe2d4b8);
     if (i % 7 === 0) {
-      box(road, i, 0.009, 1.21, 0.52, 0.01, 0.20, 0x787d72);
-      for (let j = 0; j < 6; j++) box(road, i - 0.20 + j * 0.079, 0.017, 1.21, 0.022, 0.008, 0.16, 0xa0a395);
+      box(road, i, 0.009, CURB_Z + .22, 0.52, 0.01, 0.20, 0x787d72);
+      for (let j = 0; j < 6; j++) box(road, i - 0.20 + j * 0.079, 0.017, CURB_Z + .22, 0.022, 0.008, 0.16, 0xa0a395);
     }
   }
   for (const cross of [-5.45, 20.0, 36.3]) {
-    for (let i = 0; i < 10; i++) box(road, cross, 0.006, 1.45 + i * 0.53, 1.22, 0.01, 0.26, 0xe4dcca);
+    for (let i = 0; i < 8; i++) box(road, cross, 0.006, CURB_Z + .36 + i * .53, 1.22, 0.01, 0.26, 0xe4dcca);
   }
   bake(road);
   const shopSide = group(root);
@@ -280,9 +314,10 @@ export function createStreet(steamers, banyan) {
     for (let k = 0; k < 3; k++) box(skyline, x + k - 1, h - 1.1, -10.71 - i % 3, 0.45, 0.75, 0.07, 0x93afa3);
   }
   bake(skyline);
-  const streetTrees = [-9.1, -1.56, 5.58, 12.57, 19.51, 26.5, 33.55, 40.4].map((x, i) => {
+  const soilTop = treePits(shopSide);
+  const streetTrees = streetTreeXs.map((x, i) => {
     const scale = i === 1 ? .48 : .56 + (i % 3) * .05;
-    return [x, CURB_H, -1.26, i * 2.4, scale, scale, scale];
+    return [x, soilTop, treePitZ, i * 2.4, scale, scale, scale];
   });
   placeInstances(shopSide, banyan, streetTrees);
   const updateSteam = bunSteam(shopSide, bunFacade.x - 1.83, CURB_H + 1.67, -1.91);

@@ -1,11 +1,8 @@
 import { approach, clamp, damp } from '../core/mathx.js';
 import { stepFreeRide } from './free-ride.js';
 import { constrainToRoad } from './country-route.js';
-import { CURB_Z } from './town.js';
+import { avoidTreePits, rideMinZ } from './street-layout.js';
 import { beginSequence, isStandSequence, standFrame, isBoxSequence, boxFrame, doorFrame } from './sequence.js';
-
-// Leave space for both boots when dismounting at the near curb.
-export const rideMinZ = CURB_Z + .94;
 
 export function createMovement(state, { street, scooter }, input) {
   let walking = 0, stride = 0;
@@ -58,6 +55,7 @@ export function createMovement(state, { street, scooter }, input) {
       state.x = clamp(oldX + dx * step, inside ? -2.75 : -8.3, inside ? 2.75 : 37.7);
       state.z = clamp(oldZ + dz * step, inside ? -0.18 : -0.72, inside ? 2.66 : 7.1);
     }
+    if (!inside) avoidTreePits(state);
     state.yaw = Math.atan2(dx, dz);
     const travel = Math.hypot(state.x - oldX, state.z - oldZ);
     walking = Math.min(1, travel / (2.45 * dt || 1));
