@@ -21,10 +21,11 @@ function onCountryRoad(x, laneOffset = 0) {
 export const sceneJumps = {
   street: { title: '老街起点' },
   crossing: { title: '城市十字路口', state: onCountryRoad(70, 2.2) },
+  openPaddy: { title: '开阔水田', state: onCountryRoad(340) },
   riceBend: { title: '稻浪到石桥', state: onCountryRoad(792) },
   riceClose: {
     title: '田埂看稻穗', state: onCountryRoad(835),
-    camera: { fov: 48, focus: [846, .48, centerZ(846) + 10.4], offset: [-4.9, .78, -1.60] },
+    camera: { fov: 48, focus: [843, 0.92, centerZ(843) + 5.6], offset: [-4.6, 0.76, -2.5] },
   },
   pharmacy: { title: '药店门口', state: { order: pharmacy, mode: 'walk', phase: 'pickup',
     x: pharmacy.door.x, z: -.32, ...parked(pharmacy.door.x) } },

@@ -15,13 +15,13 @@ export async function createWorld(renderer) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.03;
+  renderer.toneMappingExposure = 1.05;
   $('stage').appendChild(renderer.domElement);
-  scene.add(new THREE.HemisphereLight(0xf3f8ff, 0xb2afa4, 1.65));
-  const sun = new THREE.DirectionalLight(0xffe5c2, 2.42);
+  scene.add(new THREE.HemisphereLight(0xdff3ff, 0x79a48c, 1.48));
+  const sun = new THREE.DirectionalLight(0xffefd0, 2.65);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -10, right: 10, top: 11, bottom: -9, near: 0.5, far: 45 });
+  Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 12, bottom: -10, near: 0.5, far: 48 });
   sun.shadow.camera.updateProjectionMatrix();
   sun.shadow.normalBias = 0.018;
   sun.shadow.bias = -0.00015;
@@ -29,12 +29,17 @@ export async function createWorld(renderer) {
   scene.add(sun, sun.target);
 
   const loader = new GLTFLoader();
-  const [courier, motorcycle, display, bridgeBuffalo] = await Promise.all([
+  const [courier, motorcycle, display, bridgeBuffalo, countryKitGltf] = await Promise.all([
     loader.loadAsync(new URL('../../art/morning/shiba-courier.glb', import.meta.url).href),
     loader.loadAsync(new URL('../../art/morning/monkey-delivery.glb', import.meta.url).href),
     loader.loadAsync(new URL('../../art/bun-shop/steamers.glb', import.meta.url).href),
     loader.loadAsync(new URL('../../art/countryside/bridge-buffalo.glb', import.meta.url).href),
+    loader.loadAsync(new URL('../../art/countryside/countryside-kit.glb', import.meta.url).href),
   ]);
+  const countryKit = {};
+  countryKitGltf.scene.traverse(o => {
+    if (o.isMesh && o.name) countryKit[o.name] = o.geometry;
+  });
   display.scene.traverse(o => {
     if (!o.isMesh) return;
     o.material = litMaterial({ vertexColors: true, grid: false });
@@ -42,7 +47,7 @@ export async function createWorld(renderer) {
   });
   const rooms = { pharmacy: createPharmacy(), bakery: createBunRoom(display.scene.clone(true)) };
   const street = createStreet(display.scene);
-  const country = createCountryside();
+  const country = createCountryside(countryKit);
   bridgeBuffalo.scene.traverse(node => {
     if (node.isMesh) node.castShadow = node.receiveShadow = true;
   });

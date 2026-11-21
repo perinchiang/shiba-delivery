@@ -1,457 +1,661 @@
+// Stylized countryside route: crisp morning sky + 3D puff clouds, clean slate rural road,
+// Blender solid-3D trees / utility poles / road mirrors / flowers / reeds, Scheme A paddies,
+// cartoon river water, and upgraded cozy village cottages.
 import * as THREE from 'three';
 import { GeoBuilder } from '../core/geo.js';
 import { rngFrom } from '../core/rng.js';
 import { litMaterial } from '../core/materials.js';
-import { bridgeJointXs, crossing, centerZ, halfWidth, roadEnd, roadHeight } from './country-route.js';
+import { bridgeJointXs, crossing, centerZ, halfWidth, roadEnd, roadHeight, roadYaw } from './country-route.js';
 import { createCityCrossing } from './city-crossing.js';
 import { sign } from './shapes.js';
-import { addPaddies, fieldStart, fieldEnd, fieldWindTime } from './paddy.js';
-import { addGravelVerge, addWornSurface } from './road-verge.js';
-import { addBankWillows } from './sample-trees.js';
+import { addPaddies, fieldEnd, fieldStart, eastFieldStart, eastFieldEnd, updatePaddyEnv } from './paddy.js';
+import { buildCountryRoad } from './country-road.js';
+import { createRiverWater } from './country-water.js';
 
-const paint = litMaterial({ vertexColors: true, grid: false });
-const instancePaint = litMaterial({ grid: false });
-const fieldColors = [0x9ca757, 0xc1b45e, 0xaebc70, 0xc3bd73, 0x9bac69];
-const roofColors = [0x806d60, 0x946b53, 0x697974];
-const crown = new THREE.IcosahedronGeometry(1, 1);
-const pole = new THREE.CylinderGeometry(1, 1.12, 1, 7);
+const paint = litMaterial({ vertexColors: true, grid: false, roughness: 0.90 });
+const kitPaint = litMaterial({ vertexColors: true, grid: false, roughness: 0.88 });
 const dummy = new THREE.Object3D();
 const tint = new THREE.Color();
 
-function instances(group, geometry, pieces, material = instancePaint, castShadow = true) {
-  if (!pieces.length) return;
-  const mesh = new THREE.InstancedMesh(geometry, material, pieces.length);
-  pieces.forEach(([x, y, z, w, h, d, color], i) => {
+function placeInstances(group, geometry, list, castShadow = true, receiveShadow = true) {
+  if (!geometry || !list.length) return;
+  const mesh = new THREE.InstancedMesh(geometry, kitPaint, list.length);
+  for (let i = 0; i < list.length; i++) {
+    const [x, y, z, rotY, sx, sy, sz, colorHex] = list[i];
     dummy.position.set(x, y, z);
-    dummy.scale.set(w, h, d);
-    dummy.rotation.y = i * 2.4;
+    dummy.rotation.set(0, rotY, 0);
+    dummy.scale.set(sx, sy, sz);
     dummy.updateMatrix();
     mesh.setMatrixAt(i, dummy.matrix);
-    mesh.setColorAt(i, tint.setHex(color));
-  });
+    if (colorHex !== undefined) mesh.setColorAt(i, tint.setHex(colorHex));
+  }
   mesh.castShadow = castShadow;
-  mesh.receiveShadow = true;
+  mesh.receiveShadow = receiveShadow;
   mesh.computeBoundingSphere();
   group.add(mesh);
 }
 
+// Upgraded cozy village cottage: fixes the degenerate-quad black gable bug, adds warm eaves,
+// shutters, stone plinths and low garden walls so cottages feel grounded like Old Street.
 function house(builder, x, z, side, rng) {
-  // Low whitewashed walls, a two-pitch tiled roof and shaded door facing the road.
-  const w = rng.range(4.7, 7.1), d = rng.range(4.1, 6), h = rng.range(2.8, 4.6);
-  const wall = rng.pick([0xe8d9ae, 0xcbd8bd, 0xe0c69e]), roof = rng.pick(roofColors);
-  builder.box(x, h/2-.15, z, w, h+.3, d, { color: wall });
-  const left = x-w/2, right = x+w/2;
+  const w = rng.range(5.0, 7.0), d = rng.range(4.3, 5.8), h = rng.range(2.9, 4.1);
+  const wall = rng.pick([0xf3e4c2, 0xd4e2cf, 0xf0d6ad]);
+  const roof = rng.pick([0x50726c, 0xb2684c, 0x6b7c74]);
+  const trim = 0xf7ecd1;
+  const timber = 0x7c573c;
+
+  // Stone foundation plinth so house sits firmly in the meadow
+  builder.box(x, 0.14, z, w + 0.42, 0.56, d + 0.42, { color: 0xb7aa91 });
+  // Main plaster body
+  builder.box(x, h / 2 + 0.18, z, w, h, d, { color: wall, shade: 0.08 });
+
+  const topY = h + 0.18;
+  const ridgeH = 1.25;
+  const left = x - w / 2, right = x + w / 2;
+
+  // Gable end triangles with explicit outward normals (fixes the black-gable zero-normal bug!)
   for (const sideX of [-1, 1]) {
-    const gx = x + sideX*w/2;
-    const gable = [[gx,h,z-d/2],[gx,h+1.08,z],[gx,h,z+d/2],[gx,h,z+d/2]];
-    if (sideX<0) gable.reverse();
-    builder.quad(...gable,{color:wall});
-    const end = gx+sideX*.03;
-    builder.box(end,h*.57,z,.08,.93,.73,{color:0x718881});
-    builder.box(end+sideX*.05,h*.57,z,.06,.97,.075,{color:wall});
+    const gx = x + sideX * w / 2;
+    const gable = [
+      [gx, topY, z - d / 2],
+      [gx, topY + ridgeH, z],
+      [gx, topY, z + d / 2],
+      [gx, topY, z + d / 2],
+    ];
+    if (sideX < 0) gable.reverse();
+    builder.quad(...gable, { color: wall, normal: [sideX, 0, 0] });
+    // Side window with cream frame & wood sill
+    const end = gx + sideX * 0.04;
+    builder.box(end, topY * 0.58, z, 0.10, 1.02, 0.88, { color: trim });
+    builder.box(end + sideX * 0.04, topY * 0.58, z, 0.06, 0.84, 0.70, { color: 0x547b78 });
+    builder.box(end + sideX * 0.06, topY * 0.58, z, 0.05, 0.86, 0.07, { color: trim });
+    builder.box(end + sideX * 0.07, topY * 0.58 - 0.50, z, 0.16, 0.09, 1.02, { color: timber });
   }
+
+  // Clean overhanging pitched tiled roof with thick fascia & ridge cap (no loose floating sticks)
+  const overX = 0.46, overZ = 0.55;
   for (const slope of [-1, 1]) {
-    const edge = z+slope*(d/2+.42);
-    const points = [[left-.38,h,edge],[right+.38,h,edge],[right+.38,h+1.1,z],[left-.38,h+1.1,z]];
-    if (slope < 0) points.reverse();
-    builder.quad(...points, { color: roof });
-    builder.box(x,h-.055,edge,w+.82,.13,.14,{color:0x655b52});
-    for (let tile=1;tile<6;tile++) {
-      const t = tile/6;
-      builder.box(x,h+1.1*t+.005,edge+(z-edge)*t,w+.74,.035,.05,{color:roof});
-    }
+    const edgeZ = z + slope * (d / 2 + overZ);
+    const eaveY = topY - 0.16;
+    const roofPts = [
+      [left - overX, eaveY, edgeZ],
+      [right + overX, eaveY, edgeZ],
+      [right + overX, topY + ridgeH + 0.04, z],
+      [left - overX, topY + ridgeH + 0.04, z],
+    ];
+    if (slope < 0) roofPts.reverse();
+    builder.quad(...roofPts, { color: roof });
+    // Underside soffit so eaves never look paper-thin
+    const soffit = roofPts.map(([px, py, pz]) => [px, py - 0.12, pz]);
+    soffit.reverse();
+    builder.quad(...soffit, { color: timber });
+    // Clean timber fascia beam along the eave edge
+    builder.box(x, eaveY - 0.06, edgeZ, w + overX * 2 + 0.04, 0.14, 0.14, { color: trim });
   }
-  builder.box(x, h + 1.08, z, w+.85, .15, .21, { color: 0x625c53 });
-  const front = z-side*(d/2+.03);
-  builder.box(x-.65, 1, front, 1.1, 2.05, .08, { color: 0x76664f });
-  builder.box(x+1.25, 1.6, front, 1.23, 1.1, .09, { color: 0x607d78 });
-  builder.box(x+1.25, 1.6, front-side*.05, .09, 1.1, .05, { color: wall });
-  builder.box(x, .13, front-side*.45, w, .26, .85, { color: 0xb7a98b });
-  builder.box(x-.65,2.13,front-side*.18,1.56,.15,.48,{color:0x977861});
-  builder.box(x-.65,1.87,front-side*.06,.92,.18,.07,{color:0xa4523d});
-  for (const post of [-1,1]) builder.box(x-.65+post*.59,1.04,front-side*.07,.105,1.9,.06,{color:0xa4523d});
+  // Roof ridge beam & terracotta finial caps
+  builder.box(x, topY + ridgeH + 0.08, z, w + overX * 2 + 0.12, 0.18, 0.24, { color: 0x455d59 });
+
+  // Warm front porch, door, shutters & stepping terrace facing the road
+  const front = z - side * (d / 2 + 0.04);
+  builder.box(x, 0.14, front - side * 0.58, w + 0.3, 0.28, 1.15, { color: 0xc9b999 });
+  // Doorway + warm wooden door + red lintel accents (matches Old Street palette)
+  builder.box(x - 0.72, 1.24, front - side * 0.02, 1.30, 2.18, 0.12, { color: trim });
+  builder.box(x - 0.72, 1.20, front - side * 0.06, 1.06, 2.02, 0.10, { color: timber });
+  builder.box(x - 0.72, 2.38, front - side * 0.36, 1.92, 0.16, 0.86, { color: roof });
+  builder.box(x - 0.72, 2.26, front - side * 0.74, 1.96, 0.09, 0.10, { color: trim });
+  // Front window with jade shutters
+  const wx = x + 1.25;
+  builder.box(wx, 1.72, front - side * 0.03, 1.38, 1.18, 0.11, { color: trim });
+  builder.box(wx, 1.72, front - side * 0.07, 1.18, 0.98, 0.07, { color: 0x527a78 });
+  builder.box(wx, 1.72, front - side * 0.10, 0.07, 1.00, 0.06, { color: trim });
+  builder.box(wx, 1.20, front - side * 0.14, 1.56, 0.10, 0.24, { color: timber });
+  for (const s of [-1, 1]) {
+    builder.box(wx + s * 0.84, 1.72, front - side * 0.07, 0.28, 1.04, 0.09, { color: 0x3b7a6f });
+  }
+  // Low cozy courtyard wall framing the house yard
+  const yardZ = front - side * 2.15;
+  builder.box(x + 0.85, 0.34, yardZ, w * 0.62, 0.72, 0.24, { color: 0xeadac0 });
+  builder.box(x + 0.85, 0.73, yardZ, w * 0.65, 0.11, 0.32, { color: roof });
 }
 
 function waymark(group, builder, x, text, sub) {
-  const z = centerZ(x) + halfWidth(x) + 1.0, y = roadHeight(x);
-  builder.box(x, y+.85, z, .18, 1.70, .18, { color: 0x745f44 });
-  builder.box(x, y+1.9, z, .13, .92, 2.65, { color: 0x5b6754 });
-  const plaque = sign(group, x-.075, y+1.9, z, 2.6, .9, text,
-    { bg: '#f3dfad', ink: '#435d52', sub });
-  plaque.rotation.y = -Math.PI/2;
-}
-
-// One two-sided tuft for the whole route. The field chunks vary its height,
-// orientation and tint without allocating thousands of copies of the vertices.
-function riceGeometry() {
-  const geo = new GeoBuilder();
-  for (const dir of [-1,1]) {
-    const tip = [dir*.17,.5,.09];
-    geo.quad([-.045,0,0],[.045,0,0],tip,tip,{color:0x849844});
-    geo.quad(tip,tip,[.045,0,0],[-.045,0,0],{color:0x849844});
-    geo.box(dir*.19,.455,.09,.06,.135,.055,{color:0xcbb452});
-  }
-  return geo.build();
-}
-const rice = riceGeometry();
-
-function banyan(geo, crowns, x, z) {
-  const limb = (a, b, bottom, top) => {
-    const start = new THREE.Vector3(...a), end = new THREE.Vector3(...b);
-    const delta = end.clone().sub(start);
-    const orientation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), delta.clone().normalize());
-    const mesh = new THREE.CylinderGeometry(top, bottom, delta.length(), 8);
-    geo.add(mesh,{ color:0x856e51, m:new THREE.Matrix4().compose(start.lerp(end,.5),orientation,new THREE.Vector3(1,1,1)) });
-    mesh.dispose();
-  };
-  geo.cylinder(x,-.3,z,.77,.54,3.75,{color:0x836e51,seg:12});
-  for (let i=0; i<8; i++) {
-    const a=i*2.4, r=2.4+i%3*.6;
-    const dx=Math.cos(a), dz=Math.sin(a), top=4.8+(i%3)*.56;
-    limb([x+dx*.32,1.5+i%2*.6,z+dz*.32],[x+dx*r,top,z+dz*r],.40,.16);
-    limb([x,1.05,z],[x+dx*1.45,-.18,z+dz*1.45],.3,.09);
-    crowns.push([x+dx*r,top+.72,z+dz*r,2.5,1.54,2.45,i%2 ? 0x668753 : 0x7d9259]);
-    if (i%2===0) {
-      geo.cylinder(x+dx*r,.04,z+dz*r,.11,.075,top,{color:0x907c57,seg:6});
-      geo.cylinder(x+dx*(r+.55),2.2,z+dz*(r+.55),.028,.037,2.8,{color:0x937c52,seg:5});
-    }
-  }
-  crowns.push([x,6.9,z,3.3,1.5,3.2,0x7d995e]);
+  const z = centerZ(x) + halfWidth(x) + 1.15, y = roadHeight(x);
+  builder.box(x, y + 0.85, z, 0.18, 1.70, 0.18, { color: 0x6f553c });
+  builder.box(x, y + 1.9, z, 0.13, 0.92, 2.65, { color: 0x3a645a });
+  const plaque = sign(group, x - 0.075, y + 1.9, z, 2.6, 0.9, text,
+    { bg: '#f6e4b6', ink: '#2e544b', sub });
+  plaque.rotation.y = -Math.PI / 2;
 }
 
 function villagePavilion(group, geo) {
-  const x = roadEnd+7, z = centerZ(roadEnd)+2;
-  geo.box(x,-.07,z,5,.42,8,{color:0xaa9f83});
-  geo.box(x-2.8,-.03,z,.85,.22,5.0,{color:0xc8b999});
-  for (const dx of [-1.8,1.8]) for (const dz of [-3.2,3.2]) {
-    geo.box(x+dx,.38,z+dz,.62,.6,.62,{color:0xa79c86});
-    geo.cylinder(x+dx,.64,z+dz,.22,.215,2.62,{color:0xa5664c,seg:10});
-    geo.box(x+dx,3.22,z+dz,.69,.26,.62,{color:0x93634d});
+  const x = roadEnd + 7, z = centerZ(roadEnd) + 2;
+  geo.box(x, -0.07, z, 5.2, 0.42, 8.2, { color: 0xb7aa8d });
+  geo.box(x - 2.8, -0.03, z, 0.85, 0.22, 5.0, { color: 0xd4c4a2 });
+  for (const dx of [-1.8, 1.8]) for (const dz of [-3.2, 3.2]) {
+    geo.box(x + dx, 0.38, z + dz, 0.62, 0.6, 0.62, { color: 0xb0a58d });
+    geo.cylinder(x + dx, 0.64, z + dz, 0.22, 0.215, 2.62, { color: 0xb05d42, seg: 10 });
+    geo.box(x + dx, 3.22, z + dz, 0.69, 0.26, 0.62, { color: 0x93533d });
   }
-  geo.box(x,3.43,z,4.98,.4,8.56,{color:0x825843});
-  for (const side of [-1,1]) {
-    const points = [[x+side*3,3.58,z-4.7],[x+side*3,3.58,z+4.7],[x,4.88,z+4.3],[x,4.88,z-4.3]];
-    if (side>0) points.reverse();
-    geo.quad(...points,{color:0x64736d});
-    geo.box(x+side*3,3.56,z,.16,.16,9.6,{color:0x677b74});
+  geo.box(x, 3.43, z, 4.98, 0.4, 8.56, { color: 0x7b4c37 });
+  for (const side of [-1, 1]) {
+    const points = [[x + side * 3.1, 3.56, z - 4.75], [x + side * 3.1, 3.56, z + 4.75], [x, 4.92, z + 4.3], [x, 4.92, z - 4.3]];
+    if (side > 0) points.reverse();
+    geo.quad(...points, { color: 0x4b6e68 });
+    geo.box(x + side * 3.1, 3.54, z, 0.18, 0.18, 9.7, { color: 0x5c7f78 });
   }
-  geo.box(x,4.9,z,.26,.18,9.0,{color:0x61746e});
-  for (const dz of [-2.7,2.7]) {
-    geo.cylinder(x-2.08,2.46,z+dz,.33,.28,.55,{color:0xc36a48,seg:12});
-    geo.box(x-2.08,3.17,z+dz,.04,.32,.04,{color:0x72523c});
-    geo.box(x-2.08,2.33,z+dz,.06,.23,.06,{color:0xc79646});
+  geo.box(x, 4.94, z, 0.28, 0.20, 9.1, { color: 0x45655f });
+  for (const dz of [-2.7, 2.7]) {
+    geo.cylinder(x - 2.08, 2.46, z + dz, 0.33, 0.28, 0.55, { color: 0xd56742, seg: 12 });
+    geo.box(x - 2.08, 3.17, z + dz, 0.04, 0.32, 0.04, { color: 0x72523c });
+    geo.box(x - 2.08, 2.33, z + dz, 0.06, 0.23, 0.06, { color: 0xe6ad46 });
   }
-  for (const dz of [-2.1,2.1]) {
-    geo.box(x,.64,z+dz,2.5,.18,.49,{color:0xb48b61});
-    for (const dx of [-.9,.9]) geo.box(x+dx,.35,z+dz,.23,.57,.36,{color:0x8c7861});
+  for (const dz of [-2.1, 2.1]) {
+    geo.box(x, 0.64, z + dz, 2.5, 0.18, 0.49, { color: 0xc29362 });
+    for (const dx of [-0.9, 0.9]) geo.box(x + dx, 0.35, z + dz, 0.23, 0.57, 0.36, { color: 0x917c64 });
   }
-  sign(group,x-2.52,3.42,z,2.28,.58,'榕下歇脚亭',{bg:'#685743',ink:'#f0da99'}).rotation.y=-Math.PI/2;
+  sign(group, x - 2.52, 3.42, z, 2.28, 0.58, '榕下歇脚亭', { bg: '#2c5b50', ink: '#ffe4a2' }).rotation.y = -Math.PI / 2;
 }
 
-// Dressed arch rings cross the water beneath the deck. Both faces use the same
-// arch profile so the intrados is visible through each opening from the bank.
-function addStoneBridge(geo,start,end) {
-  const stone = [0x948d74,0xb0a28a,0xa39a83,0xb5ac92,0x9c967f];
-  const rim = 3.68, bottom = -.94;
-  for (let x=894; x<950; x+=8) {
-    if (x<start || x>=end) continue;
-    for(let k=0;k<10;k++) {
-      const a=x+k*.8,b=a+.8;
-      const ring=(i)=>-.70+1.78*Math.sin(Math.PI*i/10)**.66;
-      for(const side of [-1,1]){
-        const face=(px,y,offset)=>[px,y,centerZ(px)+side*(rim+offset)];
-        const h0=Math.min(roadHeight(a)-.33,ring(k));
-        const h1=Math.min(roadHeight(b)-.33,ring(k+1));
-        const panel=[face(a,h0,0),face(b,h1,0),face(b,roadHeight(b)-.12,0),face(a,roadHeight(a)-.12,0)];
-        if(side<0) panel.reverse();
-        geo.quad(...panel,{color:stone[(k+1)%5]});
-        const lip=[face(a,h0,.05),face(b-.015,h1,.05),face(b-.015,h1+.21,.05),face(a,h0+.21,.05)];
-        if(side<0) lip.reverse();
-        geo.quad(...lip,{color:stone[(k+3)%5]});
-        if(k===0) {
-          geo.box(a, (h0+bottom)/2,centerZ(a)+side*rim,.52,h0-bottom,.35,{color:stone[1]});
+// Dressed stone arch bridge across the river with balustrade and stone joints.
+function addStoneBridge(geo, start, end) {
+  const stone = [0xaa9f84, 0xc3b69b, 0xb7aa8f, 0xc8bca2, 0xb0a58b];
+  const rim = 3.68, bottom = -0.94;
+  for (let x = 894; x < 950; x += 8) {
+    if (x < start || x >= end) continue;
+    for (let k = 0; k < 10; k++) {
+      const a = x + k * 0.8, b = a + 0.8;
+      const ring = (i) => -0.70 + 1.78 * Math.sin(Math.PI * i / 10) ** 0.66;
+      for (const side of [-1, 1]) {
+        const face = (px, y, offset) => [px, y, centerZ(px) + side * (rim + offset)];
+        const h0 = Math.min(roadHeight(a) - 0.33, ring(k));
+        const h1 = Math.min(roadHeight(b) - 0.33, ring(k + 1));
+        const panel = [face(a, h0, 0), face(b, h1, 0), face(b, roadHeight(b) - 0.12, 0), face(a, roadHeight(a) - 0.12, 0)];
+        if (side < 0) panel.reverse();
+        geo.quad(...panel, { color: stone[(k + 1) % 5] });
+        const lip = [face(a, h0, 0.05), face(b - 0.015, h1, 0.05), face(b - 0.015, h1 + 0.21, 0.05), face(a, h0 + 0.21, 0.05)];
+        if (side < 0) lip.reverse();
+        geo.quad(...lip, { color: stone[(k + 3) % 5] });
+        if (k === 0) {
+          geo.box(a, (h0 + bottom) / 2, centerZ(a) + side * rim, 0.56, h0 - bottom, 0.42, { color: stone[1] });
         }
-        if(side===1) {
-          geo.quad(face(a,h0,0),[a,h0,centerZ(a)-rim],[b,h1,centerZ(b)-rim],face(b,h1,0),{color:0x736f61});
+        if (side === 1) {
+          geo.quad(face(a, h0, 0), [a, h0, centerZ(a) - rim], [b, h1, centerZ(b) - rim], face(b, h1, 0), { color: 0x7d7868 });
         }
       }
     }
-    for(const side of [-1,1]) {
-      const balustrade = (px,y)=>[px,roadHeight(px)+y,centerZ(px)+side*3.18];
-      for(let i=0;i<4;i++){
-        const px=x+i*2+.94,z=centerZ(px)+side*3.18,h=roadHeight(px);
-        geo.cylinder(px,h+.12,z,.12,.105,.53,{color:stone[(i+2)%5],seg:6});
-        geo.box(px,h+.66,z,.24,.11,.26,{color:stone[2]});
+    for (const side of [-1, 1]) {
+      const balustrade = (px, y) => [px, roadHeight(px) + y, centerZ(px) + side * 3.18];
+      for (let i = 0; i < 4; i++) {
+        const px = x + i * 2 + 0.94, z = centerZ(px) + side * 3.18, h = roadHeight(px);
+        geo.cylinder(px, h + 0.12, z, 0.12, 0.105, 0.53, { color: stone[(i + 2) % 5], seg: 6 });
+        geo.box(px, h + 0.66, z, 0.24, 0.11, 0.26, { color: stone[2] });
       }
-      for(const [y,thick] of [[.09,.13],[.82,.16]]){
-        for(let n=0;n<8;n+=2){
-          const a=x+n, b=a+2;
-          const z0=balustrade(a,y)[2],z1=balustrade(b,y)[2];
-          const top0=roadHeight(a)+y,top1=roadHeight(b)+y;
-          const w=y>.5?.22:.16;
-          geo.quad([a,top0,z0-w],[a,top0,z0+w],[b,top1,z1+w],[b,top1,z1-w],{color:0xb9ac92});
-          for(const f of [-1,1]){
-            const face=[[a,top0-thick,z0+f*w],[b,top1-thick,z1+f*w],[b,top1,z1+f*w],[a,top0,z0+f*w]];
-            if(f<0) face.reverse();
-            geo.quad(...face,{color:0x9f947d});
+      for (const [y, thick] of [[0.09, 0.13], [0.82, 0.16]]) {
+        for (let n = 0; n < 8; n += 2) {
+          const a = x + n, b = a + 2;
+          const z0 = balustrade(a, y)[2], z1 = balustrade(b, y)[2];
+          const top0 = roadHeight(a) + y, top1 = roadHeight(b) + y;
+          const w = y > 0.5 ? 0.22 : 0.16;
+          geo.quad([a, top0, z0 - w], [a, top0, z0 + w], [b, top1, z1 + w], [b, top1, z1 - w], { color: 0xc8bba0 });
+          for (const f of [-1, 1]) {
+            const face = [[a, top0 - thick, z0 + f * w], [b, top1 - thick, z1 + f * w], [b, top1, z1 + f * w], [a, top0, z0 + f * w]];
+            if (f < 0) face.reverse();
+            geo.quad(...face, { color: 0xafa38b });
           }
         }
       }
     }
   }
   for (const joint of bridgeJointXs) {
-    if (joint<start || joint>=end) continue;
-    const steps=[[-.58,.007],[-.29,.036],[0,.07],[.29,.036],[.58,.007]];
-    for(let i=1;i<steps.length;i++){
-      const [oa,ha]=steps[i-1], [ob,hb]=steps[i], a=joint+oa,b=joint+ob;
-      for(let slab=0;slab<4;slab++){
-        const lo=-2.97+slab*1.49,hi=lo+1.48,ya=roadHeight(a)+ha,yb=roadHeight(b)+hb;
-        geo.quad([a,ya,centerZ(a)+lo],[a,ya,centerZ(a)+hi],[b,yb,centerZ(b)+hi],[b,yb,centerZ(b)+lo],
-          {color:[0xaa9f87,0xb3a88f,0xb6ab91,0xa99e86][slab]});
+    if (joint < start || joint >= end) continue;
+    const steps = [[-0.58, 0.007], [-0.29, 0.036], [0, 0.07], [0.29, 0.036], [0.58, 0.007]];
+    for (let i = 1; i < steps.length; i++) {
+      const [oa, ha] = steps[i - 1], [ob, hb] = steps[i], a = joint + oa, b = joint + ob;
+      for (let slab = 0; slab < 4; slab++) {
+        const lo = -2.97 + slab * 1.49, hi = lo + 1.48, ya = roadHeight(a) + ha, yb = roadHeight(b) + hb;
+        geo.quad([a, ya, centerZ(a) + lo], [a, ya, centerZ(a) + hi], [b, yb, centerZ(b) + hi], [b, yb, centerZ(b) + lo],
+          { color: [0xb8ac92, 0xc3b79d, 0xc6baa0, 0xb6aa90][slab] });
       }
     }
   }
 }
 
-function buildChunk(start, end) {
-  const group = new THREE.Group(), geo = new GeoBuilder(), crowns = [], poles = [], shoots = [];
-  const rng = rngFrom('榕湾村道', start);
+function buildChunk(start, end, kit) {
+  const group = new THREE.Group();
+  const geo = new GeoBuilder();
+  const rng = rngFrom('榕湾村道v2', start);
+
+  const roundTrees = [];
+  const willows = [];
+  const plainPoles = [];
+  const lampPoles = [];
+  const mirrors = [];
+  const bollards = [];
+  const tufts = [];
+  const flowers = [];
+  const reeds = [];
+
   function ribbon(x, next, left, right, leftNext, rightNext, y0, y1, color) {
     const z = centerZ(x), z1 = centerZ(next);
-    geo.quad([x,y0,z+left],[x,y0,z+right],[next,y1,z1+rightNext],[next,y1,z1+leftNext], { color });
+    geo.quad([x, y0, z + left], [x, y0, z + right], [next, y1, z1 + rightNext], [next, y1, z1 + leftNext], { color });
   }
-  function tree(x, z, scale) {
-    const h = scale * 2.1;
-    poles.push([x,h/2-.18,z,.22*scale,h,.22*scale,0x83705a]);
-    for (let k=0; k<5; k++) {
-      const a = k*2.4+1.4;
-      crowns.push([x+Math.sin(a)*scale*.94,h+scale*(k===0 ? 1.4 : .37+(k%3)*.3),z+Math.cos(a)*scale*.94,
-        1.35*scale,1.18*scale,1.23*scale,rng.pick([0x79965a,0x678852,0x8aa463])]);
-    }
-  }
-  for (let x=start; x<end; x+=2) {
-    const nx = Math.min(x+2,end), width = halfWidth(x), width1 = halfWidth(nx);
+
+  // Stylized asphalt road & stone bridge deck
+  group.add(buildCountryRoad(start, end));
+
+  // Non-paddy meadow ground & bridge deck fascia/posts
+  for (let x = start; x < end; x += 2) {
+    const nx = Math.min(x + 2, end), width = halfWidth(x), width1 = halfWidth(nx);
     const h = roadHeight(x), h1 = roadHeight(nx);
     const river = x >= 894 && x < 950;
-    const field = x >= 190 && x < 1090;
-    const surface = river ? 0xb4aa95 : field ? 0xb9b39f : 0xaaa598;
-    const inSample = x>=fieldStart && x<fieldEnd;
-    if (inSample) addWornSurface(geo,x,nx);
-    else ribbon(x,nx,-width,width,-width1,width1,h,h1,surface);
-    for (const side of [-1,1]) {
-      const band = (lo,hi,lo1,hi1,y,y1,color) => side > 0
-        ? ribbon(x,nx,lo,hi,lo1,hi1,y,y1,color)
-        : ribbon(x,nx,-hi,-lo,-hi1,-lo1,y,y1,color);
-      band(width,width+.75,width1,width1+.75,h,h1,river ? 0xb8b2a5 : 0xbda987);
+    const inPaddy = (x >= fieldStart && x < fieldEnd) || (x >= eastFieldStart && x < eastFieldEnd);
+
+    for (const side of [-1, 1]) {
       if (river) {
-        if (x%8===0) {
-          geo.box(x,h-.38,centerZ(x)+side*width,.82,.78,.48,{color:0xada58e});
-          geo.box(x,-.07,centerZ(x)+side*(width-.3),.9,2.22,.82,{color:0x9c9987});
+        if (x % 8 === 0) {
+          geo.box(x, h - 0.38, centerZ(x) + side * width, 0.82, 0.78, 0.48, { color: 0xb9b098 });
+          geo.box(x, -0.07, centerZ(x) + side * (width - 0.3), 0.9, 2.22, 0.82, { color: 0xa5a18d });
+          geo.box(x, h + 0.48, centerZ(x) + side * (width + 0.22), 0.35, 1.02, 0.38, { color: 0xd0c6ae });
+          geo.box(x, h + 1.02, centerZ(x) + side * (width + 0.22), 0.43, 0.13, 0.45, { color: 0xe3d6b8 });
         }
-        const deckZ = centerZ(x)+side*(width+.75), deckNext = centerZ(nx)+side*(width1+.75);
-        const fascia = [[x,h,deckZ],[nx,h1,deckNext],[nx,h1-.33,deckNext],[x,h-.33,deckZ]];
+        const deckZ = centerZ(x) + side * (width + 0.75), deckNext = centerZ(nx) + side * (width1 + 0.75);
+        const fascia = [[x, h, deckZ], [nx, h1, deckNext], [nx, h1 - 0.33, deckNext], [x, h - 0.33, deckZ]];
         if (side > 0) fascia.reverse();
-        geo.quad(...fascia,{color:0xb1a991});
-        band(0,220,0,220,-.88,-.88,0x7baaa3);
-        if (x%8===0) {
-          geo.box(x,h+.48,centerZ(x)+side*(width+.22),.35,1.02,.38,{ color:0xc1baa3 });
-          geo.box(x,h+1.02,centerZ(x)+side*(width+.22),.43,.13,.45,{ color:0xd4c8ac });
-        }
-        const rail = side*(width+.22), rail1 = side*(width1+.22);
-        const a = centerZ(x)+rail, b = centerZ(nx)+rail1;
-        geo.quad([x,h+.70,a],[x,h+.85,a],[nx,h1+.85,b],[nx,h1+.70,b],{ color:0x998d78 });
-        geo.quad([nx,h1+.70,b],[nx,h1+.85,b],[x,h+.85,a],[x,h+.70,a],{ color:0x998d78 });
+        geo.quad(...fascia, { color: 0xbdb49a });
         continue;
       }
-      // Grade the outer shoulder down to the paddy rather than leaving a floating edge.
-      function bankPoint(px, lateral, y) { return [px,y,centerZ(px)+side*lateral]; }
-      const foot = inSample ? 5.0 : 8;
-      const bank = [bankPoint(x,width+.75,h),bankPoint(x,foot,-.22),
-        bankPoint(nx,foot,-.22),bankPoint(nx,width1+.75,h1)];
-      if (side < 0) bank.reverse();
-      geo.quad(...bank,{color:0x9ca36a});
-      if (inSample) {
-        band(foot,225,foot,225,-.235,-.235,0x8b975d);
-        continue;
+      if (!inPaddy) {
+        // Warm fresh green village/town meadow outside the road skirt
+        const s0 = width + 1.65, s1 = width1 + 1.65;
+        const meadowCol = ((Math.floor(x / 18) + (side > 0 ? 1 : 0)) % 2 === 0) ? 0x76a856 : 0x6ca053;
+        if (side > 0) ribbon(x, nx, s0, 235, s1, 235, -0.22, -0.22, meadowCol);
+        else ribbon(x, nx, -235, -s0, -235, -s1, -0.22, -0.22, meadowCol);
       }
-      for (let row=0; row<4; row++) {
-        const lo = 8 + 19*row, hi = lo+19;
-        const parcel = Math.floor((x+13*row)/42);
-        const color = field ? fieldColors[(parcel+row+(side+1))%fieldColors.length] : 0x9ba77b;
-        band(lo,hi,lo,hi,-.22,-.22,x%42<2 && field ? 0xb5a681 : color);
-        if (field) {
-          band(lo,lo+.48,lo,lo+.48,-.19,-.19,0xa39365);
-          for (let line=1; line<=4; line++) {
-            const offset = lo + 3.6*line;
-            band(offset,offset+.34,offset,offset+.34,-.205,-.205,0xc4be7d);
+    }
+  }
+
+  // Scheme A 3D rice paddies (open water-paddy -> helmet-high golden corridor)
+  addPaddies(group, geo, start, end, kit);
+
+  // Soft sloped embankments & riverside cattail reeds at both bridge banks
+  for (const bankX of [894, 950]) {
+    if (bankX >= start && bankX < end) {
+      const dir = bankX === 894 ? 1 : -1;
+      const zMid = centerZ(bankX);
+      for (const side of [-1, 1]) {
+        const near = zMid + side * 4.4, far = zMid + side * 225;
+        // Sloped lush green bank down into warm stone shoreline
+        const upper = [
+          [bankX - dir * 1.4, -0.10, near], [bankX - dir * 1.4, -0.10, far],
+          [bankX + dir * 0.4, -0.58, far], [bankX + dir * 0.4, -0.58, near],
+        ];
+        if ((dir > 0) === (side < 0)) upper.reverse();
+        geo.quad(...upper, { color: 0x6ca052 });
+        const lower = [
+          [bankX + dir * 0.4, -0.58, near], [bankX + dir * 0.4, -0.58, far],
+          [bankX + dir * 1.6, -1.05, far], [bankX + dir * 1.6, -1.05, near],
+        ];
+        if ((dir > 0) === (side < 0)) lower.reverse();
+        geo.quad(...lower, { color: 0xb9a882 });
+
+        // Organic bunches of 2-4 stylized reeds & cattails along the riverbank (never fence-like!)
+        for (const baseD of [6.0, 12.5, 22.0, 35.0, 50.0]) {
+          const bunch = 2 + Math.floor(rng.range(0, 3));
+          for (let b = 0; b < bunch; b++) {
+            const d = baseD + rng.range(-1.6, 1.8);
+            reeds.push([
+              bankX + dir * rng.range(-0.35, 0.75), -0.78, zMid + side * d,
+              rng.range(0, Math.PI * 2), rng.range(0.95, 1.42), rng.range(0.95, 1.42), rng.range(0.95, 1.42), 0xffffff,
+            ]);
           }
         }
       }
-      band(84,225,84,225,-.24,-.24,0xa3b58c);
     }
-    if (x<200 && Math.abs(x-crossing.x)>21 && x%12<4) ribbon(x,nx,-.075,.075,-.075,.075,h+.012,h1+.012,0xe7dcb7);
+  }
 
-  }
-  for (let x=start+.6;x<end;x+=1.3) {
-    if (x>=894 && x<950) {
-      for (const side of [-1,1]) {
-        const z = centerZ(x)+side*rng.range(8,38);
-        geo.floor(x,z,x+rng.range(.25,1.3),z+.08,-.868,{color:0xa3c4b1});
-      }
-      continue;
-    }
-    if (x<214 || x>1050 || (x>=fieldStart && x<fieldEnd)) continue;
-    for (const side of [-1,1]) {
-      const z = centerZ(x);
-      for (let row=0;row<7;row++) {
-        const px = x + rng.range(-.26,.26);
-        const pz = z + side*(8.8 + row*1.65 + rng.range(-.14,.14));
-        shoots.push([px,-.22,pz,1,rng.range(.7,1.26),1,0xffffff]);
-      }
+  // Roadside organic edge-breakers: 3D grass tufts & wildflowers along both crumbling shoulders!
+  for (let x = start + 1.5; x < end - 0.5; x += 2.6) {
+    if ((x >= 892 && x <= 952) || Math.abs(x - crossing.x) < 31 || x < 126) continue;
+    for (const side of [-1, 1]) {
+      if (!rng.chance(0.72)) continue;
+      const px = x + rng.range(-0.9, 0.9);
+      const lat = halfWidth(px) + rng.range(0.32, 1.15);
+      const pz = centerZ(px) + side * lat;
+      const py = roadHeight(px) - 0.03;
+      const sc = rng.range(0.85, 1.32);
+      const target = rng.chance(0.36) ? flowers : tufts;
+      target.push([px, py, pz, rng.range(0, Math.PI * 2), sc, sc * rng.range(0.85, 1.2), sc, 0xffffff]);
     }
   }
-  for (let x=start+28; x<end; x+=55) {
-    if (x<190 || x>850) continue;
-    const z = centerZ(x)+5.1;
-    // Split bamboo field fence with two staggered rails.
-    for (let j=0;j<4;j++) geo.cylinder(x+j*1.55,-.14,z,.063,.052,.90,{color:0xa78c52,seg:6});
-    for (const y of [.30,.61]) geo.box(x+2.33,y,z,4.8,.064,.07,{color:0xc1a572});
+
+  // High-speed curve bollards along countryside bends
+  for (let x = Math.ceil(start / 18) * 18; x < end; x += 18) {
+    if (x < 152 || x > 1140 || (x >= 886 && x <= 956) || Math.abs(x - crossing.x) < 34) continue;
+    for (const side of [-1, 1]) {
+      const z = centerZ(x) + side * (halfWidth(x) + 0.52);
+      bollards.push([x, roadHeight(x) - 0.02, z, roadYaw(x), 1, 1, 1, 0xffffff]);
+    }
   }
-  for (let x=start+8; x<end-1; x+=14) {
-    if ((x>860 && x<977) || Math.abs(x-crossing.x)<36) continue;
+
+  // Iconic orange convex curve mirrors at key rural bends & bridge approach
+  for (const [mx, side] of [[218, -1], [435, 1], [592, -1], [788, -1], [883, -1], [964, 1]]) {
+    if (mx >= start && mx < end) {
+      const z = centerZ(mx) + side * (halfWidth(mx) + 0.85);
+      const yaw = roadYaw(mx) + Math.PI * 0.5 + side * 0.25;
+      mirrors.push([mx, roadHeight(mx) - 0.04, z, yaw, 1.05, 1.05, 1.05, 0xffffff]);
+    }
+  }
+
+  // Split bamboo field fence accents in open paddy & approach
+  for (let x = start + 26; x < end; x += 64) {
+    if (x < 210 || x > 560) continue;
+    const z = centerZ(x) + halfWidth(x) + 1.55;
+    for (let j = 0; j < 4; j++) geo.cylinder(x + j * 1.55, -0.18, z, 0.065, 0.055, 0.92, { color: 0xb28f52, seg: 6 });
+    for (const y of [0.28, 0.60]) geo.box(x + 2.33, y, z, 4.8, 0.068, 0.075, { color: 0xd0b072 });
+  }
+
+  // Village & town-edge houses + lush Blender stylized trees (NO ugly icosahedron blobs!)
+  for (let x = start + 8; x < end - 1; x += 15) {
+    if ((x > 872 && x < 968) || Math.abs(x - crossing.x) < 36) continue;
     const z = centerZ(x), side = rng.sign();
-    if (x<204 || x>1070) {
-      house(geo,x,z+side*rng.range(8.4,13.8),side,rng);
-      if (rng.chance(.55)) house(geo,x+2,z-side*rng.range(12,22),-side,rng);
+    if (x < 194 || x > 1072) {
+      const hz = z + side * rng.range(9.2, 13.8);
+      house(geo, x, hz, side, rng);
+      if (rng.chance(0.55)) house(geo, x + 2.5, z - side * rng.range(13.5, 22), -side, rng);
+      // Warm cozy trees & yard wildflower tufts framing the cottages
+      const ts = rng.range(0.95, 1.40);
+      roundTrees.push([x - 3.5, -0.22, z - side * rng.range(7.2, 12.5), rng.range(0, Math.PI * 2), ts, ts * rng.range(0.92, 1.12), ts, 0xffffff]);
+      for (let f = 0; f < 3; f++) {
+        (f === 0 ? flowers : tufts).push([
+          x + rng.range(-3.5, 3.5), -0.22, hz - side * rng.range(3.2, 5.2),
+          rng.range(0, Math.PI * 2), 1.15, 1.15, 1.15, 0xffffff,
+        ]);
+      }
     }
-    if (rng.chance(.75) && (x<fieldStart || x>=fieldEnd)) tree(x, z-side*rng.range(5.8,20), rng.range(1.0,2.25));
-    if (rng.chance(.32)) tree(x+5, z+side*rng.range(18,47), rng.range(1.2,2.4));
+    // Scenic treeline dots across the open fields (keep clear of the golden corridor foreground)
+    if (rng.chance(0.55) && x >= 194 && x <= 1072) {
+      const dist = rng.range(24, 62);
+      const ts = rng.range(1.15, 1.85);
+      roundTrees.push([x + rng.range(-4, 4), -0.22, z + side * dist, rng.range(0, Math.PI * 2), ts, ts * rng.range(0.92, 1.15), ts, 0xffffff]);
+    }
+    if (rng.chance(0.35) && x >= 194 && x <= 1072) {
+      const dist = rng.range(55, 115);
+      const ts = rng.range(1.5, 2.25);
+      roundTrees.push([x + 6, -0.24, z - side * dist, rng.range(0, Math.PI * 2), ts, ts, ts, 0xeef5e8]);
+    }
   }
-  // Chunk boundaries share pole locations; each span belongs to its western end.
-  for (let x=Math.ceil(start/36)*36; x<end; x+=36) {
-    if ((x>=880 && x<970) || Math.abs(x-crossing.x)<27) continue;
-    const z=centerZ(x)-6;
-    poles.push([x,2.9,z,.12,6.2,.12,0x8b8173]);
-    geo.box(x,5.65,z,.23,.19,1.8,{ color:0x665b50 });
-    if (Math.abs(x+36-crossing.x)<27 || x+36>=roadEnd || (x+36>=880 && x+36<970)) continue;
-    for (const offset of [-.66,.66]) {
-      for (let k=0;k<6;k++) {
-        function wire(t) { return [x+t*36,5.8-1.8*t*(1-t),z+(centerZ(x+36)-centerZ(x))*t+offset]; }
-        const a=wire(k/6), b=wire((k+1)/6);
-        geo.quad(a,[a[0],a[1]+.04,a[2]],[b[0],b[1]+.04,b[2]],b,{color:0x686957});
+
+  // Signature riverside & golden-paddy graceful weeping willows
+  const willowSpots = [
+    [330, 14.5, 1.15], [495, -13.5, 1.25], [648, 17.5, 1.22],
+    [767, 15.8, 1.28], [818, -11.5, 1.12], [891.5, 11.2, 1.36],
+    [892.5, -12.8, 1.18], [954, -13.5, 1.38], [958, 14.2, 1.22],
+  ];
+  for (const [wx, offset, size] of willowSpots) {
+    if (wx >= start && wx < end) {
+      willows.push([wx, -0.20, centerZ(wx) + offset, (wx * 1.7) % (Math.PI * 2), size, size, size, 0xffffff]);
+    }
+  }
+
+  // Stylized Blender utility poles (alternating plain & retro gooseneck streetlamp!) + clean sagging wires
+  const poleOffset = 14;
+  for (let x = Math.ceil((start - poleOffset) / 36) * 36 + poleOffset; x < end; x += 36) {
+    if ((x >= 880 && x < 968) || Math.abs(x - crossing.x) < 28 || x < 142) continue;
+    const z = centerZ(x) - (halfWidth(x) + 1.95);
+    const poleIdx = Math.round((x - poleOffset) / 36);
+    const target = poleIdx % 2 === 0 ? lampPoles : plainPoles;
+    target.push([x, roadHeight(x) - 0.14, z, 0, 1, 1, 1, 0xffffff]);
+
+    const nx = x + 36;
+    if (Math.abs(nx - crossing.x) < 28 || nx >= roadEnd || (nx >= 880 && nx < 968)) continue;
+    const nz = centerZ(nx) - (halfWidth(nx) + 1.95);
+    const y0 = roadHeight(x) + 5.75, y1 = roadHeight(nx) + 5.75;
+    for (const offset of [-0.82, 0.82]) {
+      for (let k = 0; k < 8; k++) {
+        const wire = (t) => [
+          x + t * 36,
+          THREE.MathUtils.lerp(y0, y1, t) - 1.55 * t * (1 - t),
+          THREE.MathUtils.lerp(z, nz, t) + offset,
+        ];
+        const a = wire(k / 8), b = wire((k + 1) / 8);
+        geo.quad(a, [a[0], a[1] + 0.036, a[2]], [b[0], b[1] + 0.036, b[2]], b, { color: 0x3a4a4d });
+        geo.quad(b, [b[0], b[1] + 0.036, b[2]], [a[0], a[1] + 0.036, a[2]], a, { color: 0x3a4a4d });
       }
     }
   }
-  for (let x=start+45; x<end; x+=65) {
-    for (const side of [-1,1]) crowns.push([x,-7,centerZ(x)+side*rng.range(115,170),
-      rng.range(46,85),rng.range(18,36),rng.range(27,48),rng.pick([0x829b85,0x91a78c])]);
-  }
-  for (const bankX of [894,950]) {
-    if (bankX>=start && bankX<end) {
-      const z = centerZ(bankX);
-      for (const side of [-1,1]) {
-        const near = z+side*8, far = z+side*225;
-        const edge = [[bankX,-.22,near],[bankX,-.22,far],[bankX,-.91,far],[bankX,-.91,near]];
-        if ((bankX===950) === (side>0)) edge.reverse();
-        geo.quad(...edge,{color:0xa49c78});
-      }
-    }
-  }
-  if (start<=138 && end>138) {
+
+  // Rongwan town gateway archway
+  if (start <= 138 && end > 138) {
     const z = centerZ(138);
-    for (const side of [-1,1]) {
-      geo.box(138,2.04,z+side*4.65,.67,4.4,.67,{color:0xc9b499});
-      geo.box(138,.38,z+side*4.65,1,.8,1,{color:0x9d9987});
+    for (const side of [-1, 1]) {
+      geo.box(138, 2.04, z + side * 4.65, 0.67, 4.4, 0.67, { color: 0xe6d3b1 });
+      geo.box(138, 0.38, z + side * 4.65, 1.04, 0.82, 1.04, { color: 0x9aa397 });
     }
-    geo.box(138,4.28,z,1.03,.7,10.6,{color:0xd5c3a4});
-    geo.box(138,4.75,z,1.6,.28,11.4,{color:0x757e6b});
-    sign(group,137.46,4.3,z,2.5,.6,'榕湾',{ink:'#624e3e',bg:'#e2c798'}).rotation.y=-Math.PI/2;
+    geo.box(138, 4.28, z, 1.03, 0.72, 10.6, { color: 0xf1dfc0 });
+    geo.box(138, 4.78, z, 1.65, 0.30, 11.4, { color: 0x4b746a });
+    sign(group, 137.46, 4.3, z, 2.5, 0.6, '榕湾', { ink: '#fff0c8', bg: '#2d5d53' }).rotation.y = -Math.PI / 2;
   }
-  for (const [x,title,sub] of [[56,'榕湾村道','向东 · 田间慢行'],[395,'稻田','小桥在前方'],[876,'石桥','慢行过桥'],[1180,'榕树村','村口可掉头']]) {
-    if (x>=start && x<end) waymark(group,geo,x,title,sub);
+
+  for (const [x, title, sub] of [
+    [56, '榕湾村道', '向东 · 田间慢行'],
+    [395, '开阔水田', '前方金黄稻浪'],
+    [876, '石桥', '慢行过桥'],
+    [1180, '榕树村', '村口可掉头'],
+  ]) {
+    if (x >= start && x < end) waymark(group, geo, x, title, sub);
   }
-  if (start<roadEnd && end===roadEnd) {
-    villagePavilion(group,geo);
-    banyan(geo,crowns,roadEnd+7,centerZ(roadEnd)-5.9);
-    for (let i=0; i<6; i++) {
-      crowns.push([roadEnd+85+i%2*36,-8,centerZ(roadEnd)-118+i*46,
-        31+i%2*12,22+i%3*7,36, i%2 ? 0x92a98b : 0x869c81]);
+
+  // Village turnaround pavilion & grand banyan cluster
+  if (start < roadEnd && end === roadEnd) {
+    villagePavilion(group, geo);
+    const vz = centerZ(roadEnd);
+    roundTrees.push([roadEnd + 7.5, -0.22, vz - 6.4, 0.8, 1.95, 1.75, 1.95, 0xffffff]);
+    willows.push([roadEnd + 11.0, -0.22, vz + 9.2, 2.1, 1.45, 1.45, 1.45, 0xffffff]);
+    for (let i = 0; i < 7; i++) {
+      const ts = 1.45 + (i % 3) * 0.35;
+      roundTrees.push([roadEnd + 22 + (i % 2) * 14, -0.22, vz - 36 + i * 12, i * 1.1, ts, ts * 1.05, ts, 0xf2f7eb]);
     }
-    geo.box(roadEnd+29,-.42,centerZ(roadEnd),58,.36,185,{color:0xa3b58c});
+    geo.box(roadEnd + 29, -0.42, vz, 58, 0.36, 185, { color: 0x73a556 });
   }
+
   if (start <= crossing.x && end > crossing.x) group.userData.updateSignals = createCityCrossing(group);
-  addPaddies(group,geo,start,end);
-  addStoneBridge(geo,start,end);
-  addGravelVerge(geo,start,end);
-  addBankWillows(geo,start,end);
+  addStoneBridge(geo, start, end);
+
   const mesh = geo.mesh(paint);
-  mesh.castShadow = mesh.receiveShadow = true;
-  group.add(mesh);
-  instances(group,crown,crowns);
-  instances(group,pole,poles);
-  instances(group,rice,shoots,paint,false);
+  if (mesh) {
+    mesh.castShadow = mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+
+  placeInstances(group, kit?.Tree_Round, roundTrees, true, true);
+  placeInstances(group, kit?.Tree_Willow, willows, true, true);
+  placeInstances(group, kit?.UtilityPole, plainPoles, true, true);
+  placeInstances(group, kit?.UtilityPole_Lamp, lampPoles, true, true);
+  placeInstances(group, kit?.RoadMirror, mirrors, true, true);
+  placeInstances(group, kit?.Bollard, bollards, true, true);
+  placeInstances(group, kit?.RoadTuft, tufts, false, true);
+  placeInstances(group, kit?.RoadFlowers, flowers, false, true);
+  placeInstances(group, kit?.ReedClump, reeds, false, true);
+
   return group;
 }
 
-function morningSky() {
-  const material = new THREE.ShaderMaterial({
-    side: THREE.BackSide, depthWrite: false,
-    uniforms: { horizon: { value: new THREE.Color(0xffe8b8) }, zenith: { value: new THREE.Color(0x94c9d2) } },
-    vertexShader: `
-      varying vec3 direction;
+// Crisp Ghibli / Wind Waker morning sky with clean 3-tier mountain silhouettes & sculpted 3D puff clouds!
+function createSkyAndClouds() {
+  const skyRoot = new THREE.Group();
+
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: {
+      zenith: { value: new THREE.Color(0x4b9cd6) },
+      midSky: { value: new THREE.Color(0x9bd4eb) },
+      horizon: { value: new THREE.Color(0xfff0d2) },
+    },
+    vertexShader: /* glsl */ `
+      varying vec3 vDir;
       void main() {
-        direction = position;
+        vDir = position;
         vec4 clip = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         gl_Position = clip.xyww;
       }`,
-    fragmentShader: `
-      varying vec3 direction;
-      uniform vec3 horizon, zenith;
+    fragmentShader: /* glsl */ `
+      varying vec3 vDir;
+      uniform vec3 zenith, midSky, horizon;
       void main() {
-        vec3 dir = normalize(direction);
-        float height = smoothstep(-.035, .46, dir.y);
-        vec3 daylight = mix(horizon, zenith, height);
-        // Distant ridges are fixed on the compass even when the rider turns back.
+        vec3 dir = normalize(vDir);
+        float h = clamp(dir.y, 0.0, 1.0);
+        // Clean luminous morning sky gradient
+        vec3 col = mix(horizon, midSky, smoothstep(0.0, 0.24, h));
+        col = mix(col, zenith, smoothstep(0.18, 0.72, h));
+
+        // Morning sun disc & warm halo
+        vec3 sunDir = normalize(vec3(0.93, 0.24, -0.34));
+        float sun = max(0.0, dot(dir, sunDir));
+        col += vec3(0.45, 0.26, 0.08) * pow(sun, 16.0);
+        col += vec3(1.5, 1.25, 0.85) * smoothstep(0.9993, 0.99985, sun);
+
+        // 3 sweeping clean atmospheric mountain ridge layers (replaces ugly giant icosahedron domes!)
         float az = atan(dir.z, dir.x);
-        float ridge = .058 + .038*sin(3.*az+.6) + .023*cos(7.*az-1.) + .010*sin(15.*az);
-        float foothill = .027 + .021*cos(4.*az+1.2) + .013*sin(9.*az+.3);
-        float cloudHeight = dir.y - (.205 + .016*sin(5.*az));
-        float wisps = exp(-cloudHeight*cloudHeight*3400.) *
-          smoothstep(.50,1.05,cos(3.*az-.55) + .23*sin(10.*az));
-        daylight = mix(daylight, vec3(.94,.89,.70), .42*wisps);
-        daylight = mix(daylight, vec3(.52,.61,.54), .65*(1.-smoothstep(ridge-.002,ridge+.002,dir.y)));
-        daylight = mix(daylight, vec3(.39,.51,.42), .51*(1.-smoothstep(foothill-.002,foothill+.002,dir.y)));
-        float sun = max(0.0, dot(dir, normalize(vec3(.95,.21,-.38))));
-        daylight += vec3(.4,.22,.06)*pow(sun,24.) + vec3(1.6,1.2,.8)*smoothstep(.9996,.99994,sun);
-        gl_FragColor = vec4(daylight,1.);
+        float farRidge  = 0.088 + 0.038 * sin(2.0 * az + 0.5) + 0.022 * cos(5.0 * az - 1.1) + 0.011 * sin(11.0 * az);
+        float midRidge  = 0.056 + 0.026 * cos(3.0 * az + 1.3) + 0.017 * sin(7.0 * az + 0.4) + 0.007 * cos(13.0 * az);
+        float nearRidge = 0.026 + 0.015 * sin(4.0 * az - 0.8) + 0.009 * cos(9.0 * az + 1.7);
+
+        float farMask  = 1.0 - smoothstep(farRidge - 0.0025, farRidge + 0.0025, dir.y);
+        float midMask  = 1.0 - smoothstep(midRidge - 0.0022, midRidge + 0.0022, dir.y);
+        float nearMask = 1.0 - smoothstep(nearRidge - 0.0020, nearRidge + 0.0020, dir.y);
+
+        // Gentle atmospheric depth tinting (crisp pale slate-blue -> soft jade -> sage)
+        vec3 farCol  = mix(vec3(0.60, 0.77, 0.83), vec3(0.76, 0.84, 0.82), pow(sun, 3.0) * 0.45);
+        vec3 midCol  = mix(vec3(0.46, 0.68, 0.69), vec3(0.62, 0.75, 0.68), pow(sun, 3.0) * 0.35);
+        vec3 nearCol = mix(vec3(0.36, 0.59, 0.53), vec3(0.48, 0.67, 0.52), pow(sun, 3.0) * 0.28);
+
+        col = mix(col, farCol, farMask * 0.82);
+        col = mix(col, midCol, midMask * 0.90);
+        col = mix(col, nearCol, nearMask * 0.94);
+
+        gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
   });
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(55,32,16),material);
-  sky.renderOrder = -100;
-  sky.frustumCulled = false;
-  return sky;
+
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(72, 36, 20), skyMat);
+  dome.renderOrder = -100;
+  dome.frustumCulled = false;
+  skyRoot.add(dome);
+
+  // Sculpted stylized 3D cumulus cloud ring (1 InstancedMesh draw call! Warm cream tops + serene sky-blue undersides)
+  const cloudMat = new THREE.ShaderMaterial({
+    depthWrite: false,
+    fog: false,
+    uniforms: {
+      uSunDir: { value: new THREE.Vector3(0.93, 0.28, -0.34).normalize() },
+    },
+    vertexShader: /* glsl */ `
+      varying vec3 vNormalW;
+      varying float vLocalY;
+      void main() {
+        vLocalY = position.y;
+        mat4 worldMat = modelMatrix;
+        #ifdef USE_INSTANCING
+          worldMat = modelMatrix * instanceMatrix;
+        #endif
+        vNormalW = normalize(mat3(worldMat) * normal);
+        gl_Position = projectionMatrix * viewMatrix * worldMat * vec4(position, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uSunDir;
+      varying vec3 vNormalW;
+      varying float vLocalY;
+      void main() {
+        float ndl = dot(normalize(vNormalW), uSunDir) * 0.5 + 0.5;
+        float topGrad = smoothstep(-0.65, 0.55, vLocalY);
+        float light = clamp(ndl * 0.48 + topGrad * 0.62, 0.0, 1.0);
+        vec3 shadowCol = vec3(0.75, 0.86, 0.94);
+        vec3 creamTop  = vec3(1.00, 0.985, 0.945);
+        vec3 col = mix(shadowCol, creamTop, smoothstep(0.24, 0.78, light));
+        gl_FragColor = vec4(col, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
+
+  const puffGeo = new THREE.SphereGeometry(1, 14, 10);
+  const rng = rngFrom('清晨大白云');
+  const cloudCount = 15;
+  const puffs = [
+    [0, 0.35, 0, 3.6, 2.0, 2.2],
+    [-2.8, -0.15, 0.3, 2.5, 1.45, 1.8],
+    [2.9, -0.10, -0.2, 2.7, 1.55, 1.8],
+    [-1.1, 1.15, -0.3, 2.2, 1.45, 1.6],
+    [1.4, 0.95, 0.3, 2.0, 1.30, 1.5],
+    [4.9, -0.45, 0.1, 1.7, 0.95, 1.3],
+    [-4.6, -0.48, -0.1, 1.6, 0.92, 1.3],
+  ];
+  const cloudRing = new THREE.InstancedMesh(puffGeo, cloudMat, cloudCount * puffs.length);
+  const clusterObj = new THREE.Object3D();
+  const puffObj = new THREE.Object3D();
+  const mat4 = new THREE.Matrix4();
+  let ci = 0;
+  for (let i = 0; i < cloudCount; i++) {
+    const az = (i / cloudCount) * Math.PI * 2 + rng.range(-0.14, 0.14);
+    const dist = rng.range(54, 62);
+    const elev = rng.range(10.5, 22.0);
+    const baseScale = rng.range(1.15, 1.85);
+    clusterObj.position.set(Math.cos(az) * dist, elev, Math.sin(az) * dist);
+    clusterObj.rotation.set(0, -az + Math.PI / 2, 0);
+    clusterObj.scale.set(1, 1, 1);
+    clusterObj.updateMatrix();
+    for (const [px, py, pz, sx, sy, sz] of puffs) {
+      puffObj.position.set(px * baseScale, py * baseScale, pz * baseScale);
+      puffObj.rotation.set(0, 0, 0);
+      puffObj.scale.set(sx * baseScale, sy * baseScale, sz * baseScale);
+      puffObj.updateMatrix();
+      mat4.multiplyMatrices(clusterObj.matrix, puffObj.matrix);
+      cloudRing.setMatrixAt(ci++, mat4);
+    }
+  }
+  cloudRing.renderOrder = -95;
+  cloudRing.frustumCulled = false;
+  skyRoot.add(cloudRing);
+
+  return {
+    skyRoot,
+    update(time) {
+      cloudRing.rotation.y = time * 0.0028;
+    },
+  };
 }
 
-export function createCountryside() {
+export function createCountryside(kit) {
   const root = new THREE.Group();
   const chunks = new Map();
-  const sky = morningSky();
-  root.add(sky);
-  // The street's base slab ends at x=52. Generate only nearby stretches as needed.
-  return { root, sky, update(x, time) {
-    fieldWindTime.value = time;
-    const current = Math.floor((x-52)/100);
-    for (let i=Math.max(0,current-2); i<=current+2 && 52+i*100<roadEnd; i++) {
-      if (chunks.has(i)) continue;
-      const start=52+i*100, part=buildChunk(start,Math.min(start+100,roadEnd));
-      chunks.set(i,part);
-      root.add(part);
-    }
-    for (const [i,part] of chunks) {
-      part.visible = Math.abs(i-current)<=2;
-      if (part.visible) part.userData.updateSignals?.(time);
-    }
-  } };
+  const { skyRoot: sky, update: updateSky } = createSkyAndClouds();
+  const river = createRiverWater();
+  root.add(sky, river.mesh);
+
+  return {
+    root,
+    sky,
+    update(stateOrX, time, fogColor, fogDensity) {
+      const x = typeof stateOrX === 'number' ? stateOrX : stateOrX.x;
+      updatePaddyEnv(time, typeof stateOrX === 'number' ? null : stateOrX);
+      updateSky(time);
+      river.update(time, fogColor, fogDensity);
+
+      const current = Math.floor((x - 52) / 100);
+      for (let i = Math.max(0, current - 2); i <= current + 2 && 52 + i * 100 < roadEnd; i++) {
+        if (chunks.has(i)) continue;
+        const start = 52 + i * 100;
+        const part = buildChunk(start, Math.min(start + 100, roadEnd), kit);
+        chunks.set(i, part);
+        root.add(part);
+      }
+      for (const [i, part] of chunks) {
+        part.visible = Math.abs(i - current) <= 2;
+        if (part.visible) part.userData.updateSignals?.(time);
+      }
+    },
+  };
 }

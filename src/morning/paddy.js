@@ -1,207 +1,340 @@
-// A planted headland, narrow irrigation cuts and a continuous far canopy share one wind field.
-// The hand-shaped leaves and panicles repeat only in the first rows visible from the lane.
+// Scheme A Stylized 3D Rice Paddies:
+// - Zone 1 (x = 196..570 & 956..1068): Open airy green-gold water paddies with glinting irrigation channels.
+// - Zone 2 (x = 570..892): Helmet-high golden ripe rice corridor hugging the road, with GPU rider slipstream wake.
+// Zero 2D alpha-cutout cards: all foreground clumps are sculpted solid-3D Blender meshes (countryside-kit.glb).
 import * as THREE from 'three';
 import { GeoBuilder } from '../core/geo.js';
 import { litMaterial } from '../core/materials.js';
 import { rngFrom } from '../core/rng.js';
-import { centerZ } from './country-route.js';
+import { centerZ, halfWidth } from './country-route.js';
 
-export const fieldStart = 690;
-export const fieldEnd = 894;
+export const fieldStart = 196;
+export const tallStart = 570;
+export const tallFull = 632;
+export const fieldEnd = 892;
+export const eastFieldStart = 956;
+export const eastFieldEnd = 1068;
+
 export const fieldWindTime = { value: 0 };
-const soilY = -.22;
-const parcelEnds = [690, 724, 767, 815, 851, 894];
-const canopyColors = [0x839c45, 0xa1aa49, 0x788e43, 0x929f43, 0x9faa51];
-const material = litMaterial({ vertexColors: true, grid: false, side: THREE.DoubleSide, roughness: .94 });
-function patchWind(surface) {
+
+// 6-slot trailing wake ring buffer + live rider state shared across all paddy shaders.
+const WAKE_COUNT = 6;
+const wakeTrail = Array.from({ length: WAKE_COUNT }, () => new THREE.Vector4(1e5, 1e5, -100, 0));
+const riderLive = new THREE.Vector4(1e5, 1e5, 1, 0);
+const riderSpeedNorm = { value: 0 };
+let lastWakeStamp = -10;
+let wakeSlot = 0;
+
+export function updatePaddyEnv(time, state) {
+  fieldWindTime.value = time;
+  if (!state) return;
+  const speed = Math.abs(state.speed || 0);
+  const norm = THREE.MathUtils.clamp(speed / 13.9, 0, 1);
+  riderSpeedNorm.value = norm;
+  const yaw = state.bikeYaw ?? state.yaw ?? Math.PI / 2;
+  riderLive.set(state.x, state.z, Math.sin(yaw), Math.cos(yaw));
+  if (time - lastWakeStamp >= 0.085 && speed > 0.35) {
+    lastWakeStamp = time;
+    wakeTrail[wakeSlot].set(state.x, state.z, time, norm);
+    wakeSlot = (wakeSlot + 1) % WAKE_COUNT;
+  }
+}
+
+const canopyMaterial = litMaterial({ vertexColors: true, grid: false, roughness: 0.92 });
+const clumpMaterial = litMaterial({ vertexColors: true, grid: false, roughness: 0.88 });
+
+function patchPaddyWind(surface, isClump) {
   const worldLighting = surface.onBeforeCompile;
   surface.onBeforeCompile = (shader, renderer) => {
     worldLighting(shader, renderer);
     shader.uniforms.uPaddyTime = fieldWindTime;
-    const wind = `
+    shader.uniforms.uWake = { value: wakeTrail };
+    shader.uniforms.uRider = { value: riderLive };
+    shader.uniforms.uRiderSpeed = riderSpeedNorm;
+
+    const common = /* glsl */ `
       varying vec2 vPaddy;
-      varying float vBladeHeight;
+      varying float vPaddyH;
+      varying float vWakeBoost;
       uniform float uPaddyTime;
-      float gust(vec2 p) {
-        float phase = dot(p, vec2(.26,.68)) - 1.9*uPaddyTime + 1.1*sin(p.x*.092 + p.y*.06);
-        return .60*sin(phase) + .24*sin(phase*1.52 + .43*uPaddyTime) + .16*sin(p.x*.57 + p.y*.23 - 2.3*uPaddyTime);
+      uniform vec4 uWake[${WAKE_COUNT}];
+      uniform vec4 uRider;
+      uniform float uRiderSpeed;
+      float paddyGust(vec2 p) {
+        float phase = dot(p, vec2(0.24, 0.62)) - 1.85 * uPaddyTime + 1.05 * sin(p.x * 0.085 + p.y * 0.055);
+        return 0.58 * sin(phase) + 0.26 * sin(phase * 1.48 + 0.41 * uPaddyTime)
+             + 0.16 * sin(p.x * 0.52 + p.y * 0.21 - 2.2 * uPaddyTime);
       }
     `;
+
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\n' + wind)
-      .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vBladeHeight = position.y;
+      .replace('#include <common>', '#include <common>\n' + common)
+      .replace('#include <begin_vertex>', /* glsl */ `#include <begin_vertex>
+        vPaddyH = position.y;
+        vWakeBoost = 0.0;
         #ifdef USE_INSTANCING
-          vPaddy = (instanceMatrix * vec4(position, 1.0)).xz;
-          float sway = (.14+.24*gust(vPaddy))*position.y*position.y;
-          // Inverse-rotate the world wind into each plant's randomly turned local frame.
-          vec2 windDir = vec2(.36,.93);
-          transformed.x += dot(normalize(instanceMatrix[0].xz),windDir)*sway;
-          transformed.z += dot(normalize(instanceMatrix[2].xz),windDir)*sway;
-          transformed.y -= .12*abs(sway);
+          vec4 wp = instanceMatrix * vec4(position, 1.0);
+          vPaddy = wp.xz;
+          float flex = pow(clamp(position.y / 1.32, 0.0, 1.0), 1.65);
+          float g = paddyGust(vPaddy);
+          vec2 worldDisp = vec2(0.36, 0.93) * ((0.06 + 0.16 * g) * flex);
+
+          // Live vehicle proximity + trailing slipstream wake (parting push + brisk flutter + elastic rebound)
+          vec2 toPlant = vPaddy - uRider.xy;
+          float dLive = length(toPlant);
+          if (dLive < 5.6 && uRiderSpeed > 0.02) {
+            float prox = (1.0 - smoothstep(0.6, 5.6, dLive)) * uRiderSpeed;
+            vec2 away = toPlant / max(dLive, 0.15);
+            float vib = sin(uPaddyTime * (12.0 + 14.0 * uRiderSpeed) + vPaddy.x * 1.7 + vPaddy.y * 1.3);
+            worldDisp += (away * 0.34 + uRider.zw * 0.14 + away * (0.09 * vib)) * prox * flex;
+            vWakeBoost = max(vWakeBoost, prox);
+          }
+          for (int wi = 0; wi < ${WAKE_COUNT}; wi++) {
+            vec4 wk = uWake[wi];
+            float age = uPaddyTime - wk.z;
+            if (age > 0.0 && age < 1.55 && wk.w > 0.02) {
+              vec2 dVec = vPaddy - wk.xy;
+              float dist = length(dVec);
+              if (dist < 5.2) {
+                float env = exp(-age * 2.15) * (1.0 - smoothstep(0.5, 5.2, dist)) * wk.w;
+                vec2 away = dVec / max(dist, 0.15);
+                float ring = sin(age * 13.5 - dist * 1.6 + vPaddy.x * 0.9);
+                float push = 0.24 * exp(-age * 1.8) + 0.14 * ring;
+                worldDisp += away * push * env * flex;
+                vWakeBoost = max(vWakeBoost, env * 0.85);
+              }
+            }
+          }
+          // Transform world XZ displacement into each randomly-rotated instance's local space
+          vec2 axisX = normalize(instanceMatrix[0].xz);
+          vec2 axisZ = normalize(instanceMatrix[2].xz);
+          transformed.x += dot(axisX, worldDisp);
+          transformed.z += dot(axisZ, worldDisp);
+          transformed.y -= 0.14 * length(worldDisp) * flex;
         #else
           vPaddy = position.xz;
-          transformed.y += .046*gust(vPaddy)*smoothstep(-.15,.18,position.y);
+          float hMask = smoothstep(-0.08, 0.38, position.y);
+          transformed.y += 0.055 * paddyGust(vPaddy) * hMask;
         #endif`);
+
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\n' + wind)
-      .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
-        #if defined(DOUBLE_SIDED) && defined(USE_MAP)
-          normal *= faceDirection;
-        #endif`)
-      .replace('#include <color_fragment>', `#include <color_fragment>
-        float wave = smoothstep(-.55,.88,gust(vPaddy));
-        diffuseColor.rgb *= mix(vec3(.78,.85,.73), vec3(1.19,1.14,.91), wave);
-        #ifdef USE_MAP
-          // Colour the lower leaves in the shared shade beneath the panicles.
-          float tip = smoothstep(.18,.89,vBladeHeight);
-          float shade = .5 + .5*sin(vPaddy.x*.29 + vPaddy.y*.21);
-          diffuseColor.rgb *= mix(vec3(.39,.61,.42),vec3(.79,.89,.69),tip);
-          diffuseColor.rgb *= .85 + .15*shade;
-        #else
-          float row = vPaddy.y*5.9 + sin(vPaddy.x*.075)*2.2 + vPaddy.x*.29;
-          float rowContrast = 1.-smoothstep(.1,2.5,fwidth(row));
-          diffuseColor.rgb *= 1. + .12*sin(row)*rowContrast;
-        #endif`);
+      .replace('#include <common>', '#include <common>\n' + common)
+      .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
+        float wave = smoothstep(-0.62, 0.85, paddyGust(vPaddy));
+        vec3 shadeTint = vec3(0.84, 0.90, 0.82);
+        vec3 sunTint   = vec3(1.16, 1.11, 0.92);
+        diffuseColor.rgb *= mix(shadeTint, sunTint, clamp(wave + vWakeBoost * 0.45, 0.0, 1.0));
+        ${isClump ? `
+          // Luminous warm gold crown & cool lush shaded root (clean storybook depth without dark mud)
+          float hGrad = smoothstep(0.05, 1.15, vPaddyH);
+          diffuseColor.rgb *= mix(vec3(0.76, 0.88, 0.82), vec3(1.08, 1.05, 0.95), hGrad);
+        ` : `
+          // Lush dappled golden-green crown swells matching the 3D foreground stalks seamlessly
+          float swell = 0.5 + 0.5 * sin(vPaddy.x * 0.13 + vPaddy.y * 0.08 + sin(vPaddy.x * 0.035) * 1.8);
+          float tuftTex = 0.5 + 0.5 * sin(vPaddy.x * 1.7 + sin(vPaddy.y * 1.3) * 1.4)
+                        * cos(vPaddy.y * 1.5 - sin(vPaddy.x * 1.1));
+          diffuseColor.rgb *= mix(0.88, 1.06, swell * 0.65 + tuftTex * 0.35);
+        `}`);
   };
-  surface.customProgramCacheKey = () => 'rongwan-paddy-wind-2';
+  surface.customProgramCacheKey = () => isClump ? 'rongwan-paddy-clump-v3' : 'rongwan-paddy-canopy-v3';
 }
-patchWind(material);
 
-// Three small curved cards carry a drawn rice plant. The same paintwork stays legible
-// for a close inspection and mipmaps into a soft, coherent crown in the middle distance.
-function ricePaint() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256; canvas.height = 256;
-  const g = canvas.getContext('2d');
-  const rand = rngFrom('稻穗与剑叶');
-  const leafColors = ['#68873c','#8ba549','#769747','#9bb255','#adc064'];
-  for (let k=0;k<24;k++){
-    const x=rand.range(79,174), y=263, direction=k%2 ? 1 : -1;
-    const reach=direction*rand.range(31,100), bend=rand.range(58,172);
-    const tipX=THREE.MathUtils.clamp(x+reach,2,254), tipY=bend+rand.range(2,42);
-    const grad=g.createLinearGradient(x,y,tipX,bend);
-    grad.addColorStop(0,'#486e40'); grad.addColorStop(.56,leafColors[k%5]); grad.addColorStop(1,'#bed075');
-    g.fillStyle=grad; g.beginPath(); g.moveTo(x-3,y);
-    g.bezierCurveTo(x+reach*.06,182,x+reach*.26,bend-34,tipX,tipY);
-    g.bezierCurveTo(x+reach*.47,bend-11,x+reach*.19,165,x+5,y);
-    g.fill();
-  }
-  for(const [base,tip,h] of [[99,59,48],[140,197,21],[159,133,50],[112,168,59]]){
-    const dir=Math.sign(tip-base), arch=tip-dir*21;
-    g.lineCap='round'; g.strokeStyle='#aec06a'; g.lineWidth=3.4;
-    g.beginPath();g.moveTo(base,257);g.bezierCurveTo(base-3,167,arch-dir*15,h+12,arch,h+3);
-    g.quadraticCurveTo(tip,h-9,tip+dir*14,h+33);g.stroke();
-    for(let j=0;j<6;j++){
-      const t=j/5, x=arch+dir*35*t, y=h+3-17*t+43*t*t;
-      const grainX=x+dir*(4+6*t), grainY=y+8;
-      g.strokeStyle='#c6ad61';g.lineWidth=1.6;g.beginPath();g.moveTo(x,y);g.lineTo(grainX,grainY);g.stroke();
-      for(let n=0;n<3;n++){
-        const gx=grainX+(n-1)*2.5, gy=grainY+n*3;
-        g.beginPath();g.ellipse(gx,gy,2.45,5.1,-dir*.38,0,Math.PI*2);
-        g.fillStyle=['#dcbf72','#cdb465','#ac9653'][n];g.fill();
+patchPaddyWind(canopyMaterial, false);
+patchPaddyWind(clumpMaterial, true);
+
+function smoothstep(a, b, x) {
+  const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function tallWeight(x) {
+  if (x >= eastFieldStart) return 0;
+  return smoothstep(tallStart, tallFull, x);
+}
+
+function nearEdge(x, side) {
+  const tw = tallWeight(x);
+  const hw = halfWidth(x);
+  // Open water-paddy sits a bit further out so you see the glinting water channel & bund;
+  // Tall golden rice corridor hugs right up next to the warm dirt shoulder for immersive envelopment!
+  const base = THREE.MathUtils.lerp(hw + 1.95, hw + 1.08, tw);
+  return base + 0.24 * Math.sin(x * 0.065 + side * 1.4) + 0.15 * Math.cos(x * 0.12);
+}
+
+function soilElevation(x) {
+  const tw = tallWeight(x);
+  return THREE.MathUtils.lerp(-0.20, -0.06, tw);
+}
+
+function addZone(group, ground, crowns, tallA, tallB, lowList, from, to, rng) {
+  if (from >= to) return;
+
+  const strip = (geo, a, b, side, lo0, hi0, lo1, hi1, y0, y1, color) => {
+    const pos = (x, d, h) => [x, h, centerZ(x) + side * d];
+    const quad = [pos(a, lo0, y0), pos(a, hi0, y1), pos(b, hi1, y1), pos(b, lo1, y0)];
+    if (side < 0) quad.reverse();
+    geo.quad(...quad, { color });
+  };
+
+  // Parcel dividers every ~44m
+  const parcelLen = 44;
+  const openColors = [0x6ea552, 0x82b251, 0x649b54, 0x91b853];
+  const tallColors = [0xdfb94b, 0xe8c455, 0xd4ae44, 0xebc95a];
+
+  for (let x = from; x < to; x += 2) {
+    const nx = Math.min(x + 2, to);
+    const xm = (x + nx) * 0.5;
+    const tw = tallWeight(xm);
+    const twN = tallWeight(nx);
+    const sy = soilElevation(x);
+    const syN = soilElevation(nx);
+    const parcelIdx = Math.floor(xm / parcelLen);
+    const onDivider = (xm % parcelLen) < 1.3;
+
+    for (const side of [-1, 1]) {
+      const e0 = nearEdge(x, side);
+      const e1 = nearEdge(nx, side);
+
+      // Gentle grassy verge from road skirt to paddy edge
+      const roadSkirt = halfWidth(x) + 1.65;
+      const roadSkirtN = halfWidth(nx) + 1.65;
+      if (e0 > roadSkirt + 0.05) {
+        strip(ground, x, nx, side, roadSkirt, e0, roadSkirtN, e1, sy, syN, 0x6ea04f);
       }
+
+      if (tw < 0.45) {
+        // Zone 1: Clean sky-reflecting shallow water channel + rounded grassy earthen bund
+        const ditchLo = e0 - 0.18, ditchHi = e0 + 0.92;
+        const ditchLoN = e1 - 0.18, ditchHiN = e1 + 0.92;
+        strip(ground, x, nx, side, ditchLo, ditchHi, ditchLoN, ditchHiN, sy + 0.015, syN + 0.015, 0x5ab2c2);
+        // Rounded grassy bund separating ditch from open paddy
+        strip(ground, x, nx, side, ditchHi, ditchHi + 0.45, ditchHiN, ditchHiN + 0.45, sy + 0.02, sy + 0.12, 0xb9a06c);
+        strip(ground, x, nx, side, ditchHi + 0.45, ditchHi + 1.05, ditchHiN + 0.45, ditchHiN + 1.05, sy + 0.12, sy + 0.12, 0x7ca750);
+        strip(ground, x, nx, side, ditchHi + 1.05, ditchHi + 1.45, ditchHiN + 1.05, ditchHiN + 1.45, sy + 0.12, sy + 0.02, 0xa89262);
+        // Shallow sunlit paddy water under the foreground open clumps (extends past canopy rise so zero seam!)
+        strip(ground, x, nx, side, ditchHi + 1.45, e0 + 24.0, ditchHiN + 1.45, e1 + 24.0, sy + 0.02, syN + 0.02, 0x56a8b7);
+      } else {
+        // Zone 2: Warm rich olive ground tucked beneath the towering golden rice sea
+        strip(ground, x, nx, side, e0 - 0.30, e0 + 24.0, e1 - 0.30, e1 + 24.0, sy, syN, 0x5f8541);
+      }
+
+      // Seamless undulating mid-to-far plush canopy stretching to the distant treeline (10m .. 135m)
+      const cA = new THREE.Color(openColors[(parcelIdx + (side > 0 ? 1 : 0)) % openColors.length]);
+      const cB = new THREE.Color(tallColors[(parcelIdx + (side > 0 ? 1 : 0)) % tallColors.length]);
+      const farCol = cA.lerp(cB, tw).getHex();
+      const baseCrownH = THREE.MathUtils.lerp(0.46, 1.18, tw);
+      const baseCrownHN = THREE.MathUtils.lerp(0.46, 1.18, twN);
+
+      // Soft sloped rise tucked cleanly inside the 3D instanced foreground clumps (starts at +9.5m)
+      const cStart = e0 + 9.5, cStartN = e1 + 9.5;
+      const cCrest = e0 + 13.8, cCrestN = e1 + 13.8;
+      strip(crowns, x, nx, side, cStart, cCrest, cStartN, cCrestN, sy + 0.04, baseCrownH, farCol);
+
+      // Broad, gentle hills/swells across the wide fields (no sharp parallel stripes!)
+      const bands = [13.8, 29, 52, 84, 132];
+      for (let bi = 0; bi < bands.length - 1; bi++) {
+        const d0 = e0 + bands[bi], d1 = e0 + bands[bi + 1];
+        const dn0 = e1 + bands[bi], dn1 = e1 + bands[bi + 1];
+        const h0 = baseCrownH + 0.09 * Math.sin(bi * 1.6 + xm * 0.045 + side);
+        const h1 = baseCrownHN + 0.09 * Math.sin((bi + 1) * 1.6 + nx * 0.045 + side);
+        const bandCol = new THREE.Color(openColors[(parcelIdx + bi + (side > 0 ? 1 : 0)) % openColors.length])
+          .lerp(new THREE.Color(tallColors[(parcelIdx + bi + (side > 0 ? 1 : 0)) % tallColors.length]), tw)
+          .getHex();
+        if (onDivider && bi < 2) {
+          // Transverse earthen bund cutting across parcels for clean agrarian scale
+          strip(ground, x, nx, side, d0, d1, dn0, dn1, sy + 0.16, syN + 0.16, 0xc4ad78);
+        } else {
+          strip(crowns, x, nx, side, d0, d1, dn0, dn1, h0, h1, bandCol);
+        }
+      }
+      // Distant meadow skirt beyond 132m
+      strip(ground, x, nx, side, e0 + 132, 235, e1 + 132, 235, -0.24, -0.24, 0x6ea062);
     }
   }
-  const map = new THREE.CanvasTexture(canvas);
-  map.colorSpace=THREE.SRGBColorSpace; map.anisotropy=4;
-  return map;
-}
-function riceClump() {
-  const geo=new GeoBuilder();
-  for(let k=0;k<3;k++){
-    const theta=k*Math.PI/3,dx=Math.cos(theta),dz=Math.sin(theta);
-    const p=(half,y,curve)=>[half*dx-curve*dz,y,half*dz+curve*dx];
-    const heights=[0,.46,.92], curves=[0,.035,.12];
-    for(let i=1;i<=2;i++){
-      const a=i-1,b=i;
-      geo.quad(p(-.46,heights[a],curves[a]),p(.46,heights[a],curves[a]),
-        p(.46,heights[b],curves[b]),p(-.46,heights[b],curves[b]),
-        {normal:[0,1,0],uv:[0,a*.5,1,b*.5]});
-    }
-  }
-  return geo.build();
-}
-const clump=riceClump();
-let riceMaterial;
-function edgeDistance(x, side) {
-  return 6.05 + .43*Math.sin(x*.057+side) + .28*Math.cos(x*.11);
-}
 
-// Raised banks separate water from the crop. Their gently irregular edges follow each parcel.
-function boundary(x, side, row) {
-  const near = edgeDistance(x, side);
-  return near + [0, 14.8, 34.5, 61.5, 93][row] + row*1.15*Math.sin(x*.033 + side*2.3 + row);
-}
-
-export function addPaddies(group, ground, start, end) {
-  const from=Math.max(fieldStart,start), to=Math.min(fieldEnd,end);
-  if (from>=to) return;
-  const crowns=new GeoBuilder(), plants=[], rng=rngFrom('风过稻田',start);
-  const strip=(geo,a,b,side,lo0,hi0,lo1,hi1,y0,y1,color)=>{
-    const pos=(x,d,h)=>[x,h,centerZ(x)+side*d];
-    const quad=[pos(a,lo0,y0),pos(a,hi0,y1),pos(b,hi1,y1),pos(b,lo1,y0)];
-    if(side<0) quad.reverse();
-    geo.quad(...quad,{color});
-  };
-  for(let ix=0;ix<parcelEnds.length-1;ix++){
-    const left=parcelEnds[ix], right=parcelEnds[ix+1];
-    if(right<=from || left>=to) continue;
-    for(const side of [-1,1]){
-      for(let row=0;row<4;row++){
-        const color=canopyColors[(ix+row+(side+1))%canopyColors.length];
-        const a=Math.max(from,left+.62), b=Math.min(to,right-.62);
-        for(let x=a; x<b; x+=2){
-          const n=Math.min(x+2,b);
-          const lo=boundary(x,side,row), hi=boundary(x,side,row+1);
-          const ln=boundary(n,side,row), hn=boundary(n,side,row+1);
-          // A narrow strip of reflected sky shows between the planted plots.
-          strip(ground,x,n,side,lo-.70,hi,ln-.70,hn,soilY+.026,soilY+.026,0x86aea0);
-          strip(ground,x,n,side,lo-.52,lo-.24,ln-.52,ln-.24,soilY+.04,.035,0x8a774b);
-          strip(ground,x,n,side,lo-.24,lo+.08,ln-.24,ln+.08,.035,.035,0xa29c62);
-          strip(ground,x,n,side,lo+.08,lo+.25,ln+.08,ln+.25,.035,soilY+.04,0x79784b);
-          // Outward-facing slopes hide the join with the individually modelled front rows.
-          if (row===0) continue;
-          const top=.38+.07*Math.sin(ix*.7+row+side);
-          const gap=.66;
-          strip(crowns,x,n,side,lo+gap,lo+gap+.62,ln+gap,ln+gap+.62,soilY+.04,top,color);
-          // Broad ribbon ridges merge optically into planted rows from the road.
-          const beds=9;
-          for(let r=0;r<beds;r++){
-            const t=r/beds,u=(r+1)/beds, mid=(t+u)*.5;
-            const l=lo+gap+.62,lnn=ln+gap+.62, w=hi-1.45-l, wn=hn-1.45-lnn;
-            const trough=top-.058, crest=top+.037*Math.sin(r*1.79+x*.12);
-            strip(crowns,x,n,side,l+w*t,l+w*mid,lnn+wn*t,lnn+wn*mid,trough,crest,color);
-            strip(crowns,x,n,side,l+w*mid,l+w*u,lnn+wn*mid,lnn+wn*u,crest,trough,color);
+  // Populate foreground solid-3D Blender clumps!
+  for (const side of [-1, 1]) {
+    let x = from + 0.5;
+    while (x < to - 0.3) {
+      const tw = tallWeight(x);
+      const sy = soilElevation(x);
+      const isTall = tw >= 0.35;
+      // Tighter step in the lush tall golden corridor so it feels genuinely enveloping at 50 km/h
+      const stepX = isTall ? 0.92 : 1.18;
+      const inDivider = !isTall && ((x % parcelLen) < 2.2);
+      if (!inDivider) {
+        const edge = nearEdge(x, side);
+        const startOff = isTall ? 0.18 : 1.70;
+        const rows = isTall ? 13 : 9;
+        const rowPitch = isTall ? 1.08 : 1.24;
+        for (let r = 0; r < rows; r++) {
+          // Feather outer rows softly into the far golden canopy so there is zero straight boundary
+          if (r >= 6 && r < 10 && (Math.floor(x) + r) % 2 === 1) continue;
+          if (r >= 10 && !rng.chance(0.32)) continue;
+          const jitterX = rng.range(-0.36, 0.36);
+          const jitterZ = rng.range(-0.32, 0.32);
+          const px = x + jitterX;
+          if (px < from || px > to) continue;
+          const pz = centerZ(px) + side * (edge + startOff + r * rowPitch + jitterZ);
+          const rot = rng.range(0, Math.PI * 2);
+          if (isTall) {
+            // Smooth height ramp from 0.85 -> 1.0..1.20 so stalks reach ~1.30..1.58m above road!
+            const ramp = THREE.MathUtils.lerp(0.76, 1.0, tw);
+            // Front-most edge slightly fuller and playfully arching over the shoulder
+            const frontBoost = r === 0 ? 1.06 : 1.0;
+            const syScale = ramp * frontBoost * rng.range(0.94, 1.16);
+            const sxScale = rng.range(1.06, 1.28);
+            const target = ((Math.floor(x * 3) + r + (side > 0 ? 1 : 0)) % 2 === 0) ? tallA : tallB;
+            target.push([px, sy, pz, sxScale, syScale, rot]);
+          } else {
+            const syScale = rng.range(0.90, 1.14);
+            const sxScale = rng.range(1.02, 1.24);
+            lowList.push([px, sy + 0.02, pz, sxScale, syScale, rot]);
           }
-          strip(crowns,x,n,side,hi-1.45,hi-1.08,hn-1.45,hn-1.08,top,soilY+.04,color);
-        }
-        // A transverse earthen path stops the long fields from reading as parallel stripes.
-        if(left>=from && left<to){
-          const a=left,b=Math.min(to,left+.56);
-          strip(ground,a,b,side,boundary(a,side,row)-.65,boundary(a,side,row+1),
-            boundary(b,side,row)-.65,boundary(b,side,row+1),soilY+.115,soilY+.115,0xaf9e67);
         }
       }
-      for(let x=Math.max(from,left+.84); x<Math.min(to,right-.70); x+=.73){
-        for(let r=0;r<21;r++){
-          const px=x+rng.range(-.13,.13);
-          const pz=centerZ(px)+side*(edgeDistance(px,side)+.56+r*.65+rng.range(-.11,.11));
-          plants.push([px,pz,rng.range(.89,1.19),rng.range(0,2*Math.PI)]);
-        }
-      }
+      x += stepX;
     }
   }
-  if(!crowns.empty) group.add(crowns.mesh(material));
-  if(!riceMaterial){
-    riceMaterial=litMaterial({map:ricePaint(),grid:false,side:THREE.DoubleSide,alphaTest:.28,roughness:1});
-    patchWind(riceMaterial);
+}
+
+function addInstancedClumps(group, geometry, list) {
+  if (!geometry || !list.length) return;
+  const mesh = new THREE.InstancedMesh(geometry, clumpMaterial, list.length);
+  const dummy = new THREE.Object3D();
+  for (let i = 0; i < list.length; i++) {
+    const [x, y, z, sx, sy, rot] = list[i];
+    dummy.position.set(x, y, z);
+    dummy.rotation.set(0, rot, 0);
+    dummy.scale.set(sx, sy, sx);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
   }
-  const crop=new THREE.InstancedMesh(clump,riceMaterial,plants.length);
-  const plant=new THREE.Object3D();
-  plants.forEach(([x,z,h,angle],i)=>{
-    plant.position.set(x,soilY+.04,z); plant.rotation.y=angle;
-    plant.scale.set(1.33,h,1.33); plant.updateMatrix(); crop.setMatrixAt(i,plant.matrix);
-  });
-  crop.computeBoundingSphere(); group.add(crop);
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  mesh.computeBoundingSphere();
+  group.add(mesh);
+}
+
+export function addPaddies(group, ground, start, end, kit) {
+  const crowns = new GeoBuilder();
+  const tallA = [], tallB = [], lowList = [];
+  const rng = rngFrom('风过金稻', start);
+
+  // West of river: Open water-paddy (196..570) -> Tall golden rice sea (570..892)
+  addZone(group, ground, crowns, tallA, tallB, lowList,
+    Math.max(fieldStart, start), Math.min(fieldEnd, end), rng);
+
+  // East of river: Open water-paddy welcoming into Rongshu Village (956..1068)
+  addZone(group, ground, crowns, tallA, tallB, lowList,
+    Math.max(eastFieldStart, start), Math.min(eastFieldEnd, end), rng);
+
+  if (!crowns.empty) {
+    const canopyMesh = crowns.mesh(canopyMaterial);
+    canopyMesh.receiveShadow = true;
+    group.add(canopyMesh);
+  }
+  addInstancedClumps(group, kit?.RiceTall_A, tallA);
+  addInstancedClumps(group, kit?.RiceTall_B, tallB);
+  addInstancedClumps(group, kit?.RiceLow, lowList);
 }

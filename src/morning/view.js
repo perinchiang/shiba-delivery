@@ -78,7 +78,7 @@ export function createView(renderer, state, world) {
     const free = state.phase === 'free';
     const outsideTown = free && state.x > 52;
     country.root.visible = free;
-    if (free) country.update(state.x, time);
+    if (free) country.update(state, time, scene.fog?.color, scene.fog?.density);
     street.eastTrees.visible = !free;
     street.root.visible = !inside && (!free || state.x < 240);
     scooter.root.visible = !inside;
@@ -118,8 +118,9 @@ export function createView(renderer, state, world) {
     contact.rotation.z = riding ? state.bikeYaw - Math.PI / 2 : 0;
     marker.scale.setScalar(1 + 0.065 * Math.sin(time * 3.4));
     if (snap) {
-      scene.background = new THREE.Color(inside ? 0xe2cfaa : 0xc1dcd8);
-      scene.fog = new THREE.FogExp2(inside ? 0xe2cfaa : 0xd9dfc9, inside ? 0.014 : 0.031);
+      const skyBg = inside ? 0xe2cfaa : (nextView === 'chase' || fieldInspection ? 0x9cd3e9 : 0xcfe0dc);
+      scene.background = new THREE.Color(skyBg);
+      scene.fog = new THREE.FogExp2(inside ? 0xe2cfaa : 0xdaf0f5, inside ? 0.014 : 0.016);
       followYaw = state.bikeYaw;
       const heights = { portrait: 3.30, intro: 4.8, door: 4.05, stand: 2.95, box: 3.6, shop: 5.56, street: 6.15 };
       const widths = { portrait: 3.2, intro: 4.0, door: 3.25, stand: 3.00, box: 3.2, shop: 7.1, street: 5.2 };
@@ -197,7 +198,7 @@ export function createView(renderer, state, world) {
     sun.target.position.set(lightX, ground+.3, lightZ);
     const openCountry = free ? THREE.MathUtils.smoothstep(state.x, 52, 170) : 0;
     sun.position.set(lightX - 6 + 20*openCountry, ground + 11.5 - 4*openCountry, lightZ + 7.5 - 13*openCountry);
-    if (free) scene.fog.density = .031 - .023 * THREE.MathUtils.smoothstep(state.x, 28, 100);
+    if (free) scene.fog.density = 0.016 - 0.0122 * THREE.MathUtils.smoothstep(state.x, 28, 120);
     view = nextView;
     if (free) country.sky.position.copy(activeCamera.position);
     renderer.render(scene, activeCamera);
