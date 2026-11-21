@@ -14,6 +14,7 @@
       <div id="street-controls">
         <details id="scene-debug" hidden>
           <summary>场景瞬移</summary>
+          <span id="scene-perf">正在采样…</span>
           <div role="group" aria-label="选择测试地点"></div>
         </details>
         <div id="keys" class="keys">W/S 油门与刹车　 A/D 转向　 E 互动</div>
@@ -44,19 +45,19 @@
         <div id="phone-details" aria-hidden="true" inert>
           <div class="phone-scroll">
             <section id="order-screen" aria-label="订单明细">
-              <div class="order-pay"><span><span class="service-name">阿柴快送 · </span>配送费</span><strong>¥3.10</strong></div>
+              <div class="order-pay"><span><span class="service-name">阿柴快送 · </span>配送费</span><strong id="order-fee">¥3.10</strong></div>
               <button type="button" id="switch-order">换成包子单</button>
               <ol class="stops">
                 <li><i>取</i><div><strong id="pickup-store">便民药店</strong><small id="pickup-person">榕湾老街 · 找兔药师</small></div></li>
-                <li><i>送</i><div><strong>榕树里 3 号</strong><small>猫婆婆在楼下等</small></div></li>
+                <li><i>送</i><div><strong id="delivery-address">榕树里 3 号</strong><small id="delivery-person">猫婆婆在楼下等</small></div></li>
               </ol>
               <p id="order-note" class="note">备注　药袋请当面交给猫婆婆。</p>
             </section>
             <section id="receipt" aria-label="本单账单" hidden>
               <h2>本单账单</h2>
-              <dl><div><dt>配送费</dt><dd>+ ¥3.10</dd></div><div><dt>今日首单保险</dt><dd>− ¥3.00</dd></div>
-                <div class="net"><dt>实际到手</dt><dd>¥0.10</dd></div></dl>
-              <p class="note">“开张了，一毛也是热乎的。”</p>
+              <dl><div><dt>配送费</dt><dd id="receipt-fee">+ ¥3.10</dd></div><div><dt>今日首单保险</dt><dd id="receipt-insurance">− ¥3.00</dd></div>
+                <div class="net"><dt>实际到手</dt><dd id="receipt-net">¥0.10</dd></div></dl>
+              <p id="receipt-note" class="note">“开张了，一毛也是热乎的。”</p>
             </section>
           </div>
           <footer class="phone-footer">
@@ -70,7 +71,7 @@
     <dialog id="street-map" aria-labelledby="map-title">
       <header><h2 id="map-title">榕湾老街</h2><button type="button" id="map-close" aria-label="关闭地图">关闭 ×</button></header>
       <canvas id="street-plan" aria-label="老街平面图，显示阿柴与取送点"></canvas>
-      <footer><div class="map-stops"><span><b>取</b><strong id="map-pickup"></strong></span><span><b>送</b>榕树里 3 号</span></div><p id="map-location"></p></footer>
+      <footer><div class="map-stops"><span><b>取</b><strong id="map-pickup"></strong></span><span><b>送</b><strong id="map-delivery">榕树里 3 号</strong></span></div><p id="map-location"></p></footer>
     </dialog>
     <p id="loading" role="status">正在打开榕湾老街…</p>
     <p id="announcement" class="sr" aria-live="polite"></p>

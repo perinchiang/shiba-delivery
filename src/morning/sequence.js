@@ -1,9 +1,7 @@
 /** Fixed-camera interactions. Paths are in doorway or scooter space, so they also work after turning the bike. */
 import * as THREE from 'three';
 import { angleDiff, clamp01, lerp, smoothstep } from '../core/mathx.js';
-import { STOPS } from './town.js';
 
-const doorwayX = state => state.order === 'buns' ? STOPS.bunDoor.x : STOPS.pharmacy.x;
 const thresholdInside = -4.36;
 const point = new THREE.Vector3();
 const target = new THREE.Vector3();
@@ -16,7 +14,7 @@ export function beginSequence(state, kind) {
   state.sequence = { kind, elapsed: 0, x: state.x, z: state.z, yaw: state.yaw };
   if (kind === 'exit') {
     state.mode = 'walk';
-    Object.assign(state, { x: doorwayX(state), z: thresholdInside, yaw: 0 });
+    Object.assign(state, { x: state.order.door.x, z: thresholdInside, yaw: 0 });
   }
 }
 
@@ -28,18 +26,18 @@ export function doorFrame(state, dt, door) {
   door.rotation.y = open * 1.66;
   const oldX = state.x, oldZ = state.z;
   if (exiting) {
-    state.x = doorwayX(state);
+    state.x = state.order.door.x;
     state.z = lerp(thresholdInside, -0.10, smoothstep(0.26, 0.78, u));
     state.yaw = 0;
   } else {
-    state.x = lerp(seq.x, doorwayX(state), smoothstep(0, 0.27, u));
+    state.x = lerp(seq.x, state.order.door.x, smoothstep(0, 0.27, u));
     state.z = u < 0.44 ? lerp(seq.z, -0.38, smoothstep(0, 0.27, u))
       : lerp(-0.38, -3.66, smoothstep(0.44, 0.98, u));
     state.yaw = Math.PI;
   }
   const travel = Math.hypot(state.x - oldX, state.z - oldZ);
   if (u === 1) {
-    if (!exiting) Object.assign(state, STOPS.exit, { mode: 'shop', yaw: Math.PI });
+    if (!exiting) Object.assign(state, state.order.room.exit, { mode: 'shop', yaw: Math.PI });
     state.sequence = null;
     door.rotation.y = 0;
   }

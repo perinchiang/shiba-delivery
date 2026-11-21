@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "node tools/build.mjs",
     "preview": "vite preview",
-    "test": "node tools/test-morning-riding.mjs",
+    "test": "node tools/test-morning-orders.mjs && node tools/test-morning-riding.mjs",
     "playtest": "node tools/test-morning.mjs"
   },
   "dependencies": {

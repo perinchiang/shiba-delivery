@@ -1,8 +1,10 @@
-import { CURB_Z, STOPS } from './town.js';
+import { CURB_Z } from './town.js';
+
+import { orders } from './orders.js';
 
 // Draw the street in world metres. Turn the sheet in portrait to keep shop
 // labels legible; draw text after projecting so it always reads upright.
-export function drawStreetMap(canvas, state, pickup, target) {
+export function drawStreetMap(canvas, state, target) {
   const width = canvas.clientWidth, height = canvas.clientHeight;
   if (!width || !height) return;
   const ratio = Math.min(window.devicePixelRatio || 1, 2);
@@ -50,21 +52,26 @@ export function drawStreetMap(canvas, state, pickup, target) {
     block(i-3.18,-6,i+3.18,-1.7,'#aec6b8');
     if (i < 44) block(27-i-3.18,8.9,27-i+3.18,13,'#bed0bd');
   }
+  const { door: pickup, customer } = state.order;
   const inside = state.mode === 'shop';
   const rider = inside ? pickup : state;
   const destination = inside ? pickup : target;
   const lane = p => ({x:p.x,z:2.8});
   if (state.phase === 'offer' || state.phase === 'pickup') {
-    path([pickup,lane(pickup),lane(STOPS.home),STOPS.home],'#559478',2.5,[4,5]);
+    path([pickup,lane(pickup),lane(customer.point),customer.point],'#559478',2.5,[4,5]);
   }
   if (!inside && state.phase !== 'done') {
     path([rider,lane(rider),lane(destination),destination],'#267e70',4);
   }
-  for (const [name, stop] of [['榕记',STOPS.bunDoor],['药店',STOPS.pharmacy],['榕树里',STOPS.home]]) {
+  const landmarks = new Map();
+  for (const order of orders) landmarks.set(order.storefront, [order.mapLabel, order.door]);
+  landmarks.set(state.order.storefront, [state.order.mapLabel, pickup]);
+  landmarks.set('destination', [customer.mapLabel, customer.point]);
+  for (const [name, stop] of landmarks.values()) {
     const [x,y] = point(stop);
     ctx.beginPath();
-    ctx.arc(x,y,stop === pickup || stop === STOPS.home ? 6 : 3,0,2*Math.PI);
-    ctx.fillStyle = stop === STOPS.home ? '#32805e' : stop === pickup ? '#bf702e' : '#8c9b8d';
+    ctx.arc(x,y,stop === pickup || stop === customer.point ? 6 : 3,0,2*Math.PI);
+    ctx.fillStyle = stop === customer.point ? '#32805e' : stop === pickup ? '#bf702e' : '#8c9b8d';
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = '#fff8e9';

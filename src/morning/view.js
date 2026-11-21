@@ -1,0 +1,168 @@
+import * as THREE from 'three';
+import { frameRide, resizeRideCamera } from './ride-camera.js';
+import { $ } from './dom.js';
+import { clamp, damp, dampAngle } from '../core/mathx.js';
+import { isBoxSequence, isStandSequence, positionParcel } from './sequence.js';
+import { CURB_H, CURB_Z } from './town.js';
+
+export function createView(renderer, state, world) {
+  const { scene, camera, chase, sun, rooms, street, shiba, scooter, looseBag, marker, contact } = world;
+  const roomList = Object.values(rooms);
+  const courierScale = scooter.root.scale.y;
+  let headTurn = .75, shopReview;
+  const focus = new THREE.Vector3();
+  const cameraUp = new THREE.Vector3(0, 1, 0);
+  const eyeOffset = new THREE.Vector3();
+  let aspect = 1, view = '', closeUp = false, followYaw = Math.PI / 2;
+  const portraitStart = Math.atan2(3.68, 2);
+  let portraitAngle = portraitStart, dragX;
+  const stage = $('stage');
+  function setCloseUp(value) {
+    closeUp = value;
+    portraitAngle = portraitStart;
+    dragX = undefined;
+    stage.classList.toggle('turntable', value && state.mode === 'ride');
+    $('look').setAttribute('aria-pressed', String(value));
+    $('look').querySelector('span').textContent = value ? '返回街景' : '近看阿柴';
+  }
+  stage.addEventListener('pointerdown', event => {
+    if (!closeUp || state.mode !== 'ride' || !event.isPrimary || event.button !== 0) return;
+    stage.setPointerCapture(event.pointerId);
+    dragX = event.clientX;
+  });
+  stage.addEventListener('pointermove', event => {
+    if (dragX === undefined || !stage.hasPointerCapture(event.pointerId)) return;
+    portraitAngle = clamp(portraitAngle + (dragX - event.clientX) * 2.5 / stage.clientWidth, 0.30, 1.95);
+    dragX = event.clientX;
+  });
+  stage.addEventListener('lostpointercapture', () => { dragX = undefined; });
+
+  function clearInspection() {
+    shopReview = null;
+    if (closeUp) setCloseUp(false);
+  }
+  function reset(preset) {
+    shopReview = preset;
+    headTurn = .75;
+    view = '';
+    setCloseUp(false);
+    shiba.resetTail();
+    shiba.root.rotation.y = scooter.root.rotation.y = state.yaw;
+    scooter.lid.rotation.z = 0;
+    for (const door of street.doors.values()) door.rotation.y = 0;
+  }
+
+  const desiredFocus = new THREE.Vector3(), eye = new THREE.Vector3();
+  function draw(dt, time, { stride, walking }) {
+    const inside = state.mode === 'shop', riding = state.mode === 'ride';
+    const packing = isBoxSequence(state.sequence);
+    const handling = isStandSequence(state.sequence);
+    const seatBlend = handling ? state.sequence.seat ?? (riding ? 1 : 0) : Number(riding);
+    const nextView = state.sequence?.approaching ? 'street' :
+      state.braking && !state.speed ? 'stand' : state.sequence ? (handling ? 'stand' : packing ? 'box' : 'door') :
+      (shopReview ? 'inspection' : (closeUp ? 'portrait' : inside ? 'shop' : !riding ? 'street' : state.phase === 'offer' ? 'intro' : 'chase'));
+    const snap = nextView !== view;
+    const room = rooms[state.order.room.template];
+    for (const candidate of roomList) candidate.root.visible = inside && candidate === room;
+    room.bag.visible = state.phase === 'pickup';
+    street.root.visible = !inside;
+    scooter.root.visible = !inside;
+    if (inside) room.update(time); else street.update(time);
+    const height = !inside && state.z < CURB_Z ? CURB_H : 0;
+    const facing = closeUp && !riding ? 0.45 : state.yaw;
+    shiba.root.rotation.y = riding || handling || snap ? facing : dampAngle(shiba.root.rotation.y, facing, 15, dt);
+    scooter.root.rotation.y = state.bikeYaw;
+    scooter.root.position.set(state.bikeX, 0, state.bikeZ);
+    scooter.steer(state.steer);
+    scooter.setStand(state.stand);
+    shiba.root.position.set(state.x, riding ? 0 : height, state.z);
+    const posed = nextView === 'portrait' || nextView === 'intro';
+    const lookTowardCamera = nextView === 'stand' ? .42 : posed ? .78 : -.12;
+    headTurn = damp(headTurn, riding || nextView === 'stand' ? lookTowardCamera : 0, 10, dt);
+    shiba.pose({ time, dt, stride, walking, headTurn, speed: state.speed, lift: state.lift, tiptoe: state.tiptoe, reach: state.reach,
+      seatBlend,
+      rise: handling ? state.sequence.rise : 0, hop: handling ? state.sequence.hop : 0,
+      swing: handling ? state.sequence.swing : 0,
+      mount: seatBlend > 0 ? scooter.mount : null, carrying: packing || state.cargo === 'hand' });
+    positionParcel(state, shiba, scooter, looseBag);
+    contact.position.set(state.x, (!inside && state.z < CURB_Z ? CURB_H : 0) + 0.025, state.z);
+    contact.scale.set(riding ? 1.9 : 0.90, riding ? 0.84 : 0.65, 1).multiplyScalar(courierScale);
+    contact.rotation.z = riding ? state.bikeYaw - Math.PI / 2 : 0;
+    marker.scale.setScalar(1 + 0.065 * Math.sin(time * 3.4));
+    if (snap) {
+      scene.background = new THREE.Color(inside ? 0xe2cfaa : 0xc1dcd8);
+      scene.fog = new THREE.FogExp2(inside ? 0xe2cfaa : 0xd9dfc9, inside ? 0.014 : 0.031);
+      followYaw = state.bikeYaw;
+      const heights = { portrait: 3.30, intro: 4.8, door: 4.05, stand: 2.95, box: 3.6, shop: 5.56, street: 6.15 };
+      const widths = { portrait: 3.2, intro: 4.0, door: 3.25, stand: 3.00, box: 3.2, shop: 7.1, street: 5.2 };
+      if (nextView !== 'chase') {
+        const detailScale = nextView === 'portrait' || nextView === 'box' ? courierScale : 1;
+        const h = nextView === 'inspection' ? shopReview.height : heights[nextView];
+        const w = nextView === 'inspection' ? shopReview.width : widths[nextView];
+        const frameHeight = Math.max(h, Math.min(11.4, w / aspect)) * detailScale;
+        camera.left = -frameHeight * aspect / 2; camera.right = -camera.left;
+        camera.top = frameHeight / 2; camera.bottom = -camera.top;
+        camera.updateProjectionMatrix();
+      }
+    }
+    if (nextView === 'chase') {
+      followYaw = dampAngle(followYaw, state.bikeYaw, 5.4, dt);
+      frameRide(chase, state, followYaw, focus);
+    } else {
+      if (nextView === 'stand') {
+        scooter.root.localToWorld(desiredFocus.set(.32, 1.05, -.16));
+        if (aspect < .85) desiredFocus.y -= .24;
+        eye.set(4.65, 2.88, -2.25).applyAxisAngle(cameraUp, state.bikeYaw)
+          .multiplyScalar(courierScale).add(scooter.root.position);
+        eye.z = Math.max(eye.z, -.95);
+        eyeOffset.copy(eye).sub(desiredFocus);
+      } else if (nextView === 'box') {
+        scooter.root.localToWorld(desiredFocus.set(-0.24, 1.07, scooter.cargo.floor.z + 0.15));
+        scooter.root.localToWorld(eye.set(.35, 2.35, -4.35));
+        eyeOffset.copy(eye).sub(desiredFocus);
+      } else if (nextView === 'door') {
+        desiredFocus.set(state.order.door.x, 1.27, -1.48);
+        eyeOffset.set(1.55, 2.05, 8.7);
+      } else if (shopReview) {
+        desiredFocus.fromArray(shopReview.focus);
+        eyeOffset.fromArray(shopReview.offset);
+      } else if (posed) {
+        desiredFocus.set(state.x, (riding ? 1.21 : 1.10) * courierScale, state.z);
+        if (riding) {
+          eye.set(4.19 * Math.sin(portraitAngle), 1.92, 4.19 * Math.cos(portraitAngle))
+            .applyAxisAngle(cameraUp, state.bikeYaw).multiplyScalar(courierScale).add(scooter.root.position);
+          eye.z = Math.max(eye.z, -.95);
+          eyeOffset.copy(eye).sub(desiredFocus);
+        } else eyeOffset.set(0.8, 2.5, 9.2);
+      } else {
+        desiredFocus.set(inside ? 0 : state.x, inside ? 1.50 : 1.74, inside ? -0.12 : state.z - 0.63);
+        eyeOffset.set(inside ? -3.3 : 2.95, inside ? 4.60 : 3.9, 11);
+      }
+      if (snap) focus.copy(desiredFocus); else focus.lerp(desiredFocus, 1 - Math.exp(-7 * dt));
+      camera.position.copy(focus).add(eyeOffset);
+      camera.lookAt(focus);
+    }
+    // Dress the far side of a close-up; the shop row behind the lens can
+    // otherwise put a counter or a tree across the boots and stand.
+    const fromShopSide = nextView !== 'chase' && camera.position.z < focus.z;
+    street.shopSide.visible = !fromShopSide;
+    street.opposite.visible = nextView === 'chase' || fromShopSide;
+    const lightX = Math.round(focus.x * 2) / 2;
+    sun.target.position.set(lightX, 0.3, 0);
+    sun.position.set(lightX - 6, 11.5, 7.5);
+    view = nextView;
+    renderer.render(scene, view === 'chase' ? chase : camera);
+  }
+
+  function resize() {
+    const w = $('stage').clientWidth, h = Math.max(1, $('stage').clientHeight);
+    aspect = w / h;
+    resizeRideCamera(chase, aspect);
+    renderer.setSize(w, h, false);
+    view = '';
+  }
+  return { draw, resize, reset, clearInspection, toggleCloseUp() {
+    shopReview = null;
+    setCloseUp(!closeUp);
+  } };
+}
