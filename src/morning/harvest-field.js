@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GeoBuilder } from '../core/geo.js';
 import { rngFrom } from '../core/rng.js';
-import { centerZ, halfWidth } from './country-route.js';
+import { centerZ, halfWidth, paddyShoulderSample } from './country-route.js';
 import sheafUrl from '../../art/countryside/harvest-rice.png?url';
 
 export const harvestStart = 686;
@@ -14,7 +14,10 @@ export function harvestWeight(x, feather = 12) {
 
 // The furrow widens in pockets along the inside of each bend.
 function margin(x, side) {
-  return halfWidth(x) + 1.55 + .75 * Math.sin(x * .092 + side) + .26 * Math.cos(x * .21 - side);
+  const sample = THREE.MathUtils.smoothstep(x, paddyShoulderSample.start - 10, paddyShoulderSample.start)
+    * (1 - THREE.MathUtils.smoothstep(x, paddyShoulderSample.end, paddyShoulderSample.end + 10));
+  return halfWidth(x) + 1.55 + sample * 1.05
+    + .75 * Math.sin(x * .092 + side) + .26 * Math.cos(x * .21 - side);
 }
 function swell(x, d, side) {
   return .54 * Math.sin(x * .18 + d * .43 + side) + .46 * Math.sin(x * .081 - d * .24);
@@ -51,7 +54,9 @@ export function addHarvest(ground, crowns, from, to) {
   for (const side of [-1, 1]) {
     const distances = [-2, -.32, .12, .53, 1.28, 2.7, 4.4, 7, 10, 14, 19, 25, 34, 46, 63, 83, 108, 132, 134, 235];
     function vertex(x, d) {
-      const skirt = halfWidth(x) + 1.75;
+      const sample = THREE.MathUtils.smoothstep(x, paddyShoulderSample.start - 10, paddyShoulderSample.start)
+        * (1 - THREE.MathUtils.smoothstep(x, paddyShoulderSample.end, paddyShoulderSample.end + 10));
+      const skirt = halfWidth(x) + 1.75 + sample * .85;
       const furrow = Math.max(skirt + .28, margin(x, side) + .65);
       const offset = d < 0 ? THREE.MathUtils.lerp(skirt, furrow, (d + 2) / 2) : furrow + d;
       const z = centerZ(x) + side * offset;

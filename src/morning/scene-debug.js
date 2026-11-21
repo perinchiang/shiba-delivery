@@ -38,6 +38,18 @@ export const sceneJumps = {
     title: '田埂看稻穗', state: onCountryRoad(835),
     camera: { fov: 48, focus: [843, 0.92, centerZ(843) + 5.6], offset: [-4.6, 0.76, -2.5] },
   },
+  sampleRide: {
+    title: '路肩样板·骑行', state: onCountryRoad(780),
+  },
+  sampleEdge: {
+    title: '路肩样板·斜视', state: onCountryRoad(780),
+    camera: { fov: 48, focus: [780, 0.15, centerZ(780) + 3.0], offset: [-6.4, 1.45, -3.6] },
+  },
+  sampleWalk: {
+    title: '路肩样板·田边下车',
+    state: { ...onCountryRoad(780), mode: 'walk', z: centerZ(780) + 3.05 },
+    camera: { fov: 46, focus: [780, 0.48, centerZ(780) + 2.55], offset: [-4.2, 1.1, -4.8] },
+  },
   pharmacy: { title: '药店门口', state: { order: pharmacy, mode: 'walk', phase: 'pickup',
     x: pharmacy.door.x, z: -.32, ...parked(pharmacy.door.x) } },
   counter: { title: '药店柜台', state: atCounter(pharmacy) },

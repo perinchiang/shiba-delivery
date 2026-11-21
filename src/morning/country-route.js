@@ -11,6 +11,9 @@ const knots = [
 // Dimensions shared by the road mesh, collision, map and approach camera.
 export const crossing = { x: 92, z: 4.17, half: 5.5, arm: 50 };
 export const bridgeJointXs = [894, 910, 930, 950];
+// One deliberately bounded road-edge study area. Keeping this in the route
+// module lets the road mesh and paddy generator share the same cross-section.
+export const paddyShoulderSample = { start: 748, end: 812 };
 export const roadEnd = knots.at(-1)[0];
 function tangent(i) {
   if (knots[i][0] <= 120) return 0;

@@ -2,7 +2,7 @@
 // Transitions smoothly from Old Street / City Crossing into dark slate rural asphalt and stone bridge deck.
 import * as THREE from 'three';
 import { litMaterial } from '../core/materials.js';
-import { centerZ, crossing, halfWidth, roadHeight } from './country-route.js';
+import { centerZ, crossing, halfWidth, roadHeight, paddyShoulderSample } from './country-route.js';
 
 import { harvestStart, harvestEnd } from './harvest-field.js';
 
@@ -137,6 +137,17 @@ function getRoadMaterial() {
           shoulder = mix(shoulder,mix(vec3(.46,.405,.297),vec3(.34,.325,.195),grassBlend),field);
           shEdge = mix(shEdge,smoothstep(hw-.42,hw+.35,d+wob),field);
 
+          // Keep the one study section from reading as a pale painted stripe.
+          // Its dark cut and green berm are keyed to the same cross-section as
+          // the geometry, so the height change remains legible in motion.
+          float shoulderStudy = smoothstep(738.0, 748.0, wp.x)
+            * (1.0 - smoothstep(812.0, 822.0, wp.x));
+          float sd = d - hw;
+          vec3 studyCut = mix(vec3(.39,.31,.19), vec3(.25,.24,.16), smoothstep(.28, 1.08, sd));
+          vec3 studyBerm = mix(vec3(.31,.38,.19), vec3(.39,.47,.22), smoothstep(1.12, 1.82, sd));
+          vec3 study = mix(studyCut, studyBerm, smoothstep(1.10, 1.48, sd));
+          shoulder = mix(shoulder, study, shoulderStudy * smoothstep(hw - .02, hw + 1.78, d));
+
           diffuseColor.rgb = mix(road, shoulder, shEdge);
         }`);
   };
@@ -150,8 +161,9 @@ export function buildCountryRoad(start, end) {
   for (let x = start; x < end; x += step) xs.push(x);
   xs.push(end);
 
-  // 9 cross-section columns: outer verge skirt .. shoulder .. asphalt .. shoulder .. outer verge skirt
-  const cols = 9;
+  // Eleven columns make the sample section readable as a shallow cut and
+  // berm. Outside it, the extra columns collapse onto the old shoulder.
+  const cols = 11;
   const rows = xs.length;
   const pos = new Float32Array(rows * cols * 3);
   const nor = new Float32Array(rows * cols * 3);
@@ -177,12 +189,19 @@ export function buildCountryRoad(start, end) {
     const midShoulder = river ? 0.45 : 0.68;
     const skirtDrop = river ? 0 : nearCross ? -0.18 : tallZone ? -0.07 : -0.22;
     const shDrop = river ? 0 : nearCross ? -0.04 : -0.025;
-
-    const lats = [
-      -(hw + skirtWidth), -(hw + midShoulder), -hw, -hw * 0.5, 0,
-      hw * 0.5, hw, hw + midShoulder, hw + skirtWidth,
+    const sample = THREE.MathUtils.smoothstep(x, paddyShoulderSample.start - 10, paddyShoulderSample.start)
+      * (1 - THREE.MathUtils.smoothstep(x, paddyShoulderSample.end, paddyShoulderSample.end + 10));
+    const sampleSkirt = 1.82;
+    const outer = THREE.MathUtils.lerp(skirtWidth, sampleSkirt, sample);
+    const mid = THREE.MathUtils.lerp(midShoulder, 0.72, sample);
+    const ditch = THREE.MathUtils.lerp(midShoulder, 1.34, sample);
+    const actualLats = [
+      -(hw + outer), -(hw + ditch), -(hw + mid), -hw, -hw * 0.5, 0,
+      hw * 0.5, hw, hw + mid, hw + ditch, hw + outer,
     ];
-    const drops = [skirtDrop, shDrop, 0, 0, 0, 0, 0, shDrop, skirtDrop];
+    const actualDrops = sample > 0.001
+      ? [-0.15, -0.30, -0.18, -0.06, 0, 0, 0, -0.06, -0.18, -0.30, -0.15]
+      : [skirtDrop, shDrop, 0, 0, 0, 0, 0, 0, shDrop, shDrop, skirtDrop];
 
     // Tangent / normal estimate along the grade
     const dh = (roadHeight(x + 1) - roadHeight(prevX(x))) * 0.5;
@@ -192,9 +211,9 @@ export function buildCountryRoad(start, end) {
 
     for (let c = 0; c < cols; c++) {
       const idx = (i * cols + c) * 3;
-      const lat = lats[c];
+      const lat = actualLats[c];
       pos[idx] = x;
-      pos[idx + 1] = h + drops[c];
+      pos[idx + 1] = h + actualDrops[c];
       pos[idx + 2] = cz + lat;
       nor[idx] = nx;
       nor[idx + 1] = ny;
