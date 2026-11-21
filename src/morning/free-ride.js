@@ -1,20 +1,49 @@
-import { approach, clamp, damp, dampAngle } from '../core/mathx.js';
+import { approach, clamp, damp, dampAngle, lerp, smoothstep } from '../core/mathx.js';
 import { centerZ, constrainToRoad, roadHeight, roadYaw } from './country-route.js';
 
 export const rideTuning = {
-  topSpeed: 9, reverse: 1.6, acceleration: 3.4, brake: 6.5, steerAngle: .43, lateralAcceleration: 5.7,
+  topSpeed: 9, reverse: 1.6, reverseDelay: .35,
+  launchAccel: 4.7, powerPerKg: 2800 / 150, brake: 7,
+  steerAngle: .43, lateralAcceleration: 5.7,
 };
+
+// A light thumb input still sets a walking-speed target for precise manoeuvres.
+function updateSpeed(state, drive, dt) {
+  const t = rideTuning;
+  const speed = state.speed;
+  const slowing = state.braking || drive * speed < 0;
+  const forward = Math.max(0, drive);
+  state.throttle = approach(state.throttle, forward, (forward > state.throttle ? 11 : 18) * dt);
+  const brake = state.braking ? 1 : slowing ? Math.abs(drive) : 0;
+  state.brakePressure = approach(state.brakePressure, brake, (brake > state.brakePressure ? 14 : 24) * dt);
+  if (drive >= 0 || speed > 0) state.reverseHold = 0;
+  else if (speed === 0) state.reverseHold += dt;
+
+  const rollingDrag = .13 + .0021 * speed ** 2;
+  const coast = rollingDrag + 1.05 * smoothstep(0, 2.2, Math.abs(speed)) * (1 - state.brakePressure);
+  if (slowing || state.stand || drive === 0) {
+    return approach(speed, 0, (coast + t.brake * state.brakePressure) * dt);
+  }
+  if (drive < 0) {
+    if (speed === 0 && state.reverseHold < t.reverseDelay) return 0;
+    return approach(speed, drive * t.reverse, 1.7 * dt);
+  }
+  const target = t.topSpeed * drive;
+  if (speed >= target) return approach(speed, target, coast * dt);
+  const thrust = Math.min(t.launchAccel, t.powerPerKg / Math.max(.5, speed));
+  return approach(speed, target, Math.min(thrust * state.throttle, 4 * (target - speed)) * dt);
+}
 
 export function stepFreeRide(state, dx, dz, wheelbase, dt) {
   const t = rideTuning, throttle = state.braking ? 0 : -dz;
   if (throttle) state.stand = approach(state.stand, 0, dt/.28);
-  const top = throttle >= 0 ? t.topSpeed : t.reverse;
-  let acceleration = .65 + .012*state.speed**2;
-  if (state.braking || throttle * state.speed < 0) acceleration = t.brake;
-  else if (throttle) acceleration = t.acceleration * (1 - .94*Math.min(1, (state.speed/top)**2));
-  state.speed = approach(state.speed, state.stand ? 0 : throttle*top, acceleration*dt);
+  state.speed = updateSpeed(state, throttle, dt);
   const limit = Math.min(t.steerAngle, Math.atan(wheelbase*t.lateralAcceleration/Math.max(.01, state.speed**2)));
-  state.steer = damp(state.steer, state.braking ? 0 : -dx*limit, 10, dt);
+  const target = state.braking ? 0 : -dx;
+  const returning = Math.abs(target) < Math.abs(state.steerInput) || target * state.steerInput < 0;
+  const rate = returning ? 8.5 : lerp(5.5, 3.4, smoothstep(2, 10, Math.abs(state.speed)));
+  state.steerInput = approach(state.steerInput, target, rate * dt);
+  state.steer = state.steerInput * limit;
   const yawRate = Math.tan(state.steer)*state.speed/wheelbase;
   state.bikeYaw += yawRate*dt;
   state.bank = damp(state.bank, clamp(-Math.atan(state.speed*yawRate/9.81), -.41, .41), 7, dt);

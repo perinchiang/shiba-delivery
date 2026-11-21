@@ -7,6 +7,7 @@ export function initialState() {
   return {
     order: orders[0], phase: 'offer', mode: 'ride', cargo: 'none', dialog: null, sequence: null,
     ...start, bikeX: start.x, bikeZ: start.z, bikeYaw: Math.PI / 2, yaw: Math.PI / 2,
+    throttle: 0, brakePressure: 0, reverseHold: 0, steerInput: 0,
     speed: 0, bank: 0, steer: 0, returnToBike: false, tiptoe: 0, reach: 0, stand: 1, lift: 0, braking: false,
   };
 }

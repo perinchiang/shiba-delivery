@@ -258,7 +258,7 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     write('receipt-insurance', '− ' + formatPay(state.order.insuranceCents));
     write('receipt-net', net);
     write('receipt-note', state.order.receiptNote);
-    write('order-summary', free ? Math.round(Math.abs(state.speed)*3.6) + ' km/h · 自由骑行' : done ? '实际到账 ' + net : '送往' + state.order.customer.address);
+    write('order-summary', free ? Math.round(Math.abs(state.speed)*3.6) + (state.speed < 0 ? ' km/h · 倒车' : ' km/h · 自由骑行') : done ? '实际到账 ' + net : '送往' + state.order.customer.address);
     write('place', free ? '榕湾村道' : state.mode === 'shop' ? state.order.room.name : '榕湾老街');
     write('clock', free ? '清晨' : state.order.clock[state.phase]);
     $('action').hidden = !action || action === 'phone' || action === 'statement' || phoneExpanded;

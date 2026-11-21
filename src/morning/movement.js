@@ -81,6 +81,9 @@ export function createMovement(state, { street, scooter }, input) {
       stride += travel * 5.4;
       return;
     }
+    if (blocked && state.phase === 'free') {
+      state.reverseHold = state.throttle = state.brakePressure = state.steerInput = 0;
+    }
     if (state.phase === 'offer' || state.phase === 'done' || state.dialog || blocked) return;
     const dx = input.axis('left', 'right'), dz = input.axis('up', 'down');
     if (dx || dz) clearInspection();
