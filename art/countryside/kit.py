@@ -333,87 +333,101 @@ def build_rice_clump(name, seed, height, blade_count, panicle_count, palette):
     return b.build_object()
 
 
-def build_tree_round():
-    """Cozy stylized round village/roadside tree with transferred soft foliage normals."""
-    b = MeshBuilder('Tree_Round')
-    # Gently curved organic trunk with flared root base
-    trunk_pts = [(0, 0, -0.12), (0.04, 0.02, 0.75), (0.11, 0.04, 1.65), (0.06, -0.02, 2.55)]
-    trunk_r = [0.34, 0.23, 0.19, 0.14]
-    trunk_c = [hex_srgb(0x6d503a), hex_srgb(0x7c5c43), hex_srgb(0x88674c), hex_srgb(0x8a694e)]
-    b.add_tube(trunk_pts, trunk_r, trunk_c, sides=9, cap_start=False, cap_end=True)
-    # 3 short spreading boughs
-    for ang, reach, top_z in [(0.3, 0.95, 3.35), (2.4, 0.88, 3.25), (4.45, 0.92, 3.30)]:
-        pts = [(0.06, -0.02, 2.15), (math.cos(ang) * reach * 0.55, math.sin(ang) * reach * 0.55, 2.75),
-               (math.cos(ang) * reach, math.sin(ang) * reach, top_z)]
-        b.add_tube(pts, [0.13, 0.095, 0.065], [hex_srgb(0x7e5f46)] * 3, sides=6)
+# One bark and foliage palette for the town and riverbank. The larger shapes carry
+# the silhouette at riding distance; folded leaves are accents along the skyline.
+BARK = (0x796049, 0x987858, 0xaa8763)
+BANYAN = (0x416f60, 0x699879, 0xa2bc81)
+WILLOW = (0x52775e, 0x839f68, 0xb4c580)
 
-    # Layered puffy cushions sharing a common radial normal origin for Ghibli/ACNH softness
-    n_orig = (0.0, 0.0, 3.45)
-    puffs = [
-        # (center, radii, seed, bot, mid, top)
-        ((0.0, 0.0, 4.35), (1.58, 1.52, 1.18), 0.2, 0x3b725e, 0x5d9957, 0x99c45d),
-        ((1.15, 0.38, 3.55), (1.18, 1.12, 0.90), 1.4, 0x376d5b, 0x589355, 0x8ebc59),
-        ((-1.08, 0.52, 3.68), (1.22, 1.14, 0.94), 2.7, 0x39705d, 0x5c9858, 0x95c25c),
-        ((-0.38, -1.06, 3.52), (1.16, 1.12, 0.88), 3.9, 0x366c5a, 0x569154, 0x8cb958),
-        ((0.72, -0.92, 3.74), (1.06, 1.02, 0.84), 5.1, 0x3c745f, 0x629e5a, 0x9dc75f),
-        ((0.18, 1.02, 3.82), (1.10, 1.04, 0.86), 6.3, 0x3a725e, 0x5f9b59, 0x98c45d),
-        ((0.10, -0.05, 5.02), (0.98, 0.94, 0.68), 7.5, 0x549056, 0x7cb25a, 0xaed264),
-    ]
-    for center, radii, seed, cb, cm, ct in puffs:
-        b.add_puff(center, radii, 14, 9, cb, cm, ct, lump=0.09, seed=seed,
-                   normal_origin=n_orig, normal_blend=0.80)
+
+def folded_leaf(b, base, angle, length, width, rise, color):
+    """A gently folded, almond-shaped leaf, solid on both faces."""
+    root = Vector(base)
+    along = Vector((math.cos(angle), math.sin(angle), 0))
+    across = Vector((-along.y, along.x, 0))
+    up = Vector((0, 0, 1))
+    mid = root + along * length * 0.49 + up * rise * 0.62
+    points = [root, mid - across * width, root + along * length + up * rise,
+              mid + across * width, mid + up * width * 0.44, mid - up * width * 0.25]
+    v = [b.add_vert(point, color) for point in points]
+    for i in range(4):
+        j = (i + 1) % 4
+        b.add_face((v[i], v[j], v[4]), False)
+        b.add_face((v[j], v[i], v[5]), False)
+
+
+def spreading_roots(b, foot, count):
+    for i in range(count):
+        a = i * 2.4
+        dx, dy = math.cos(a), math.sin(a)
+        reach = foot * (1.65 + 0.20 * math.sin(a))
+        b.add_tube([(0, 0, foot * 1.80), (dx * foot * .70, dy * foot * .70, .18),
+                    (dx * reach, dy * reach, -.035)],
+                   [foot * .55, foot * .48, .07], BARK[::-1], sides=8)
+
+
+def build_tree_round():
+    """Low spreading banyan, with three unequal tiers and a visible fork."""
+    b = MeshBuilder('Tree_Round')
+    spreading_roots(b, .42, 5)
+    b.add_tube([(0, 0, -.12), (.06, 0, .54), (-.15, .02, 1.64),
+                (.13, .08, 2.55), (.35, .22, 4.02)],
+               [.42, .31, .24, .19, .10], [*BARK[:2], *BARK], sides=11)
+    # Each lateral branch owns its crown. Stagger heights to retain sky gaps
+    # between the horizontal boughs when seen against a shopfront.
+    shoulders = [(0.18, 1.48, 3.43, 1.14), (2.45, 1.22, 3.82, 1.21),
+                 (4.12, 1.30, 3.18, 1.05), (5.44, .98, 4.08, .91)]
+    for i, (a, reach, height, radius) in enumerate(shoulders):
+        dx, dy = math.cos(a), math.sin(a)
+        x, y = reach * dx, reach * dy
+        b.add_tube([(-.10, .02, 1.63 + i * .19), (x * .53, y * .53, height - .95),
+                    (x * .88, y * .88, height - .69), (x, y, height)],
+                   [.20, .16, .115, .065], [*BARK, BARK[-1]], sides=8)
+        b.add_puff((x, y, height), (radius * 1.20, radius, radius * .70),
+                   16, 8, *BANYAN, lump=.17, seed=a, normal_blend=.24)
+        # Paired new leaves break the rim on the exposed end of each shoulder.
+        base = (x + dx * radius * .92, y + dy * radius * .80, height + radius * .37)
+        for turn, length, rise in [(-.60, .53, .19), (.50, .42, .31)]:
+            folded_leaf(b, base, a + turn, length, .13, rise, 0xa0ba7f)
+    b.add_puff((.16, .16, 4.53), (1.55, 1.37, .87), 18, 9,
+               *BANYAN, lump=.16, seed=1.3, normal_blend=.24)
+    b.add_puff((-.65, -.34, 4.49), (1.0, .92, .70), 14, 7,
+               *BANYAN, lump=.12, seed=3.4, normal_blend=.30)
     return b.build_object()
 
 
 def build_tree_willow():
-    """Graceful riverside/paddy willow with soft tiered umbrella crown & clean 3D drapes."""
+    """A leaning river willow with grouped, tapered sprays and open windows."""
     b = MeshBuilder('Tree_Willow')
-    # Gently leaning expressive trunk
-    trunk_pts = [(0, 0, -0.15), (0.12, 0.04, 0.85), (0.30, 0.10, 1.85), (0.42, 0.14, 2.75)]
-    trunk_r = [0.38, 0.27, 0.22, 0.16]
-    trunk_c = [hex_srgb(0x69523d), hex_srgb(0x785e47), hex_srgb(0x83684f), hex_srgb(0x856a51)]
-    b.add_tube(trunk_pts, trunk_r, trunk_c, sides=9, cap_start=False, cap_end=True)
-
-    crown_origin = (0.45, 0.12, 3.8)
-    boughs = [
-        (0.25, 1.85, 4.15), (1.35, 1.65, 4.30), (2.55, 1.90, 4.05),
-        (3.85, 1.70, 4.20), (5.05, 1.80, 4.10),
-    ]
-    for idx, (ang, reach, top_z) in enumerate(boughs):
-        dx, dy = math.cos(ang), math.sin(ang)
-        mid = (0.42 + dx * reach * 0.52, 0.14 + dy * reach * 0.52, 3.45)
-        tip = (0.42 + dx * reach, 0.14 + dy * reach, top_z)
-        b.add_tube([(0.42, 0.14, 2.55), mid, tip], [0.14, 0.10, 0.065], [hex_srgb(0x7c624b)] * 3, sides=6)
-        b.add_puff(
-            (tip[0], tip[1], tip[2] + 0.35), (1.42, 1.36, 0.92), 13, 8,
-            0x3f785c, 0x67a356, 0xa5cc61, lump=0.09, seed=idx * 1.7,
-            normal_origin=crown_origin, normal_blend=0.80,
-        )
-        # Lush double-tiered sweeping stylized 3D willow fronds hanging gracefully around the umbrella rim
-        rng = random.Random(200 + idx)
-        for j in range(9):
-            da = ang + (j - 4.0) * 0.28 + rng.uniform(-0.08, 0.08)
-            outer = (j % 2 == 0)
-            dr = rng.uniform(1.05, 1.38) if outer else rng.uniform(0.74, 1.04)
-            sx = tip[0] + math.cos(da) * dr
-            sy = tip[1] + math.sin(da) * dr
-            sz = tip[2] + (0.14 if outer else -0.02)
-            drop = rng.uniform(1.85, 2.75) if outer else rng.uniform(1.25, 1.95)
-            out_x, out_y = math.cos(da), math.sin(da)
-            pts, widths, thicks, cols = [], [], [], []
-            for k in range(5):
-                t = k / 4.0
-                sway = 0.26 * math.sin(t * 2.1)
-                pts.append((sx + out_x * sway, sy + out_y * sway, sz - drop * t))
-                widths.append((0.125 if outer else 0.105) * (1.0 - 0.58 * t))
-                thicks.append(0.028 * (1.0 - 0.45 * t))
-                cols.append(lerp_hex(0x5d9856, 0xb0d366, t))
-            b.add_blade(pts, widths, thicks, cols, smooth=True)
-
-    # Central crown dome tying the umbrella together
-    b.add_puff((0.44, 0.12, 5.05), (1.82, 1.74, 1.06), 14, 9,
-               0x4c8759, 0x77b159, 0xb2d566, lump=0.08, seed=9.1,
-               normal_origin=crown_origin, normal_blend=0.82)
+    spreading_roots(b, .37, 4)
+    b.add_tube([(0, 0, -.12), (.13, .02, .85), (.53, .14, 1.98),
+                (.40, .12, 2.86), (.60, .16, 4.70)],
+               [.38, .29, .25, .18, .09], [*BARK[:2], *BARK], sides=10)
+    for i, (a, reach, height) in enumerate([
+            (.25, 1.92, 3.97), (1.60, 1.36, 4.37), (2.85, 1.81, 3.88),
+            (4.10, 1.59, 4.28), (5.32, 1.76, 4.08)]):
+        dx, dy = math.cos(a), math.sin(a)
+        x, y = .40 + dx * reach, .12 + dy * reach
+        b.add_tube([(.40, .12, 2.62), (x * .68, y * .68, height - .67), (x, y, height)],
+                   [.17, .12, .07], BARK, sides=8)
+        b.add_puff((x, y, height + .32), (1.37, 1.26, .84), 14, 8,
+                   *WILLOW, lump=.14, seed=a, normal_blend=.27)
+        # Broad folded sprays sweep sideways as well as down. The middle of
+        # each bunch hangs longest, leaving a scalloped edge between boughs.
+        for j, offset in enumerate([-1.02, -.74, -.31, -.08, .17, .83, 1.08]):
+            direction = a + offset
+            ux, uy = math.cos(direction), math.sin(direction)
+            drop = 1.25 + .96 * math.cos(offset * 1.6) + .32 * math.sin(i + j * 2.1)
+            points = []
+            for t in [0, .22, .5, .77, 1]:
+                outward = 1.06 + .38 * math.sin(t * math.pi)
+                sweep = .38 * t * t
+                points.append((x + ux * outward - uy * sweep, y + uy * outward + ux * sweep,
+                               height + .47 - t * drop))
+            b.add_blade(points, [.065, .20, .17, .105, .012], [.04, .075, .06, .04, .008],
+                        [WILLOW[1], 0x89a670, 0x91ad70, 0xa4b879, WILLOW[2]])
+    b.add_puff((.54, .14, 4.99), (1.77, 1.58, .94), 16, 8,
+               *WILLOW, lump=.12, seed=1.4, normal_blend=.30)
     return b.build_object()
 
 

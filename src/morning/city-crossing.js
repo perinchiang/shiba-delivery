@@ -1,7 +1,8 @@
 // One city block between the old shopping street and the east gate.
 import * as THREE from 'three';
+import { placeInstances } from './kit-instances.js';
 import { crossing } from './country-route.js';
-import { bake, box, cylinder, group, oval, sign } from './shapes.js';
+import { bake, box, cylinder, group, sign } from './shapes.js';
 
 const ivory = 0xf5ddac, trim = 0xe3c99e, glass = 0x607f80, metal = 0x435953;
 const pavement = 0xd7c7ab, ink = 0x354e51, paint = 0xf3e6c9;
@@ -118,18 +119,15 @@ function clockTower(root) {
   }
 }
 
-function planeTree(root, x, z) {
-  box(root, x, .17, z, 1.85, .32, 1.85, trim);
-  box(root, x, .35, z, 1.53, .07, 1.53, 0x947a59);
-  cylinder(root, x, 1.62, z, .14, .22, 2.6, 0x8a694d, 9);
-  for (const [dx,y,dz,s,c] of [[0,4.1,0,1.55,0x78a384],[-.86,3.5,.13,1.14,0x699674],[.78,3.72,-.23,1.18,0x87ac77]]) {
-    oval(root,x+dx,y,z+dz,s,s*.86,s*.92,c,true);
-  }
-}
-
-export function createCityCrossing(parent) {
+export function createCityCrossing(parent, banyan) {
   const { x, z, half, arm } = crossing;
   const root = group(parent, x, 0, z);
+  const trees = [];
+  function plantTree(x, z) {
+    box(root, x, .17, z, 1.85, .32, 1.85, trim);
+    box(root, x, .35, z, 1.53, .07, 1.53, 0x947a59);
+    trees.push([x, .38, z, trees.length * 2.4, .85, .95, .85]);
+  }
   // The main road already runs through the junction. Lay the side streets flush
   // over the graded shoulders, leaving the central square clear of lane paint.
   for (const side of [-1,1]) {
@@ -140,7 +138,7 @@ export function createCityCrossing(parent) {
     }
     box(root, 0, -.025, side*(arm+2.9), 17.2, .28, 2.1, pavement);
     box(root, 0, .58, side*(arm+4.2), 17.2, 1.22, .45, trim);
-    for (const k of [-1,1]) planeTree(root, k*4, side*(arm+5.8));
+    for (const k of [-1,1]) plantTree(k*4, side*(arm+5.8));
   }
 
   const signalHeads = [];
@@ -177,9 +175,9 @@ export function createCityCrossing(parent) {
       block(root, sx*(13.9+j%2), sz*d, 9.2, j===2?6.5:10.3, 1+(j+Number(east))%3, sx,sz,
         [0xddd1b3,0xcebbab,0xc1cebf][j], accent, '');
     }
-    planeTree(root, sx*7.25, sz*20.3);
-    planeTree(root, sx*24.8, sz*7.5);
-    planeTree(root, sx*7.15, sz*36);
+    plantTree(sx*7.25, sz*20.3);
+    plantTree(sx*24.8, sz*7.5);
+    plantTree(sx*7.15, sz*36);
   }
   clockTower(root);
   // Enamel street blade at the east corner faces riders arriving from old town.
@@ -189,6 +187,7 @@ export function createCityCrossing(parent) {
   box(blade, 0, 3.48, 0, 3.1,.71,.13,metal);
   sign(blade, 0, 3.48, .075, 3,.65,'榕湾中路',{bg:'#346e69',ink:'#fff2cd',font:'hei'});
   bake(root);
+  placeInstances(root, banyan, trees);
 
   const lamps = new THREE.InstancedMesh(new THREE.SphereGeometry(1,12,8), new THREE.MeshBasicMaterial(), signalHeads.length);
   const disk = new THREE.Object3D(), color = new THREE.Color();

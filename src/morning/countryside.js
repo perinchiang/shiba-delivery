@@ -6,6 +6,7 @@ import { GeoBuilder } from '../core/geo.js';
 import { rngFrom } from '../core/rng.js';
 import { litMaterial } from '../core/materials.js';
 import { bridgeJointXs, crossing, centerZ, halfWidth, roadEnd, roadHeight, roadYaw } from './country-route.js';
+import { placeInstances } from './kit-instances.js';
 import { createCityCrossing } from './city-crossing.js';
 import { sign } from './shapes.js';
 import { addPaddies, fieldEnd, fieldStart, eastFieldStart, eastFieldEnd, updatePaddyEnv } from './paddy.js';
@@ -13,28 +14,6 @@ import { buildCountryRoad } from './country-road.js';
 import { createRiverWater } from './country-water.js';
 
 const paint = litMaterial({ vertexColors: true, grid: false, roughness: 0.90 });
-const kitPaint = litMaterial({ vertexColors: true, grid: false, roughness: 0.88 });
-const dummy = new THREE.Object3D();
-const tint = new THREE.Color();
-
-function placeInstances(group, geometry, list, castShadow = true, receiveShadow = true) {
-  if (!geometry || !list.length) return;
-  const mesh = new THREE.InstancedMesh(geometry, kitPaint, list.length);
-  for (let i = 0; i < list.length; i++) {
-    const [x, y, z, rotY, sx, sy, sz, colorHex] = list[i];
-    dummy.position.set(x, y, z);
-    dummy.rotation.set(0, rotY, 0);
-    dummy.scale.set(sx, sy, sz);
-    dummy.updateMatrix();
-    mesh.setMatrixAt(i, dummy.matrix);
-    if (colorHex !== undefined) mesh.setColorAt(i, tint.setHex(colorHex));
-  }
-  mesh.castShadow = castShadow;
-  mesh.receiveShadow = receiveShadow;
-  mesh.computeBoundingSphere();
-  group.add(mesh);
-}
-
 // Upgraded cozy village cottage: fixes the degenerate-quad black gable bug, adds warm eaves,
 // shutters, stone plinths and low garden walls so cottages feel grounded like Old Street.
 function house(builder, x, z, side, rng) {
@@ -458,7 +437,7 @@ function buildChunk(start, end, kit) {
     geo.box(roadEnd + 29, -0.42, vz, 58, 0.36, 185, { color: 0x73a556 });
   }
 
-  if (start <= crossing.x && end > crossing.x) group.userData.updateSignals = createCityCrossing(group);
+  if (start <= crossing.x && end > crossing.x) group.userData.updateSignals = createCityCrossing(group, kit?.Tree_Round);
   addStoneBridge(geo, start, end);
 
   const mesh = geo.mesh(paint);

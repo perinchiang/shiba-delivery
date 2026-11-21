@@ -1,5 +1,6 @@
 /** Build the exterior street and the pharmacy's separate walk-in room. Coordinates are in metres. */
 import * as THREE from 'three';
+import { placeInstances } from './kit-instances.js';
 import { RNG } from '../core/rng.js';
 import { bake, box, curve, cylinder, group, oval, rod, sign } from './shapes.js';
 import { buildBunShop, bunSteam } from './bun-shop.js';
@@ -26,24 +27,6 @@ function plant(g, x, y, z, size, flowers = false) {
     leaf.rotation.set(z1 * 2.5, 0, -x1 * 2.5);
     if (flowers && i % 2 === 0) oval(p, x1, 0.88 + (i % 3) * 0.09, z1, 0.077, 0.066, 0.072, 0xf5bc67);
   }
-}
-
-function tree(g, x, z, size, seed) {
-  const rng = new RNG(seed);
-  const p = group(g, x, 0.12, z);
-  p.scale.setScalar(size);
-  cylinder(p, 0, 0.72, 0, 0.125, 0.22, 1.5, 0x896c4e, 10);
-  const leaves = [0x72a784, 0x78ab7c, 0x8ab887, 0x649d7e, 0x99bb84];
-  for (let i = 0; i < 7; i++) {
-    const a = i * 2.4, radius = i ? rng.range(0.55, 1.05) : 0;
-    const px = Math.cos(a) * radius, pz = Math.sin(a) * radius;
-    const py = i ? rng.range(2.1, 2.75) : 2.95;
-    rod(p, [0, 1.13, 0], [px, py - 0.15, pz], 0.092, 0x896c4e, 0.048);
-    const leaf = oval(p, px, py, pz, 0.95, 0.63, 0.88, leaves[i % 5], true);
-    leaf.rotation.y = a;
-    oval(p, px + 0.31, py + 0.21, pz + 0.18, 0.55, 0.32, 0.48, leaves[(i + 1) % 5], true);
-  }
-  bake(p);
 }
 
 function windowFrame(g, x, y, z, w, h, trim, shutters = false) {
@@ -249,7 +232,7 @@ function neighbor(g, x, y, z, rabbit) {
   return n;
 }
 
-export function createStreet(steamers) {
+export function createStreet(steamers, banyan) {
   const root = new THREE.Group();
   const road = group(root);
   box(road, 12, -0.17, 2, 80, 0.33, 23, 0xaaa598);
@@ -283,7 +266,8 @@ export function createStreet(steamers) {
   // Leave clearance beyond both ends of the playable street for the longer chase boom.
   const eastTrees = group(root);
   for (const x of [-19, 49.5]) {
-    for (const z of [1.7, 5.9, 10.4]) tree(x > 0 ? eastTrees : far, x, z, 1.55, 40 + z);
+    const grove = [1.7, 5.9, 10.4].map((z, i) => [x, .12, z, i * 2.4, 1.05, 1.02, 1.05]);
+    placeInstances(x > 0 ? eastTrees : far, banyan, grove);
   }
   box(far, 13, 0.07, 8.43, 68, 0.15, 2.78, 0xd3c2a4);
   bake(far);
@@ -296,9 +280,11 @@ export function createStreet(steamers) {
     for (let k = 0; k < 3; k++) box(skyline, x + k - 1, h - 1.1, -10.71 - i % 3, 0.45, 0.75, 0.07, 0x93afa3);
   }
   bake(skyline);
-  for (const [i, x] of [-9.1, -1.56, 5.58, 12.57, 19.51, 26.5, 33.55, 40.4].entries()) {
-    tree(shopSide, x, -1.26, i === 1 ? 0.72 : 0.84 + (i % 3) * 0.08, i + 21);
-  }
+  const streetTrees = [-9.1, -1.56, 5.58, 12.57, 19.51, 26.5, 33.55, 40.4].map((x, i) => {
+    const scale = i === 1 ? .48 : .56 + (i % 3) * .05;
+    return [x, CURB_H, -1.26, i * 2.4, scale, scale, scale];
+  });
+  placeInstances(shopSide, banyan, streetTrees);
   const updateSteam = bunSteam(shopSide, bunFacade.x - 1.83, CURB_H + 1.67, -1.91);
   const cat = neighbor(shopSide, streetResident.point.x, CURB_H, streetResident.point.z - 0.40, false);
   cat.rotation.y = -0.23;

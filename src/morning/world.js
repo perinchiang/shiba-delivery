@@ -46,7 +46,7 @@ export async function createWorld(renderer) {
     o.castShadow = o.receiveShadow = true;
   });
   const rooms = { pharmacy: createPharmacy(), bakery: createBunRoom(display.scene.clone(true)) };
-  const street = createStreet(display.scene);
+  const street = createStreet(display.scene, countryKit.Tree_Round);
   const country = createCountryside(countryKit);
   bridgeBuffalo.scene.traverse(node => {
     if (node.isMesh) node.castShadow = node.receiveShadow = true;

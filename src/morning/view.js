@@ -132,7 +132,8 @@ export function createView(renderer, state, world) {
         const detailScale = nextView === 'portrait' || nextView === 'box' ? courierScale : 1;
         const h = nextView === 'inspection' ? shopReview.height : heights[nextView];
         const w = nextView === 'inspection' ? shopReview.width : widths[nextView];
-        const frameHeight = Math.max(h, Math.min(11.4, w / aspect)) * detailScale;
+        const widthFit = shopReview?.fitWidth ? w / aspect : Math.min(11.4, w / aspect);
+        const frameHeight = Math.max(h, widthFit) * detailScale;
         camera.left = -frameHeight * aspect / 2; camera.right = -camera.left;
         camera.top = frameHeight / 2; camera.bottom = -camera.top;
         camera.updateProjectionMatrix();
