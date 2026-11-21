@@ -9,6 +9,7 @@ import { createShiba, createScooter, parcel } from './rider.js';
 import { createStreet, createPharmacy, createBunRoom, STOPS, CURB_H, CURB_Z } from './town.js';
 import { beginSequence, boxFrame, doorFrame, isBoxSequence, isStandSequence, standFrame, positionParcel } from './sequence.js';
 import { frameRide, resizeRideCamera } from './ride-camera.js';
+import { phoneMap } from './phone-map.js';
 import './style.css';
 
 const $ = id => document.getElementById(id);
@@ -145,6 +146,7 @@ async function run(renderer) {
   const state = {};
   const order = () => orders[state.order];
   const phone = $('phone'), phoneToggle = $('phone-toggle');
+  const drawPhoneMap = phoneMap($('phone-map'));
   let phoneExpanded = false;
   const focus = new THREE.Vector3();
   const cameraUp = new THREE.Vector3(0, 1, 0);
@@ -454,7 +456,9 @@ async function run(renderer) {
       if (Math.abs(dx) < 1.35) return '到了，靠边停车';
       const bearing = Math.atan2(dx, clamp(state.z, rideMinZ, 5.8) - state.z);
       const angle = Math.atan2(Math.sin(bearing - state.bikeYaw), Math.cos(bearing - state.bikeYaw));
-      const turn = Math.abs(angle) < 0.24 ? '↑ 沿街直行' : (angle > 0 ? '← 向左转' : '向右转 →');
+      let turn = angle > 0 ? '← 向左转' : '向右转 →';
+      if (Math.abs(angle) < 0.24) turn = '↑ 沿街直行';
+      if (Math.abs(angle) > Math.PI * .8) turn = '↶ 沿街掉头';
       return turn + '　' + Math.ceil(Math.abs(dx)) + ' m';
     }
     if (state.sequence) return { enter: '正在进店', exit: '正在出门', pack: '正在装进保温箱', unpack: '正在取出' + order().item }[state.sequence.kind];
@@ -468,6 +472,7 @@ async function run(renderer) {
 
   function syncHUD() {
     const task = navigate(), action = availableAction();
+    drawPhoneMap(state, task.point, phoneExpanded);
     const offer = state.phase === 'offer', done = state.phase === 'done', riding = state.mode === 'ride';
     $('stage').setAttribute('aria-busy', String(!!state.sequence || state.braking));
     if (phone.dataset.phase !== state.phase) phone.dataset.phase = state.phase;

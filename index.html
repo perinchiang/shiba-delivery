@@ -31,13 +31,13 @@
       <div id="phone-shade" aria-hidden="true" hidden></div>
       <div id="phone" role="region" aria-label="骑手手机" data-expanded="false">
         <button id="phone-toggle" type="button" aria-expanded="false" aria-controls="phone-details"
-                aria-label="展开骑手手机" aria-describedby="order-kind phase goal directions">
-          <span class="phone-status"><span class="receiver" aria-hidden="true"></span><span id="order-kind">附近来单</span><span class="phone-place">· <span id="place">榕湾老街</span></span>
-            <time id="clock">07:12</time><i class="battery" aria-hidden="true"></i></span>
+                aria-label="展开骑手手机" aria-describedby="clock order-kind phase goal directions">
+          <span class="phone-status"><span class="receiver" aria-hidden="true"></span><span id="order-kind">附近来单</span>
+            <time id="clock">07:12</time><span id="phase">待接单</span><i class="battery" aria-hidden="true"></i></span>
+          <canvas id="phone-map" aria-hidden="true"></canvas>
           <span class="phone-task">
-            <span id="phase">待接单</span>
             <span class="task-heading"><strong id="goal">便民药店</strong><i class="fold-arrow" aria-hidden="true"></i></span>
-            <span id="directions">送往榕树里 3 号</span>
+            <span class="phone-guidance"><span id="directions">送往榕树里 3 号</span><span id="place">榕湾老街</span></span>
           </span>
         </button>
         <div id="phone-details" aria-hidden="true" inert>
