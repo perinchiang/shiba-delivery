@@ -1,11 +1,11 @@
 :root {
   font:15px/1.45 "PingFang SC","Microsoft YaHei",system-ui,sans-serif;
-  color:#362d26; --ink:#362d26; --cream:#fff8e8; --shell:#46392f; --yellow:#f5c751;
+  color:#362d26; --ink:#362d26; --cream:#fff8e8; --shell:#46392f; --yellow:#f7c52a;
   --edge:clamp(12px,2.6vw,32px);
   --dock-gap:max(12px,env(safe-area-inset-bottom)); --dock-left:max(var(--edge),env(safe-area-inset-left));
   --dock-right:max(var(--edge),env(safe-area-inset-right)); --phone-width:152px;
   --phone-height:min(380px,calc(100dvh - var(--dock-gap) - max(10px,env(safe-area-inset-top))));
-  --peek:90px; --lip:calc(var(--peek) + env(safe-area-inset-bottom));
+  --peek:64px; --lip:calc(var(--peek) + env(safe-area-inset-bottom));
 }
 * { box-sizing:border-box; }
 [hidden] { display:none !important; }
@@ -22,9 +22,10 @@ body { background:#d7d8c4; }
 button { pointer-events:auto; cursor:pointer; font:inherit; color:inherit; border:0; touch-action:manipulation; }
 button:focus-visible { outline:3px solid #9b5c22; outline-offset:2px; }
 kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4px; padding:3px 4px; opacity:.8; }
-#look,.interaction,.keys,#joystick,.photo-hint { position:absolute; }
-#look,.keys,.photo-hint { background:#203933ed; color:#fff5de; border-radius:14px; }
-#look { right:var(--dock-right); top:max(var(--edge),env(safe-area-inset-top)); display:flex; align-items:center; gap:6px; padding:8px 12px; font-size:12px; }
+.street-tools,.interaction,.keys,#joystick,.photo-hint { position:absolute; }
+.keys,.photo-hint { background:#203933ed; color:#fff5de; border-radius:14px; }
+.street-tools { right:var(--dock-right); top:max(var(--edge),env(safe-area-inset-top)); display:flex; gap:6px; }
+.street-tools button { background:#fffaf0ed; border:2px solid #70563f40; box-shadow:0 4px 12px #2d20141f; color:#4a3a2d; border-radius:999px; font-weight:700; min-height:44px; display:flex; align-items:center; gap:6px; padding:8px 12px; font-size:13px; }
 .photo-hint { display:none; right:var(--dock-right); top:calc(max(var(--edge),env(safe-area-inset-top)) + 44px); padding:4px 8px; font-size:11px; }
 #stage.turntable + #hud .photo-hint { display:block; }
 .keys { right:var(--dock-right); bottom:var(--dock-gap); padding:6px 11px; font-size:11px; }
@@ -39,8 +40,8 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
 #phone {
   position:absolute; z-index:2; left:var(--dock-left); bottom:var(--dock-gap);
   width:var(--phone-width); height:var(--phone-height); display:flex; flex-direction:column;
-  border:4px solid #344b43; border-radius:23px; overflow:hidden; pointer-events:auto;
-  color:var(--ink); background:#fffaf0; box-shadow:0 0 0 1px #b6c3a8, 0 3px 12px #192b234a;
+  border:4px solid #473a30; border-radius:23px; overflow:hidden; pointer-events:auto;
+  color:var(--ink); background:#fffaf0; box-shadow:0 4px 15px #39291f38;
   transform:translateY(calc(100% - var(--lip) + var(--dock-gap)));
   transition:transform .24s cubic-bezier(.2,.75,.2,1), width .24s cubic-bezier(.2,.75,.2,1), left .24s ease;
 }
@@ -56,9 +57,9 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
 /* The top edge stays in view when the rest of the handset is docked. */
 .phone-status {
   position:relative; width:100%; flex:none; height:20px; display:flex; align-items:center; gap:5px;
-  padding:0 9px; color:#2c463a; background:#faf6e8; font-size:10px; font-weight:700;
+  padding:0 9px; color:#463623; background:#f7c52a; font-size:10px; font-weight:700;
 }
-.receiver { position:absolute; top:5px; left:50%; transform:translateX(-50%); width:21px; height:6px; background:#344b43; border-radius:6px; }
+.receiver { position:absolute; top:5px; left:50%; transform:translateX(-50%); width:21px; height:6px; background:#473a30; border-radius:6px; }
 .phone-status time { order:-1; margin-right:auto; font:750 11px/1 system-ui; font-variant-numeric:tabular-nums; }
 .battery { width:10px; height:6px; border:1px solid #52684d; border-radius:2px; background:#52684d; box-shadow:inset 0 0 0 1px #faf6e8; }
 #place,.service-name,#phone[data-expanded="false"] #order-kind { display:none; }
@@ -66,15 +67,13 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
 .phone-guidance { display:flex; align-items:baseline; justify-content:space-between; gap:5px; }
 #place { color:#626956; font-size:11px; }
 #phone[data-expanded="false"] .receiver { left:44%; width:16px; }
-#phone[data-expanded="true"] .phone-status { height:24px; }
+#phone[data-expanded="true"] .phone-status { height:36px; padding-inline:15px; font-size:13px; }
 #phone[data-expanded="true"] .phone-status #phase { display:none; }
-#phone-map { width:100%; height:28px; flex:none; display:block; background:#dbe4cf; }
-#phone[data-expanded="true"] #phone-map { height:clamp(54px,9dvh,86px); }
 #phone[data-expanded="true"] #phone-toggle { height:auto; }
 #phone[data-expanded="false"] #phone-details { visibility:hidden; }
 #phone[data-expanded="false"] .phone-task { padding:2px 8px; gap:1px; justify-content:start; border:0; }
 #phone[data-expanded="false"] #goal { font-size:14px; white-space:nowrap; text-overflow:ellipsis; overflow:hidden; }
-#phone[data-expanded="false"] #directions { font-size:11px; white-space:nowrap; }
+#phone[data-expanded="false"] #order-summary { font-size:11px; white-space:nowrap; }
 #phone[data-expanded="false"] .fold-arrow { width:15px; height:15px; }
 #phone[data-expanded="false"] .fold-arrow::after { width:5px; height:5px; }
 .phone-task {
@@ -89,10 +88,10 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
 .fold-arrow { flex:none; width:24px; height:24px; border-radius:50%; background:#f1e7ce; display:grid; place-items:center; }
 .fold-arrow::after { content:""; width:7px; height:7px; border:solid #5d4b37; border-width:2px 2px 0 0; transform:translateY(2px) rotate(-45deg); }
 #phone[data-expanded="true"] .fold-arrow::after { transform:translateY(-2px) rotate(135deg); }
-#directions { color:#38644e; font-size:13px; line-height:1.35; font-weight:680; font-variant-numeric:tabular-nums; }
+#order-summary { color:#38644e; font-size:13px; line-height:1.35; font-weight:680; font-variant-numeric:tabular-nums; }
 #phone-details { display:flex; flex-direction:column; flex:1; min-height:0; }
 .phone-scroll { flex:1; min-height:0; padding:10px 12px 0; overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; }
-#order-screen,#receipt { background:#fffdf8; border:1px solid #dfd4bf; border-radius:13px; padding:9px 13px; }
+#order-screen,#receipt { background:#fffefd; border:2px solid #ebe1cf; border-radius:18px; padding:10px 13px; }
 .order-pay,dl div { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
 .order-pay { font-size:12px; font-weight:700; }
 .order-pay strong,.net dd { color:#286a4c; font:750 20px/1.2 system-ui; }
@@ -102,7 +101,7 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
 .stops i { display:grid; place-items:center; flex:none; width:21px; height:21px; color:#743f16; background:#f6d7a8; border-radius:6px; font-size:11px; font-weight:800; font-style:normal; }
 .stops li + li i { color:#27543f; background:#cce1cf; }
 .stops strong { font-size:14px; } .stops small { display:block; color:#726656; font-size:11px; }
-.note { margin:6px 0 0; color:#695c4b; font-size:12px; }
+.note { margin:6px 0 0; padding:6px 8px; border-radius:8px; background:#f7f2e8; color:#695c4b; font-size:12px; }
 .phone-footer { flex:none; padding:6px 12px; }
 #phone-main,#replay { width:100%; min-height:39px; padding:6px; border:2px solid #5b4630; border-radius:11px; background:var(--yellow); font-weight:750; }
 #phone-main:focus-visible,#replay:focus-visible { outline-width:2px; outline-offset:1px; }
@@ -112,7 +111,6 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
 #loading,noscript { position:absolute; inset:44% 10% auto; text-align:center; }
 .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
 @media(max-height:480px) {
-  #phone[data-expanded="true"] #phone-map { height:48px; }
   .phone-task { padding-block:5px; gap:1px; }
   .phone-scroll { padding-top:6px; }
   #order-screen,#receipt { padding-block:6px; }
@@ -179,3 +177,27 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
 #scene-debug button { min-height:44px; border-radius:7px; background:#f9edd2; color:#29473b; }
 
 #switch-order { margin:3px 0; padding:5px 10px; border-radius:7px; background:#e1ecde; color:#285747; font-size:12px; }
+
+#directions {
+  position:absolute; top:calc(max(var(--edge),env(safe-area-inset-top)) + 50px); left:var(--dock-left);
+  padding:6px 13px; border:2px solid #eab339aa; border-radius:999px; background:#fffaf0f5; color:#423326;
+  box-shadow:0 2px 8px #26392e25; font-size:14px; font-weight:750;
+}
+#street-map {
+  width:min(780px,calc(100% - max(20px,env(safe-area-inset-left)) - max(20px,env(safe-area-inset-right))));
+  height:min(540px,calc(100dvh - max(10px,env(safe-area-inset-top)) - max(10px,env(safe-area-inset-bottom))));
+  padding:0; border:3px solid #564638; color:#443628; border-radius:18px;
+  background:#fbf8eb; box-shadow:0 12px 44px #142a3459;
+}
+#street-map[open] { display:grid; grid-template-rows:auto minmax(0,1fr) auto; }
+#street-map::backdrop { background:#15272680; }
+#street-map header,#street-map footer { padding:10px 16px; }
+#street-map header { background:#f7c52a; display:flex; align-items:center; justify-content:space-between; }
+#street-map h2 { margin:0; font-size:21px; letter-spacing:.04em; }
+#map-close { min-height:44px; border-radius:999px; padding:0 12px; background:#fff6dbcc; color:inherit; }
+#street-plan { width:100%; height:100%; min-height:0; display:block; background-color:#e6ebd8; background-image:linear-gradient(#bccdbd66 1px,transparent 1px),linear-gradient(90deg,#bccdbd66 1px,transparent 1px); background-size:22px 22px; }
+.map-stops,.map-stops span { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+.map-stops { gap:8px 20px; font-weight:650; }
+.map-stops b { font-size:12px; border-radius:5px; padding:2px 5px; color:#794623; background:#f5d6a8; }
+.map-stops span+span b { color:#27543f; background:#cce1cf; }
+#map-location { margin:5px 0 0; font-size:12px; color:#556358; }

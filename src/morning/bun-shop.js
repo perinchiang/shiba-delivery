@@ -30,7 +30,6 @@ export function buildBunShop(p, steamers) {
   box(p, 1.90, .055, -3.5, 1.52, .11, 2.6, 0xb48c64);
   for (const x of [-3.27, 3.27]) box(p, x, 1.52, -2.84, 0.4, 3.04, 1.6, plaster);
   box(p, 0, 0.08, -2.28, 6.6, 0.16, 2.05, 0xc29565);
-  box(p, 0, 2.84, -2.31, 6.75, 0.15, 1.84, timber);
   for (const x of [-2.85, 0.98, 2.84]) box(p, x, 1.41, -1.94, 0.15, 2.82, 0.2, timber);
   // A band of square glazed tiles catches the light below the cutting board.
   box(p, -0.94, 0.48, -1.97, 3.82, 0.96, 0.96, 0xdccfaf);

@@ -17,7 +17,9 @@
           <div role="group" aria-label="选择测试地点"></div>
         </details>
         <div id="keys" class="keys">W/S 油门与刹车　 A/D 转向　 E 互动</div>
-        <button id="look" type="button" aria-pressed="false"><kbd>V</kbd><span>近看阿柴</span></button>
+        <div class="street-tools"><button id="map-open" type="button" aria-haspopup="dialog" aria-controls="street-map"><kbd>M</kbd>地图</button>
+        <button id="look" type="button" aria-pressed="false"><kbd>V</kbd><span>近看阿柴</span></button></div>
+        <span id="directions" hidden></span>
         <span class="photo-hint">左右拖动看车身</span>
         <div id="joystick" role="group" aria-label="移动摇杆" aria-disabled="true">
           <span class="stick-guides" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
@@ -31,13 +33,12 @@
       <div id="phone-shade" aria-hidden="true" hidden></div>
       <div id="phone" role="region" aria-label="骑手手机" data-expanded="false">
         <button id="phone-toggle" type="button" aria-expanded="false" aria-controls="phone-details"
-                aria-label="展开骑手手机" aria-describedby="clock order-kind phase goal directions">
+                aria-label="展开骑手手机" aria-describedby="clock order-kind phase goal order-summary">
           <span class="phone-status"><span class="receiver" aria-hidden="true"></span><span id="order-kind">附近来单</span>
             <time id="clock">07:12</time><span id="phase">待接单</span><i class="battery" aria-hidden="true"></i></span>
-          <canvas id="phone-map" aria-hidden="true"></canvas>
           <span class="phone-task">
             <span class="task-heading"><strong id="goal">便民药店</strong><i class="fold-arrow" aria-hidden="true"></i></span>
-            <span class="phone-guidance"><span id="directions">送往榕树里 3 号</span><span id="place">榕湾老街</span></span>
+            <span class="phone-guidance"><span id="order-summary">送往榕树里 3 号</span><span id="place">榕湾老街</span></span>
           </span>
         </button>
         <div id="phone-details" aria-hidden="true" inert>
@@ -66,6 +67,11 @@
         </div>
       </div>
     </div>
+    <dialog id="street-map" aria-labelledby="map-title">
+      <header><h2 id="map-title">榕湾老街</h2><button type="button" id="map-close" aria-label="关闭地图">关闭 ×</button></header>
+      <canvas id="street-plan" aria-label="老街平面图，显示阿柴与取送点"></canvas>
+      <footer><div class="map-stops"><span><b>取</b><strong id="map-pickup"></strong></span><span><b>送</b>榕树里 3 号</span></div><p id="map-location"></p></footer>
+    </dialog>
     <p id="loading" role="status">正在打开榕湾老街…</p>
     <p id="announcement" class="sr" aria-live="polite"></p>
     <noscript>请开启 JavaScript 后试玩。</noscript>

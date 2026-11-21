@@ -98,6 +98,14 @@ try {
   }
 
   await shot('01-street');
+  await page.keyboard.press('m');
+  const map = page.getByRole('dialog', { name: '榕湾老街' });
+  await map.waitFor();
+  assert.equal(await map.locator('#map-pickup').textContent(), '便民药店');
+  await page.keyboard.press('q');
+  assert.equal(await page.locator('#phone-toggle').getAttribute('aria-expanded'), 'false');
+  await page.keyboard.press('Escape');
+  await map.waitFor({ state: 'hidden' });
   await page.keyboard.press('v');
   await page.locator('#look[aria-pressed="true"]').waitFor();
   await shot('02-shiba');
@@ -158,7 +166,7 @@ try {
   await walkTo('递给猫婆婆');
   await interact('递给猫婆婆');
   await interact('确认签收');
-  assert.equal(await task.locator('#directions').innerText(), '实际到账 ¥0.10');
+  assert.equal(await task.locator('#order-summary').innerText(), '实际到账 ¥0.10');
   await task.click();
   await phone.waitFor();
   assert.deepEqual(await phone.locator('dd').allTextContents(), ['+ ¥3.10', '− ¥3.00', '¥0.10']);
@@ -241,6 +249,10 @@ try {
     await jump('包子铺门面');
     await jump('包子铺蒸笼');
     await jump('包子铺柜台');
+    await mobile.locator('#map-open').tap();
+    assert.match(await mobile.locator('#map-location').innerText(), /包子铺内堂/);
+    assert.equal(await mobile.locator('#map-pickup').innerText(), '榕记包子铺');
+    await mobile.locator('#map-close').tap();
     await mobile.getByRole('button', { name: '找师傅取餐' }).tap();
     await mobile.getByRole('button', { name: '接过包子' }).tap();
     assert.equal(await mobile.locator('#phone').getAttribute('data-phase'), 'delivery');

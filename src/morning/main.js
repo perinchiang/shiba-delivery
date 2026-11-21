@@ -9,7 +9,7 @@ import { createShiba, createScooter, parcel } from './rider.js';
 import { createStreet, createPharmacy, createBunRoom, STOPS, CURB_H, CURB_Z } from './town.js';
 import { beginSequence, boxFrame, doorFrame, isBoxSequence, isStandSequence, standFrame, positionParcel } from './sequence.js';
 import { frameRide, resizeRideCamera } from './ride-camera.js';
-import { phoneMap } from './phone-map.js';
+import { drawStreetMap } from './street-map.js';
 import './style.css';
 
 const $ = id => document.getElementById(id);
@@ -146,7 +146,26 @@ async function run(renderer) {
   const state = {};
   const order = () => orders[state.order];
   const phone = $('phone'), phoneToggle = $('phone-toggle');
-  const drawPhoneMap = phoneMap($('phone-map'));
+  const map = $('street-map');
+  function paintMap() {
+    if (!map.open) return;
+    drawStreetMap($('street-plan'), state, order().door, navigate().point);
+  }
+  new ResizeObserver(paintMap).observe($('street-plan'));
+  function openMap() {
+    if (map.open || phoneExpanded || state.sequence || state.dialog || state.braking) return;
+    debug.open = false;
+    state.speed = 0;
+    releaseStick();
+    input.clearVirtual();
+    map.showModal();
+    write('map-pickup', order().name);
+    const where = state.mode === 'shop' ? order().place : '榕湾老街';
+    write('map-location', '当前位置 · ' + where + '　　目标 · ' + navigate().name);
+    paintMap();
+  }
+  $('map-open').addEventListener('click', openMap);
+  $('map-close').addEventListener('click', () => map.close());
   let phoneExpanded = false;
   const focus = new THREE.Vector3();
   const cameraUp = new THREE.Vector3(0, 1, 0);
@@ -176,7 +195,7 @@ async function run(renderer) {
   });
   stage.addEventListener('lostpointercapture', () => { dragX = undefined; });
   function look() {
-    if (!state.dialog && !state.sequence && !phoneExpanded) {
+    if (!state.dialog && !state.sequence && !phoneExpanded && !map.open) {
       shopReview = '';
       setCloseUp(!closeUp);
     }
@@ -335,7 +354,7 @@ async function run(renderer) {
   });
   $('replay').addEventListener('click', () => { setPhoneExpanded(false); reset(); syncHUD(); });
   function perform() {
-    if (phoneExpanded) return;
+    if (phoneExpanded || map.open) return;
     const action = availableAction();
     if (!action) return;
     shopReview = '';
@@ -399,6 +418,10 @@ async function run(renderer) {
     }, true);
   }
   window.addEventListener('keydown', e => {
+    if (map.open) {
+      if (e.code === 'KeyM' && !e.repeat) { e.preventDefault(); map.close(); }
+      return;
+    }
     if (debug.contains(e.target) && ['Tab', 'Enter', 'Space', 'Escape'].includes(e.code)) {
       if (e.code === 'Escape') {
         debug.open = false;
@@ -407,6 +430,7 @@ async function run(renderer) {
       return;
     }
     if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.code === 'KeyM') { e.preventDefault(); openMap(); return; }
     if (e.code === 'KeyQ' || (e.code === 'Tab' && !phoneExpanded && !e.shiftKey && e.target.tagName !== 'BUTTON')) {
       e.preventDefault();
       setPhoneExpanded(!phoneExpanded);
@@ -472,7 +496,6 @@ async function run(renderer) {
 
   function syncHUD() {
     const task = navigate(), action = availableAction();
-    drawPhoneMap(state, task.point, phoneExpanded);
     const offer = state.phase === 'offer', done = state.phase === 'done', riding = state.mode === 'ride';
     $('stage').setAttribute('aria-busy', String(!!state.sequence || state.braking));
     if (phone.dataset.phase !== state.phase) phone.dataset.phase = state.phase;
@@ -484,7 +507,11 @@ async function run(renderer) {
     write('order-note', state.order === 'buns' ? '备注　鲜肉包一份，请趁热送到。' : '备注　药袋请当面交给猫婆婆。');
     write('phase', { offer: '待接单', pickup: state.order === 'buns' ? '去取餐' : '去取件', delivery: '去送达', done: '已签收' }[state.phase]);
     write('goal', done ? '猫婆婆已签收' : task.name);
-    write('directions', offer ? '送往榕树里 3 号' : done ? '实际到账 ¥0.10' : guidance(task, action));
+    const hint = offer || done ? '' : guidance(task, action);
+    write('directions', hint);
+    $('directions').hidden = !riding || !hint || hint.startsWith('↑') || !!state.sequence || state.braking || phoneExpanded;
+    $('map-open').disabled = !!state.dialog || !!state.sequence || state.braking;
+    write('order-summary', done ? '实际到账 ¥0.10' : '送往榕树里 3 号');
     write('place', state.mode === 'shop' ? order().place : '榕湾老街');
     write('clock', { offer: '07:12', pickup: '07:14', delivery: '07:20', done: '07:24' }[state.phase]);
     $('action').hidden = !action || action === 'phone' || action === 'statement' || phoneExpanded;
@@ -541,7 +568,7 @@ async function run(renderer) {
       stride += travel * 5.4;
       return;
     }
-    if (state.phase === 'offer' || state.phase === 'done' || state.dialog || phoneExpanded) return;
+    if (state.phase === 'offer' || state.phase === 'done' || state.dialog || phoneExpanded || map.open) return;
     const dx = input.axis('left', 'right'), dz = input.axis('up', 'down');
     if (dx || dz) shopReview = '';
     if (closeUp && (dx || dz)) setCloseUp(false);
