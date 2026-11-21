@@ -335,53 +335,123 @@ def build_rice_clump(name, seed, height, blade_count, panicle_count, palette):
 
 # Rounded broadleaf trees share a short fluted trunk and overlapping leaf fans.
 def hardwood_trunk(b, scale):
+    """Grow the boughs out of openings in the trunk's own bark surface."""
+    sides = 64
+    heights = [-.12, 0, .09, .18, .28] + [.38 + i * .10 for i in range(32)]
+    profile = [(-.12, .43, .42, 0), (.18, .42, .26, 0), (.48, .40, .095, .02),
+               (1, .39, .04, .07), (1.65, .35, .025, .035), (2.48, .30, .012, -.08),
+               (3.50, .19, 0, -.23)]
+    # Angular column, height row, half-width in columns, half-height in rows,
+    # reach, final height. The forks emerge at unequal heights around the stem.
+    forks = [(3, 18, 7, 4, 1.11, 3.15), (26, 23, 6, 4, 1.08, 3.28),
+             (45, 25, 5, 3, .96, 3.04)]
+    knots = [(1.55, .87, .31, .27), (3.74, 1.38, .25, .24), (5.63, .71, .27, .18)]
+
+    def bark(a, z):
+        # Broad grain bends around a few inset knot eyes. Colour and relief
+        # use the same field, like a shallow gouge with a sunlit shoulder.
+        bend = .13 * math.sin(1.9*z + a) + .07 * math.sin(3.7*z - 2*a)
+        eye = 0
+        for angle, height, width, length in knots:
+            dz = (z - height) / length
+            da = math.remainder(a - angle - .11*dz, TAU) / width
+            d = math.hypot(da, dz)
+            if d < 2.7:
+                bend += .22 * da * math.exp(-.70*d*d)
+                eye += .48 * math.exp(-((d - .92) / .21)**2) + .48 * math.exp(-8*d*d)
+        phase = a + bend
+        groove = (.5 + .5*math.cos(9*phase + .9*math.sin(3*phase)))**4
+        groove *= .38 + .62*(.5 + .5*math.sin(2.8*z + 5*a))
+        broad = math.sin(5*phase + .6*z)
+        # Short tapered bark furrows; some split into a second, shorter
+        # stroke. Restrict these accents to intervals between root and crown.
+        cut = 0
+        lip = 0
+        for start, middle, length in [(.5, 1.45, .58), (1.99, .93, .60),
+                                      (2.31, 1.38, .35), (3.7, .68, .47),
+                                      (4.76, 1.85, .58), (5.35, 1.15, .36)]:
+            v = (z-middle)/length
+            if abs(v) < 1:
+                taper = 1-v*v
+                u = math.remainder(a - start - .16*v - .12*v*v, TAU)
+                width = .065 + .055*taper
+                cut += taper * math.exp(-(u/width)**2)
+                lip += taper * math.exp(-((u-width)/width)**2)
+        tone = .65 + .16*broad - .52*groove - eye - .48*cut + .20*lip
+        return lerp_hex(0x855638, 0xdfae78, tone), .012*broad - .015*groove - .012*eye - .012*cut
+
+    # Slightly round the corners of each branch opening on the cylinder.
     rings = []
-    profile = [
-            (-.12, .43, .42, 0), (.12, .43, .28, 0), (.43, .40, .12, .02),
-            (.92, .39, .042, .065), (1.56, .34, .025, .04), (2.50, .27, .01, -.12),
-            (3.30, .19, 0, -.19)]
-    for z, radius, flare, shift in profile:
+    for row, z in enumerate(heights):
+        section = next(i for i in range(len(profile)-1) if z <= profile[i+1][0])
+        lo, hi = profile[section:section+2]
+        t = (z-lo[0]) / (hi[0]-lo[0])
+        radius, flare, shift = [lo[k] + t*(hi[k]-lo[k]) for k in (1, 2, 3)]
         ring = []
-        for i in range(30):
-            a = TAU * i / 30
-            ridge = (.5 + .5 * math.cos(5 * a + .31 * z + .35 * math.sin(2 * a))) ** 2
-            r = scale * (radius + flare * ridge)
-            bark = lerp_hex(0x996744, 0xc09564, .15 + .55 * ridge + .12 * math.sin(2 * a))
-            ring.append(b.add_vert((shift + r * math.cos(a), r * math.sin(a), z), bark))
-        if rings:
-            for i in range(30):
-                j = (i + 1) % 30
-                b.add_face((rings[-1][i], rings[-1][j], ring[j], ring[i]))
+        for col in range(sides):
+            a, h = TAU * col / sides, z
+            inside = False
+            for c, r, w, n, _, _ in forks:
+                u = ((col-c + sides//2) % sides - sides//2) / w
+                v = (row-r) / n
+                if abs(u) < 1 and abs(v) < 1:
+                    inside = True
+                    break
+                extent = max(abs(u), abs(v))
+                if extent < 1.65:
+                    rounding = max(0, 1 - (extent-1)/.65) * .23 * min(abs(u*v), 1)
+                    a -= rounding * u * w * TAU/sides
+                    h -= rounding * v * n * .10
+            if inside:
+                ring.append(None)
+                continue
+            color, relief = bark(a, h)
+            root = (.5 + .5*math.cos(5*a + .31*h + .35*math.sin(2*a)))**2
+            rad = scale * (radius + flare*root + relief)
+            ring.append(b.add_vert((shift + rad*math.cos(a), rad*math.sin(a), h), color))
         rings.append(ring)
+
+    for row in range(len(heights)-1):
+        for col in range(sides):
+            j = (col+1) % sides
+            face = (rings[row][col], rings[row][j], rings[row+1][j], rings[row+1][col])
+            if None not in face:
+                b.add_face(face)
+    b.add_face(tuple(reversed(rings[0])), False)
     b.add_face(rings[-1])
 
-    # Small knot eyes follow the taper of the trunk. Keep their contrast low
-    # so the wood grain disappears naturally at riding distance.
-    def bark_point(a, z):
-        lower = max(i for i, ring in enumerate(profile) if ring[0] <= z)
-        lo, hi = profile[lower], profile[lower + 1]
-        t = (z - lo[0]) / (hi[0] - lo[0])
-        radius, flare, shift = [lo[k] + (hi[k] - lo[k]) * t for k in (1, 2, 3)]
-        ridge = (.5 + .5 * math.cos(5 * a + .31 * z + .35 * math.sin(2 * a))) ** 2
-        r = scale * (radius + flare * ridge) + .009
-        return (shift + r * math.cos(a), r * math.sin(a), z)
-
-    for angle, height, size in [(.62, 1.16, 1), (2.52, .81, .67), (4.77, 1.27, .83)]:
-        loops = []
-        for width, color in [(1, 0xb08359), (.74, 0x946d4c), (.47, 0xb48a5e)]:
-            loop = []
-            for i in range(14):
-                t = TAU * i / 14
-                dz = size * width * .23 * math.sin(t)
-                a = angle + .58 * dz + .29 * size * width * math.cos(t) * (1 - .32 * math.sin(t))
-                loop.append(b.add_vert(bark_point(a, height + dz), color))
-            if loops:
-                for i in range(14):
-                    j = (i + 1) % 14
-                    b.add_face((loops[-1][i], loops[-1][j], loop[j], loop[i]))
-            loops.append(loop)
-        b.add_face(loops[-1])
-
+    for c, row, w, n, reach, top in forks:
+        # Walk the perimeter once. Every point on it is shared by the trunk
+        # and the first collar ring, so light flows across a watertight fork.
+        rim = ([(i, -n) for i in range(-w, w)] + [(w, j) for j in range(-n, n)]
+               + [(i, n) for i in range(w, -w, -1)] + [(-w, j) for j in range(n, -n, -1)])
+        boundary = [rings[row+j][(c+i) % sides] for i, j in rim]
+        angle = TAU * c / sides
+        radial = Vector((math.cos(angle), math.sin(angle), 0))
+        lateral = Vector((-radial.y, radial.x, 0))
+        up = Vector((0, 0, 1))
+        base = sum((Vector(b.verts[v]) for v in boundary), Vector()) / len(boundary)
+        tip = radial * (reach*scale) + up*top
+        original_colors = [b.vcols[v] for v in boundary]
+        previous = boundary
+        for t, radius in [(.14, .235), (.34, .195), (.59, .153), (.82, .115), (1, .075)]:
+            center = base.lerp(tip, t) - up * (.21 * math.sin(math.pi*t))
+            axis = (tip - base - up*(.21*math.pi*math.cos(math.pi*t))).normalized()
+            across = axis.cross(lateral).normalized()
+            ring = []
+            for k, (i, j) in enumerate(rim):
+                a = math.atan2(j/n, i/w)
+                circ = lateral*math.cos(a) + across*math.sin(a)
+                offset = (Vector(b.verts[boundary[k]]) - base).lerp(circ*radius, min(1, t/.42))
+                grain, _ = bark(a + .08*t, center.z)
+                mix = min(1, t/.7)
+                color = tuple((1-mix)*x + mix*y for x,y in zip(original_colors[k], grain))
+                ring.append(b.add_vert(center + offset, color))
+            for k in range(len(ring)):
+                j = (k+1) % len(ring)
+                b.add_face((previous[k], previous[j], ring[j], ring[k]))
+            previous = ring
+        b.add_face(previous)
 
 
 def leaf_crown(b, center, size, seed):
@@ -450,9 +520,6 @@ def build_hardwood(name, riverbank=False):
             (.25, 1.11, 3.15, 1.32), (2.51, 1.08, 3.28, 1.39), (4.45, .96, 3.04, 1.24)]):
         x = math.cos(angle) * reach * spread
         y = math.sin(angle) * reach * spread
-        b.add_tube([(.015, 0, 1.65 + i * .13), (x * .59, y * .59, z - .78),
-                    (x * .94, y * .94, z - .37), (x, y, z)],
-                   [.23, .18, .13, .09], [0xaa8057, 0xb3895d, 0xb88d60, 0xae8559], sides=10)
         leaf_crown(b, (x, y, z), (radius * spread, radius * 1.03, 1.0), 37 + 17 * i)
     leaf_crown(b, (-.16, .13, 4.10), (1.53 * spread, 1.45, 1.23), 68)
     return b.build_object()
