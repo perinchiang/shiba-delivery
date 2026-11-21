@@ -1,11 +1,12 @@
 // Scheme A Stylized 3D Rice Paddies:
 // - Zone 1 (x = 196..570 & 956..1068): Open airy green-gold water paddies with glinting irrigation channels.
 // - Zone 2 (x = 570..892): Helmet-high golden ripe rice corridor hugging the road, with GPU rider slipstream wake.
-// Zero 2D alpha-cutout cards: all foreground clumps are sculpted solid-3D Blender meshes (countryside-kit.glb).
+// The bridge bend has its own painted sheaves and continuous field surface.
 import * as THREE from 'three';
 import { GeoBuilder } from '../core/geo.js';
 import { litMaterial } from '../core/materials.js';
 import { rngFrom } from '../core/rng.js';
+import { addHarvest, harvestSheaves, harvestStart, harvestEnd, harvestWeight, inHarvest } from './harvest-field.js';
 import { centerZ, halfWidth } from './country-route.js';
 
 export const fieldStart = 196;
@@ -43,7 +44,7 @@ export function updatePaddyEnv(time, state) {
 const canopyMaterial = litMaterial({ vertexColors: true, grid: false, roughness: 0.92 });
 const clumpMaterial = litMaterial({ vertexColors: true, grid: false, roughness: 0.88 });
 
-function patchPaddyWind(surface, isClump) {
+function patchPaddyWind(surface, isClump, painted = false) {
   const worldLighting = surface.onBeforeCompile;
   surface.onBeforeCompile = (shader, renderer) => {
     worldLighting(shader, renderer);
@@ -120,6 +121,10 @@ function patchPaddyWind(surface, isClump) {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\n' + common)
       .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
+        ${painted ? `
+          float fold = .5 + .5 * sin(vPaddy.x*.19 + vPaddy.y*.47 + .9*sin(vPaddy.x*.072));
+          diffuseColor.rgb *= mix(vec3(.75,.79,.64), vec3(1.11,1.08,.92), smoothstep(.12,.90,fold));
+        ` : ''}
         float wave = smoothstep(-0.62, 0.85, paddyGust(vPaddy));
         vec3 shadeTint = vec3(0.84, 0.90, 0.82);
         vec3 sunTint   = vec3(1.16, 1.11, 0.92);
@@ -135,8 +140,13 @@ function patchPaddyWind(surface, isClump) {
                         * cos(vPaddy.y * 1.5 - sin(vPaddy.x * 1.1));
           diffuseColor.rgb *= mix(0.88, 1.06, swell * 0.65 + tuftTex * 0.35);
         `}`);
+    if (painted) {
+      // Each side of a folded panel represents a canopy catching sunlight from above.
+      shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_begin>',
+        '#include <normal_fragment_begin>\n normal *= faceDirection;');
+    }
   };
-  surface.customProgramCacheKey = () => isClump ? 'rongwan-paddy-clump-v3' : 'rongwan-paddy-canopy-v3';
+  surface.customProgramCacheKey = () => painted ? 'rongwan-painted-sheaf' : isClump ? 'rongwan-paddy-clump-v3' : 'rongwan-paddy-canopy-v3';
 }
 
 patchPaddyWind(canopyMaterial, false);
@@ -183,6 +193,7 @@ function addZone(group, ground, crowns, tallA, tallB, lowList, from, to, rng) {
 
   for (let x = from; x < to; x += 2) {
     const nx = Math.min(x + 2, to);
+    if (inHarvest(x)) continue;
     const xm = (x + nx) * 0.5;
     const tw = tallWeight(xm);
     const twN = tallWeight(nx);
@@ -285,7 +296,11 @@ function addZone(group, ground, crowns, tallA, tallB, lowList, from, to, rng) {
             const syScale = ramp * frontBoost * rng.range(0.94, 1.16);
             const sxScale = rng.range(1.06, 1.28);
             const target = ((Math.floor(x * 3) + r + (side > 0 ? 1 : 0)) % 2 === 0) ? tallA : tallB;
-            target.push([px, sy, pz, sxScale, syScale, rot]);
+            const blend = harvestWeight(px);
+            if (blend === 0 || (blend < 1 && rng.fork(px * 907 + r).next() > blend)) {
+              const scale = 1 - .48 * blend;
+              target.push([px, sy, pz, sxScale * scale, syScale * scale, rot]);
+            }
           } else {
             const syScale = rng.range(0.90, 1.14);
             const sxScale = rng.range(1.02, 1.24);
@@ -298,9 +313,9 @@ function addZone(group, ground, crowns, tallA, tallB, lowList, from, to, rng) {
   }
 }
 
-function addInstancedClumps(group, geometry, list) {
+function addInstancedClumps(group, geometry, list, material = clumpMaterial) {
   if (!geometry || !list.length) return;
-  const mesh = new THREE.InstancedMesh(geometry, clumpMaterial, list.length);
+  const mesh = new THREE.InstancedMesh(geometry, material, list.length);
   const dummy = new THREE.Object3D();
   for (let i = 0; i < list.length; i++) {
     const [x, y, z, sx, sy, rot] = list[i];
@@ -316,6 +331,8 @@ function addInstancedClumps(group, geometry, list) {
   group.add(mesh);
 }
 
+let sheaves;
+
 export function addPaddies(group, ground, start, end, kit) {
   const crowns = new GeoBuilder();
   const tallA = [], tallB = [], lowList = [];
@@ -328,6 +345,15 @@ export function addPaddies(group, ground, start, end, kit) {
   // East of river: Open water-paddy welcoming into Rongshu Village (956..1068)
   addZone(group, ground, crowns, tallA, tallB, lowList,
     Math.max(eastFieldStart, start), Math.min(eastFieldEnd, end), rng);
+
+  if (start < harvestEnd && end > harvestStart) {
+    if (!sheaves) {
+      sheaves = harvestSheaves();
+      patchPaddyWind(sheaves.material, true, true);
+    }
+    const plants = addHarvest(ground, crowns, Math.max(start, harvestStart), Math.min(end, harvestEnd));
+    addInstancedClumps(group, sheaves.geometry, plants, sheaves.material);
+  }
 
   if (!crowns.empty) {
     const canopyMesh = crowns.mesh(canopyMaterial);

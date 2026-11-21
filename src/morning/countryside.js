@@ -13,6 +13,9 @@ import { addPaddies, fieldEnd, fieldStart, eastFieldStart, eastFieldEnd, updateP
 import { buildCountryRoad } from './country-road.js';
 import { createRiverWater } from './country-water.js';
 
+import { harvestWeight, inHarvest } from './harvest-field.js';
+import skyStripUrl from '../../art/countryside/harvest-sky.jpg?url';
+
 const paint = litMaterial({ vertexColors: true, grid: false, roughness: 0.90 });
 // Upgraded cozy village cottage: fixes the degenerate-quad black gable bug, adds warm eaves,
 // shutters, stone plinths and low garden walls so cottages feel grounded like Old Street.
@@ -298,12 +301,13 @@ function buildChunk(start, end, kit) {
     for (const side of [-1, 1]) {
       if (!rng.chance(0.72)) continue;
       const px = x + rng.range(-0.9, 0.9);
-      const lat = halfWidth(px) + rng.range(0.32, 1.15);
+      const field = harvestWeight(px);
+      const lat = halfWidth(px) + rng.range(0.32, 1.15) + field * 1.2;
       const pz = centerZ(px) + side * lat;
       const py = roadHeight(px) - 0.03;
-      const sc = rng.range(0.85, 1.32);
+      const sc = rng.range(0.85, 1.32) * (1 - .42 * field);
       const target = rng.chance(0.36) ? flowers : tufts;
-      target.push([px, py, pz, rng.range(0, Math.PI * 2), sc, sc * rng.range(0.85, 1.2), sc, 0xffffff]);
+      target.push([px, py - field * .10, pz, rng.range(0, Math.PI * 2), sc, sc * rng.range(0.85, 1.2), sc, 0xffffff]);
     }
   }
 
@@ -312,6 +316,7 @@ function buildChunk(start, end, kit) {
     if (x < 152 || x > 1140 || (x >= 886 && x <= 956) || Math.abs(x - crossing.x) < 34) continue;
     for (const side of [-1, 1]) {
       const z = centerZ(x) + side * (halfWidth(x) + 0.52);
+      if (inHarvest(x) && (Math.floor(x / 18) + (side > 0 ? 1 : 0)) % 3 !== 0) continue;
       bollards.push([x, roadHeight(x) - 0.02, z, roadYaw(x), 1, 1, 1, 0xffffff]);
     }
   }
@@ -463,10 +468,16 @@ function buildChunk(start, end, kit) {
 function createSkyAndClouds() {
   const skyRoot = new THREE.Group();
 
+  const strip = new THREE.TextureLoader().load(skyStripUrl);
+  strip.colorSpace = THREE.SRGBColorSpace;
+  strip.wrapS = THREE.RepeatWrapping;
+  const harvestLight = { value: 0 };
+  const drift = { value: 0 };
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
     uniforms: {
+      harvestLight, skyStrip: {value: strip}, drift,
       zenith: { value: new THREE.Color(0x4b9cd6) },
       midSky: { value: new THREE.Color(0x9bd4eb) },
       horizon: { value: new THREE.Color(0xfff0d2) },
@@ -480,6 +491,8 @@ function createSkyAndClouds() {
       }`,
     fragmentShader: /* glsl */ `
       varying vec3 vDir;
+      uniform float harvestLight, drift;
+      uniform sampler2D skyStrip;
       uniform vec3 zenith, midSky, horizon;
       void main() {
         vec3 dir = normalize(vDir);
@@ -496,6 +509,8 @@ function createSkyAndClouds() {
 
         // 3 sweeping clean atmospheric mountain ridge layers (replaces ugly giant icosahedron domes!)
         float az = atan(dir.z, dir.x);
+        vec2 skyUV = vec2(az / 6.2831853 + .5 + drift, clamp(h/.70,0.,1.));
+        col = mix(col, texture2D(skyStrip, skyUV).rgb, harvestLight);
         float farRidge  = 0.088 + 0.038 * sin(2.0 * az + 0.5) + 0.022 * cos(5.0 * az - 1.1) + 0.011 * sin(11.0 * az);
         float midRidge  = 0.056 + 0.026 * cos(3.0 * az + 1.3) + 0.017 * sin(7.0 * az + 0.4) + 0.007 * cos(13.0 * az);
         float nearRidge = 0.026 + 0.015 * sin(4.0 * az - 0.8) + 0.009 * cos(9.0 * az + 1.7);
@@ -509,9 +524,9 @@ function createSkyAndClouds() {
         vec3 midCol  = mix(vec3(0.46, 0.68, 0.69), vec3(0.62, 0.75, 0.68), pow(sun, 3.0) * 0.35);
         vec3 nearCol = mix(vec3(0.36, 0.59, 0.53), vec3(0.48, 0.67, 0.52), pow(sun, 3.0) * 0.28);
 
-        col = mix(col, farCol, farMask * 0.82);
-        col = mix(col, midCol, midMask * 0.90);
-        col = mix(col, nearCol, nearMask * 0.94);
+        col = mix(col, farCol, farMask * (1.0 - .39 * harvestLight) * 0.82);
+        col = mix(col, midCol, midMask * (1.0 - .39 * harvestLight) * 0.90);
+        col = mix(col, nearCol, nearMask * (1.0 - .39 * harvestLight) * 0.94);
 
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
@@ -528,7 +543,9 @@ function createSkyAndClouds() {
   const cloudMat = new THREE.ShaderMaterial({
     depthWrite: false,
     fog: false,
+    transparent: true,
     uniforms: {
+      harvestLight,
       uSunDir: { value: new THREE.Vector3(0.93, 0.28, -0.34).normalize() },
     },
     vertexShader: /* glsl */ `
@@ -544,6 +561,7 @@ function createSkyAndClouds() {
         gl_Position = projectionMatrix * viewMatrix * worldMat * vec4(position, 1.0);
       }`,
     fragmentShader: /* glsl */ `
+      uniform float harvestLight;
       uniform vec3 uSunDir;
       varying vec3 vNormalW;
       varying float vLocalY;
@@ -554,7 +572,7 @@ function createSkyAndClouds() {
         vec3 shadowCol = vec3(0.75, 0.86, 0.94);
         vec3 creamTop  = vec3(1.00, 0.985, 0.945);
         vec3 col = mix(shadowCol, creamTop, smoothstep(0.24, 0.78, light));
-        gl_FragColor = vec4(col, 1.0);
+        gl_FragColor = vec4(col, 1.0 - harvestLight);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
@@ -601,7 +619,10 @@ function createSkyAndClouds() {
 
   return {
     skyRoot,
-    update(time) {
+    update(time, x) {
+      harvestLight.value = harvestWeight(x, 38);
+      drift.value = time * .00008;
+      cloudRing.visible = harvestLight.value < 1;
       cloudRing.rotation.y = time * 0.0028;
     },
   };
@@ -620,7 +641,7 @@ export function createCountryside(kit) {
     update(stateOrX, time, fogColor, fogDensity) {
       const x = typeof stateOrX === 'number' ? stateOrX : stateOrX.x;
       updatePaddyEnv(time, typeof stateOrX === 'number' ? null : stateOrX);
-      updateSky(time);
+      updateSky(time, x);
       river.update(time, fogColor, fogDensity);
 
       const current = Math.floor((x - 52) / 100);

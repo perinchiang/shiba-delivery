@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import { litMaterial } from '../core/materials.js';
 import { centerZ, crossing, halfWidth, roadHeight } from './country-route.js';
 
+import { harvestStart, harvestEnd } from './harvest-field.js';
+
 let roadMaterial;
 
 function getRoadMaterial() {
@@ -124,6 +126,16 @@ function getRoadMaterial() {
           // Earth shoulder softly transitions into lush green verge further out
           float grassBlend = smoothstep(hw + 0.62, hw + 1.25, d + wob * 0.9) * (1.0 - bridgeBlend);
           shoulder = mix(shoulder, vergeGrass, grassBlend);
+
+          float field = smoothstep(${harvestStart}.0, ${harvestStart+12}.0, wp.x)
+            * (1.0-smoothstep(${harvestEnd-12}.0, ${harvestEnd}.0, wp.x));
+          vec3 dustyLane = mix(vec3(.275,.255,.202), vec3(.38,.35,.273), .50*nBroad+.35*tireLane+.15*nFine);
+          dustyLane = mix(dustyLane, vec3(.48,.43,.32), smoothstep(hw-.75,hw+.22,d+wob)*.82);
+          dustyLane = mix(dustyLane, edgeInk, edgeLine*wear*.33);
+          dustyLane = mix(dustyLane, centreInk, centre*wear*.46);
+          road = mix(road,dustyLane,field*.91);
+          shoulder = mix(shoulder,mix(vec3(.46,.405,.297),vec3(.34,.325,.195),grassBlend),field);
+          shEdge = mix(shEdge,smoothstep(hw-.42,hw+.35,d+wob),field);
 
           diffuseColor.rgb = mix(road, shoulder, shEdge);
         }`);

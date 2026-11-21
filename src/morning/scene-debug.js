@@ -30,6 +30,10 @@ export const sceneJumps = {
   crossing: { title: '城市十字路口', state: onCountryRoad(70, 2.2) },
   openPaddy: { title: '开阔水田', state: onCountryRoad(340) },
   riceBend: { title: '稻浪到石桥', state: onCountryRoad(792) },
+  harvestView: {
+    title: '稻田风景', state: onCountryRoad(748),
+    camera: { fov: 46, focus: [767, 1.85, centerZ(767) + 12], offset: [-20, .28, -8] },
+  },
   riceClose: {
     title: '田埂看稻穗', state: onCountryRoad(835),
     camera: { fov: 48, focus: [843, 0.92, centerZ(843) + 5.6], offset: [-4.6, 0.76, -2.5] },
