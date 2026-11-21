@@ -12,7 +12,11 @@
 
 未来计划探索连接小镇、村道、稻田与住宅区的骑行世界；房租和债务等经济系统属于后续开发范围，**当前尚未实现完整循环**。
 
-## 本地网页试玩
+## 网页试玩
+
+[在 GitHub Pages 上试玩最新版本](https://perinchiang.github.io/shiba-delivery/)。推送到 `shiba-delivery-update` 后，GitHub Actions 自动运行测试、构建并发布。
+
+### 本地运行
 
 需要 Node.js 环境。在仓库根目录运行：
 
