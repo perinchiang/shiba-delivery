@@ -171,6 +171,42 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
 }
 @media(prefers-reduced-motion:reduce) { #phone { transition:none; } }
 
+.interaction.bun-handoff {
+  --handoff-edge:#73503a;
+  left:50%; right:auto; bottom:calc(var(--dock-gap) + 7px); transform:translateX(-50%);
+  width:min(430px,calc(100vw - var(--dock-left) - var(--dock-right)));
+  max-width:none; padding:21px 17px 12px; gap:8px; justify-items:end;
+  background:#fff7e3; color:#493529; border:2px solid var(--handoff-edge);
+  border-radius:20px 24px 18px 23px / 21px 19px 22px 17px;
+  box-shadow:inset 0 0 0 3px #eddcbc, 0 4px 0 #73503a, 0 8px 20px #32261f42;
+}
+.bun-handoff #dialogue { position:static; width:100%; background:none; padding:0 2px; border-radius:0; }
+.bun-handoff #speaker {
+  position:absolute; top:0; left:16px; transform:translateY(-55%) rotate(-2deg);
+  padding:3px 12px; border:2px solid #324d46; border-radius:7px 9px 8px 6px;
+  background:#4b7669; color:#fff9e9; box-shadow:0 2px 0 #324d46;
+  font-size:13px; letter-spacing:.05em;
+}
+.bun-handoff #line { margin:0; font-size:clamp(15px,2.2vw,17px); line-height:1.55; }
+.bun-handoff #action {
+  width:auto; height:auto; min-height:44px; padding:5px 13px; gap:7px;
+  background:#f7cf6a; color:#483320; border:2px solid #8b5d37; border-radius:11px;
+  box-shadow:0 3px 0 #8b5d37; font-size:15px; white-space:nowrap;
+  -webkit-tap-highlight-color:transparent;
+}
+.bun-handoff #action:active {
+  transform:translateY(2px); box-shadow:0 1px 0 #8b5d37; background:#f0be51;
+}
+@media (max-width:760px) {
+  .interaction.bun-handoff { bottom:calc(var(--lip) + 11px); }
+}
+@media (any-pointer:coarse) and (orientation:landscape), (max-width:760px) and (orientation:landscape) {
+  .interaction.bun-handoff {
+    left:auto; right:var(--dock-right); bottom:calc(var(--dock-gap) + 7px);
+    transform:none; width:min(330px,48vw);
+  }
+}
+
 #scene-debug { position:absolute; left:var(--dock-left); top:max(var(--edge),env(safe-area-inset-top)); z-index:1; pointer-events:auto; color:#fff5de; background:#203933ed; border-radius:13px; font-size:13px; }
 #scene-perf { display:block; padding:0 10px 6px; font-variant-numeric:tabular-nums; }
 #scene-debug[open] { max-height:calc(100dvh - 2 * var(--edge)); overflow:auto; }

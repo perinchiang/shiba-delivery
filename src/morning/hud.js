@@ -13,6 +13,8 @@ import { drawStreetMap } from './street-map.js';
 export function createHUD(state, delivery, view, { shiba, marker }, { input, stick, releaseStick }, reset, rideAudio) {
   const { availableAction, navigate } = delivery;
   const debug = $('scene-debug');
+  const dialogue = $('dialogue');
+  const interaction = dialogue.parentElement;
   let lastMode = '';
   let audio;
   function bell(notes) {
@@ -265,7 +267,8 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     write('place', free ? '榕湾村道' : state.mode === 'shop' ? state.order.room.name : '榕湾老街');
     write('clock', free ? '清晨' : state.order.clock[state.phase]);
     $('action').hidden = !action || action === 'phone' || action === 'statement' || phoneExpanded;
-    $('dialogue').hidden = !state.dialog;
+    dialogue.hidden = !state.dialog;
+    interaction.classList.toggle('bun-handoff', state.order.id === 'buns' && state.dialog === 'shopkeeper');
     $('look').hidden = !!state.dialog || !!state.sequence || state.braking;
     phoneToggle.disabled = !!state.dialog || !!state.sequence || state.braking;
     $('order-screen').hidden = done || free;
