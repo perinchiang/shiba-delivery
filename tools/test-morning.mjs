@@ -256,8 +256,13 @@ try {
     assert.equal(await mobile.locator('#map-pickup').innerText(), '榕记包子铺');
     await mobile.locator('#map-close').tap();
     await mobile.getByRole('button', { name: '找师傅取餐' }).tap();
-    await mobile.locator('#bun-dialogue').getByText('榕记师傅', { exact: true }).waitFor();
-    await mobile.getByRole('button', { name: '接过包子' }).tap({ position: { x: 36, y: 26 } });
+    const card = mobile.locator('.bun-dialogue-card');
+    const name = card.locator('.bun-dialogue-name');
+    await name.waitFor();
+    const tagBox = await name.boundingBox();
+    const cardBox = await card.boundingBox();
+    assert.ok(Math.abs(tagBox.y + tagBox.height / 2 - cardBox.y) < 1);
+    await mobile.touchscreen.tap(tagBox.x + tagBox.width / 2, tagBox.y + tagBox.height / 4);
     assert.equal(await mobile.locator('#phone').getAttribute('data-phase'), 'delivery');
     await jump('老街起点');
     assert.equal(await mobile.locator('#phone').getAttribute('data-phase'), 'offer');

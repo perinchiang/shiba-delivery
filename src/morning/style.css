@@ -184,26 +184,43 @@ kbd { font:600 11px/1 system-ui; border:1px solid currentColor; border-radius:4p
   src:url("./fonts/noto-sans-sc-bun-700.woff2") format("woff2");
 }
 .interaction.bun-handoff {
+  --handoff-radius:38px 30px 40px 28px / 31px 34px 29px 34px;
+  --name-inset:26px;
+  --name-width:104px;
+  --name-overhang:17px;
   left:50%; right:auto; bottom:calc(var(--dock-gap) + 7px); transform:translateX(-50%);
   width:min(550px,calc(100vw - 2 * max(var(--dock-left),var(--dock-right))));
   max-width:none; justify-items:stretch;
 }
 .bun-dialogue-card {
-  min-height:116px;
+  min-height:108px; padding:25px 27px 19px;
+  display:grid; align-content:center;
+  border-radius:var(--handoff-radius);
+  box-shadow:0 4px 12px #392b2026;
   font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
 }
+.bun-dialogue-name {
+  position:absolute; top:0; left:var(--name-inset); transform:translateY(-50%);
+  width:var(--name-width); height:calc(2 * var(--name-overhang)); justify-content:center;
+  border-radius:11px; border-color:#84b4a5; box-shadow:0 2px 0 #84b4a5;
+}
 .bun-dialogue-card p {
-  margin:7px 12px 0 0;
+  margin:0 12px 0 0;
   font-size:clamp(16px,2.2vw,19px); line-height:1.5; text-wrap:balance;
 }
 .bun-handoff #action {
   position:absolute; inset:0; width:100%; height:100%; padding:0;
-  background:transparent; color:#725d42; border:0; border-radius:20px;
+  background:transparent; color:#725d42; border:0; border-radius:var(--handoff-radius);
   box-shadow:none; -webkit-tap-highlight-color:transparent;
 }
 .bun-handoff #action kbd { display:none; }
 .bun-handoff #action-text {
   position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%);
+}
+/* Extend the same action over the protruding half of the name tag. */
+.bun-handoff #action::before {
+  content:""; position:absolute; left:var(--name-inset); bottom:100%;
+  width:var(--name-width); height:var(--name-overhang);
 }
 .bun-handoff #action::after {
   content:""; position:absolute; right:17px; bottom:18px;
