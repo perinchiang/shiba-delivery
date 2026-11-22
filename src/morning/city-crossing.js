@@ -668,11 +668,14 @@ function streetFurniture(root, half) {
     oval(pole, -3.35, 5.40, 0, 0.055, 0.058, 0.058, P.trimWarm);
     rod(pole, [0, 4.75, 0], [-0.85, 5.40, 0], 0.032, P.metal, 0.030, 8);
     rod(pole, [0, 5.08, 0], [-0.42, 5.40, 0], 0.026, P.metal, 0.026, 8);
-    box(pole, -3.25, 5.40, -0.18, 0.24, 0.20, 0.16, P.metal);
+    // Cantilever junction wraps the signal seam with solid overlap (no floating rear gap).
+    box(pole, -3.25, 5.40, -0.12, 0.24, 0.20, 0.26, P.metal);
 
     // Upgraded 3-lamp main signal head at (-3.25, 4.76, 0) with cream reflective backplate, recessed bezels & curved hoods
-    box(pole, -3.25, 4.76, -0.14, 0.76, 1.74, 0.06, signalBackplate, 0.025);
-    box(pole, -3.25, 4.76, 0, 0.58, 1.56, 0.34, P.metalDark, 0.08);
+    box(pole, -3.25, 4.76, -0.145, 0.76, 1.74, 0.05, signalBackplate, 0.025);
+    box(pole, -3.25, 4.76, 0.02, 0.58, 1.56, 0.30, P.metalDark, 0.08);
+    // Inset rear service cover overlaps the backplate cleanly; the top clamp is the sole neck.
+    box(pole, -3.25, 4.76, -0.195, 0.44, 1.24, 0.09, P.metalDark, 0.03);
     for (let l = 0; l < 3; l++) {
       const ly = 5.22 - l * 0.46;
       signalBezel(pole, -3.25, ly, 0.16, 0.215, 0.168, 0.055, P.metal);
@@ -685,9 +688,9 @@ function streetFurniture(root, half) {
 
     // Pedestrian crossing signal box at (0, 2.72, 0.24) facing +Z toward crosswalk pedestrians
     cylinder(pole, 0, 2.72, 0, 0.115, 0.115, 0.14, P.metal, 12);
-    box(pole, 0, 2.72, 0.10, 0.12, 0.14, 0.14, P.metal);
-    box(pole, 0, 2.72, 0.145, 0.42, 0.76, 0.04, signalBackplate, 0.015);
-    box(pole, 0, 2.72, 0.24, 0.34, 0.68, 0.24, P.metalDark, 0.045);
+    box(pole, 0, 2.72, 0.065, 0.12, 0.14, 0.13, P.metal);
+    box(pole, 0, 2.72, 0.125, 0.42, 0.76, 0.04, signalBackplate, 0.015);
+    box(pole, 0, 2.72, 0.245, 0.34, 0.68, 0.23, P.metalDark, 0.045);
     for (const [py, lamp] of [[2.88, 0], [2.56, 2]]) {
       signalBezel(pole, 0, py, 0.355, 0.105, 0.082, 0.032, P.metal);
       signalHood(pole, 0, py, 0.35, 0.112, 0.094, 0.15, P.metalDark);

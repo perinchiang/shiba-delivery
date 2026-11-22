@@ -122,7 +122,26 @@ function clothClearance(scarf, uniform, chest) {
     if (mesh.material?.name === 'Uniform · bottle green') jacket = mesh;
   });
   assert.ok(jacket);
-  const surface = new Octree().fromGraphNode(new T.Mesh(jacket.geometry));
+  // The exported Uniform is one object, but its bottle-green primitive also
+  // contains the outward sleeve barrels.  Build the cloth ray surface only
+  // from triangles whose three vertices are torso anchored (Chest >= 0.5),
+  // so a kerchief-side ray cannot hit a sleeve before reaching the collar.
+  const source = jacket.geometry;
+  const { position, skinIndex, skinWeight } = source.attributes;
+  const chestBone = jacket.skeleton.bones.findIndex(b => b.name === 'Chest');
+  const chestWeight = i => {
+    let total = 0;
+    for (let j = 0; j < 4; j++) if (skinIndex.getComponent(i, j) === chestBone) total += skinWeight.getComponent(i, j);
+    return total;
+  };
+  const keep = [];
+  for (let i = 0; i < source.index.count; i += 3) {
+    const a = source.index.getX(i), b = source.index.getX(i + 1), c = source.index.getX(i + 2);
+    if (chestWeight(a) >= 0.5 && chestWeight(b) >= 0.5 && chestWeight(c) >= 0.5) keep.push(a, b, c);
+  }
+  const torso = source.clone();
+  torso.setIndex(keep);
+  const surface = new Octree().fromGraphNode(new T.Mesh(torso));
   const ray = new T.Ray(), point = v(), toBind = new T.Matrix4();
   const moving = scarf.map(({ mesh, points }) => {
     const indices = [], { skinIndex, skinWeight } = mesh.geometry.attributes;

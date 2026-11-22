@@ -389,7 +389,9 @@ export function createShiba(asset) {
     if (carrying) {
       root.worldToLocal(grip.getWorldPosition(bag.position));
       // Cradle the bag neatly in front of Shiba's right paw and glide it to floor height for rear-hatch handoff.
-      bag.position.y -= 0.30 - 0.140 * lift;
+      // Keep the hand-carried parcel a few centimetres above the rear-box
+      // floor while the shortened A-pose forearm settles into its new grip.
+      bag.position.y -= 0.27 - 0.140 * lift;
       bag.position.x -= 0.16 * lift;
       bag.position.z += 0.06 + 0.14 * lift;
       bag.rotation.z = walking * Math.sin(stride) * .06;

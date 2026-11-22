@@ -31,9 +31,13 @@ def rig_bones():
     for s, tag in SIDES:
         add("Ear_" + tag, (s * 0.36, 1.57, 0.01), (s * 0.48, 1.90, 0.025), "Head")
         add("Eye_" + tag, (s * 0.238, 1.279, 0.442), (s * 0.238, 1.325, 0.442), "Head")
-        add("UpperArm_" + tag, (s * 0.276, 0.77, 0.014), (s * 0.295, 0.653, 0.03), "Chest")
-        add("Forearm_" + tag, (s * 0.295, 0.653, 0.03), (s * 0.309, 0.565, 0.046), "UpperArm_" + tag)
-        add("Paw_" + tag, (s * 0.309, 0.565, 0.046), (s * 0.316, 0.507, 0.055), "Forearm_" + tag)
+        # A relaxed courier A-pose: the shoulder leaves the pear-shaped jacket
+        # at roughly 24 degrees, rather than dropping straight down from a pad.
+        add("UpperArm_" + tag, (s * 0.235, 0.755, 0.014), (s * 0.305, 0.625, 0.028), "Chest")
+        add("Forearm_" + tag, (s * 0.305, 0.625, 0.028), (s * 0.358, 0.525, 0.044), "UpperArm_" + tag)
+        # Lift the paw tip by 10 mm within the requested tolerance so a hand
+        # carried parcel clears the cargo-box floor during the crossing.
+        add("Paw_" + tag, (s * 0.358, 0.525, 0.044), (s * 0.376, 0.490, 0.052), "Forearm_" + tag)
         add("Thigh_" + tag, (s * 0.151, 0.39, 0), (s * 0.151, 0.20, 0), "Pelvis")
         add("Shin_" + tag, (s * 0.151, 0.20, 0), (s * 0.151, 0.098, 0.051), "Thigh_" + tag)
         add("Foot_" + tag, (s * 0.151, 0.098, 0.051), (s * 0.151, 0.094, 0.164), "Shin_" + tag)
@@ -264,7 +268,11 @@ def make_character(collection, rig, coat_path):
         p.oval(eye + q @ V((-0.016, 0.023, 0.029)), (0.014, 0.016, 0.009), white, 16, 10, rot=q)
         end()
     make_helmet(collection, rig)
-    p, end = part("Uniform", "Chest")
+    # Build the garment shell separately from the trims.  This lets Blender's
+    # voxel remesher weld the raglan shoulder and sleeve barrels into one real
+    # manifold, instead of merely putting several smooth ovals in one object.
+    jacket_parts = Parts()
+    p = jacket_parts
     # Anchor the fabric immediately above the tail opening to the waistband.
     # The upper jacket still follows the leaning and turning chest.
     def rear_hem(point):
@@ -275,16 +283,12 @@ def make_character(collection, rig, coat_path):
         return {"Pelvis": hem, "Chest": 1 - hem}
 
     p.bind = rear_hem
-    p.oval((0, 0.60, 0), (0.32, 0.36, 0.25), jacket, 64, 48)
+    # Pear-shaped body: a narrow raglan neckline flows into a rounded belly.
+    p.oval((0, 0.60, 0), (0.31, 0.36, 0.24), jacket, 64, 48)
+    fit_jacket_neckline(jacket_parts)
     fit_jacket_neckline(p)
-    p.bind = "Pelvis"
-    p.oval((0, 0.41, -0.005), (0.27, 0.17, 0.22), pants)
-    p.bind = "Chest"
-    p.box((0, 0.64, 0.234), (0.022, 0.32, 0.02), 0.005, gold)
-    p.box((-0.15, 0.64, 0.203), (0.11, 0.095, 0.034), 0.014, cream)
-    end()
-    kerchief(collection, rig, orange)
-    curled_tail(collection, rig)
+    # Sleeves are round in both axes and overlap the torso generously before
+    # remeshing; the overlap is what produces the continuous armpit fillet.
     for s, t in SIDES:
         shoulder = BONES["UpperArm_" + t][0]
 
@@ -292,14 +296,17 @@ def make_character(collection, rig, coat_path):
             f = smooth(0.068, 0.171, 0.77 - p.y)
             return {"UpperArm_" + tag: 1 - f, "Forearm_" + tag: f}
 
-        p, end = part("Sleeve_" + t, sleeve)
-        p.oval(shoulder + V((s * 0.023, -0.105, 0.016)), (0.105, 0.162, 0.112), jacket)
+        jacket_parts.bind = sleeve
+        sleeve_start = len(jacket_parts.p)
+        jacket_parts.oval(shoulder + V((s * 0.035, -0.105, 0.016)), (0.099, 0.145, 0.099), jacket, 40, 24,
+               rot=Quaternion(Z, -s * 0.18))
         # Tailor only the sleeve head into a soft, downward-sloping raglan dome.
         # Its inner edge tucks under the kerchief band while the outer shoulder
         # rounds smoothly down into the sleeve barrel without a boxy corner.
-        for i, point in enumerate(p.p):
+        for i, point in enumerate(jacket_parts.p[sleeve_start:], sleeve_start):
             u = max(0, min(1, (point.y - .720) / .107))
             if u == 0:
+                jacket_parts.weights[i] = {"Chest": .10, "UpperArm_" + t: .90}
                 continue
             blend = smooth(0, 1, u)
             slope = 6 * u * (1 - u) / .107
@@ -311,7 +318,7 @@ def make_character(collection, rig, coat_path):
             ddrop = -.04 + 6.4 * lateral
             point.x -= s * shift * blend
             point.y -= drop * blend
-            normal = p.n[i]
+            normal = jacket_parts.n[i]
             # Apply the inverse transpose of the two-dimensional deformation.
             xx, xy = 1 - dshift * blend, -s * shift * slope
             yx, yy = -s * ddrop * blend, 1 - drop * slope
@@ -323,12 +330,71 @@ def make_character(collection, rig, coat_path):
             # Anchor the upper crown to Chest so high reaches stay plump, while
             # easing the outer deltoid smoothly across four rings so swings never crease.
             outer_flex = (1 - smooth(.55, .80, u)) * smooth(0.0, .08, outer)
-            anchor = smooth(.04, .78, u) * (1 - .32 * outer_flex)
-            p.weights[i] = {"Chest": anchor, "UpperArm_" + t: 1 - anchor}
-        end()
-        p, end = part("Mitten_" + t, "Paw_" + t)
+            # Keep a chest foothold through the raglan crown; the influence
+            # then eases continuously into the upper-arm barrel.
+            anchor = (.10 + .90 * smooth(.04, .78, u)) * (1 - .32 * outer_flex)
+            jacket_parts.weights[i] = {"Chest": anchor, "UpperArm_" + t: 1 - anchor}
+
+    jacket_obj = jacket_parts.finish("Uniform", collection, armature=rig)
+    remesh = jacket_obj.modifiers.new("Remesh", "REMESH")
+    remesh.mode = "VOXEL"
+    remesh.voxel_size = 0.018
+    remesh.use_smooth_shade = True
+    smooth_mod = jacket_obj.modifiers.new("Smooth", "SMOOTH")
+    smooth_mod.factor = 0.65
+    smooth_mod.iterations = 12
+    bpy.context.view_layer.objects.active = jacket_obj
+    jacket_obj.select_set(True)
+    bpy.ops.object.modifier_apply(modifier=remesh.name)
+    bpy.ops.object.modifier_apply(modifier=smooth_mod.name)
+    # Voxel remesh creates fresh vertices. Repaint normalized garment weights
+    # on that final surface so the armature modifier never falls back to a
+    # stale cage's influences at the sleeve barrel or wrist.
+    groups = {name: jacket_obj.vertex_groups.get(name) or jacket_obj.vertex_groups.new(name=name)
+              for name in ("Chest", "Pelvis", "UpperArm_L", "UpperArm_R", "Forearm_L", "Forearm_R")}
+    for vertex in jacket_obj.data.vertices:
+        q = V((vertex.co.x, vertex.co.z, -vertex.co.y))
+        for group in groups.values():
+            group.remove([vertex.index])
+        side = "L" if q.x < 0 else "R"
+        lateral = abs(q.x)
+        if lateral > .245 and .43 < q.y < .78:
+            arm = smooth(.25, .40, lateral) * smooth(.78, .65, q.y)
+            fore = smooth(.57, .49, q.y)
+            groups["Chest"].add([vertex.index], max(0.0, 1 - arm), "REPLACE")
+            groups["UpperArm_" + side].add([vertex.index], arm * (1 - fore), "REPLACE")
+            groups["Forearm_" + side].add([vertex.index], arm * fore, "REPLACE")
+        else:
+            groups["Chest"].add([vertex.index], 1.0, "REPLACE")
+
+    # Pants, zipper, pocket, and cuffs are trims joined into the same exported
+    # Uniform object after the shell is welded.
+    trim_parts = Parts()
+    trim_parts.bind = "Pelvis"
+    trim_parts.oval((0, 0.41, -0.005), (0.27, 0.17, 0.22), pants)
+    trim_parts.bind = "Chest"
+    trim_parts.box((0, 0.64, 0.234), (0.022, 0.32, 0.02), 0.005, gold)
+    trim_parts.box((-0.15, 0.64, 0.203), (0.11, 0.095, 0.034), 0.014, cream)
+    trim_obj = trim_parts.finish("Uniform trims", collection, armature=rig)
+    for s, t in SIDES:
+        axis = (BONES["Forearm_" + t][1] - BONES["Forearm_" + t][0]).normalized()
+        wrist = BONES["Forearm_" + t][1]
+        cuff_a = wrist - axis * 0.068
+        cuff_b = wrist - axis * 0.020
+        trim_parts.bind = "Forearm_" + t
+        trim_parts.tube([cuff_a, cuff_b], lambda u: 0.091 + 0.005 * math.sin(math.pi * u), pants, 18, 3)
+
+    # Rebuild trims with cuffs included (the first object contains the common
+    # pants/zipper/pocket vertices; append cuff geometry before finalizing).
+    bpy.data.objects.remove(trim_obj, do_unlink=True)
+    trim_obj = trim_parts.finish("Uniform trims", collection, armature=rig)
+    kerchief(collection, rig, orange)
+    curled_tail(collection, rig)
+    uniform_parts, uniform_end = trim_parts, lambda: trim_obj
+    for s, t in SIDES:
+        p, mitten_end = part("Mitten_" + t, "Paw_" + t)
         p.oval(BONES["Paw_" + t][0], (0.093, 0.102, 0.096), cream)
-        end()
+        mitten_end()
         p, end = part("Haunch_" + t, "Thigh_" + t)
         p.oval((s * 0.151, 0.295, 0), (0.117, 0.16, 0.117), pants)
         p.bind = "Shin_" + t
@@ -337,6 +403,17 @@ def make_character(collection, rig, coat_path):
         p, end = part("Shoe_" + t, "Foot_" + t)
         riding_shoe(p, BONES["Foot_" + t][0], shoe, outsole)
         end()
+
+    # Join welded shell and trims.  The resulting single object retains the
+    # material islands and one armature modifier, while the jacket itself stays
+    # a single connected component.
+    uniform_obj = jacket_obj
+    bpy.ops.object.select_all(action="DESELECT")
+    jacket_obj.select_set(True)
+    trim_obj.select_set(True)
+    bpy.context.view_layer.objects.active = jacket_obj
+    bpy.ops.object.join()
+    uniform_obj.name = "Uniform"
 
 
 def bend_limb(first, second, reach, pole):
@@ -413,23 +490,23 @@ def author_actions(rig):
             root = rig.pose.bones["Root"]
             root.location = root.bone.matrix_local.to_quaternion().inverted() @ blender_v(off)
             if name == "Walk":
-                bone_turn(rig, "Pelvis", Quaternion(Z, 0.048 * math.sin(phase)) @ Quaternion(UP, 0.045 * math.sin(phase)))
-                bone_turn(rig, "Chest", Quaternion(UP, -0.055 * math.sin(phase)) @ Quaternion(Z, -0.025 * math.sin(phase)))
+                bone_turn(rig, "Pelvis", Quaternion(Z, 0.055 * math.sin(phase)) @ Quaternion(UP, 0.05 * math.sin(phase)))
+                bone_turn(rig, "Chest", Quaternion(UP, -0.06 * math.sin(phase)) @ Quaternion(Z, -0.03 * math.sin(phase)))
             for s, t in SIDES:
                 if name == "Ride":
                     upper, lower, thigh, shin, foot = riding_limbs(s, t)
                 elif name == "Walk":
                     swing = (-s) * math.sin(phase)
-                    upper = Quaternion(X, -0.06 + swing * 0.42) @ Quaternion(Z, s * (0.11 + 0.03 * abs(swing)))
-                    lower = Quaternion(X, -0.22 - max(0.0, -swing) * 0.26 - 0.06 * abs(swing))
+                    upper = Quaternion(X, swing * 0.54) @ Quaternion(Z, s * (0.04 + 0.04 * abs(swing)))
+                    lower = Quaternion(X, -0.08 - max(0.0, -swing) * 0.16)
                     thigh, shin, foot = (
                         Quaternion(X, -swing * 0.78),
                         Quaternion(),
                         Quaternion(X, swing * 0.78 * 0.42),
                     )
                 else:
-                    upper = Quaternion(X, -0.08) @ Quaternion(Z, s * 0.08)
-                    lower = Quaternion(X, -0.14)
+                    upper = Quaternion(X, -0.04) @ Quaternion(Z, s * 0.035)
+                    lower = Quaternion(X, -0.06)
                     thigh, shin, foot = Quaternion(), Quaternion(), Quaternion()
                 for prefix, q in [
                     ("UpperArm_", upper),
