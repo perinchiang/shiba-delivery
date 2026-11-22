@@ -103,8 +103,8 @@ export function createShiba(asset) {
   const chestOffset = chest.position.clone();
   const stand = clipSampler(asset, root, 'Stand'), walk = clipSampler(asset, root, 'Walk'), ride = clipSampler(asset, root, 'Ride');
   const tail = ['Tail', 'TailMid', 'TailTip'].map(name => root.getObjectByName(name)).filter(bone => bone?.isBone);
-  const hinge = root.getObjectByName('GoggleHinge'), clothEnds = root.getObjectByName('KerchiefEnds');
-  const previousGoggles = new THREE.Quaternion(), previousCloth = new THREE.Quaternion();
+  const hinge = root.getObjectByName('GoggleHinge');
+  const previousGoggles = new THREE.Quaternion();
   let gogglesTime = 1, previousMount = null;
   const tailTransition = tail.map(bone => bone.quaternion.clone());
   let previousMotion = '', blendTime = 1;
@@ -179,7 +179,6 @@ export function createShiba(asset) {
     if (motion !== previousMotion && dt > 0) {
       if (previousMotion) {
         tail.forEach((bone, i) => tailTransition[i].copy(bone.quaternion));
-        if (clothEnds) previousCloth.copy(clothEnds.quaternion);
         blendTime = 0;
       }
       previousMotion = motion;
@@ -351,13 +350,6 @@ export function createShiba(asset) {
         turn(chest, xAxis, 0.08 * lift);
       }
     }
-    if (mount && clothEnds) {
-      const airflow = rideMotion ? THREE.MathUtils.smoothstep(speed, 30/3.6, 50/3.6) : 0;
-      const flutter = .018*Math.sin(time*13) + .01*Math.sin(time*21);
-      turn(clothEnds, xAxis, .19 * rolling + airflow*(.032 + flutter));
-      turn(clothEnds, zAxis, airflow*.027*Math.sin(time*10 + 1.4));
-      turn(clothEnds, yAxis, -.20 * rolling * mount.turn);
-    }
     if (hinge && gogglesTime < 1) {
       gogglesTime = Math.min(1, gogglesTime + dt / .34);
       hinge.quaternion.slerp(previousGoggles, 1 - THREE.MathUtils.smoothstep(gogglesTime, 0, 1));
@@ -374,7 +366,6 @@ export function createShiba(asset) {
     greetingAge = Math.min(1, greetingAge + dt / .84);
     blendTime = Math.min(1, blendTime + dt / .18);
     const blend = THREE.MathUtils.smoothstep(blendTime, 0, 1);
-    if (clothEnds && blend < 1) clothEnds.quaternion.slerp(previousCloth, 1 - blend);
     for (let i = 0; i < tail.length; i++) {
       const u = THREE.MathUtils.clamp((greetingAge - .04 * i) / .90, 0, 1);
       const wag = Math.sin(4 * Math.PI * u) * Math.sin(Math.PI * u) ** 2;
@@ -421,8 +412,16 @@ export function createScooter(asset) {
       root.position.z + (-besideLocal.x * sin + besideLocal.z * cos) * s,
     );
   };
+  const palms = ['L', 'R'].map(t => {
+    const target = node('PalmTarget_' + t);
+    // The longer forearm needs a small forward cup over the rubber grip;
+    // keep the authored bike marker untouched and apply the rider-space
+    // offset only to the runtime IK target.
+    target.position.z += .045;
+    return target;
+  });
   const mount = { seat: node('Seat_Rider'), turn: 0, kick: 0, lean: 0,
-    palms: ['L', 'R'].map(t => node('PalmTarget_' + t)), frame: root, besideWorld,
+    palms, frame: root, besideWorld,
     standToe: node('Stand_Toe'), standFoot: node('Stand_Foot'), feet: ['L', 'R'].map(t => node('Footrest_' + t)) };
   root.rotation.order = 'YXZ';
   const lidNode = node('Cargo_Lid');

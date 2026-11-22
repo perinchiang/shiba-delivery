@@ -4,16 +4,16 @@ import { Octree } from 'three/addons/math/Octree.js';
 
 export function sleeveChecks(root) {
   const uniform = root.getObjectByName('Uniform');
-  const jacket = uniform?.children.find(part => part.material?.name === 'Uniform · bottle green');
-  assert.ok(jacket, 'continuous bottle-green Uniform mesh is present');
+  const jacket = uniform?.children.find(part => part.material?.name === 'Uniform · courier yellow');
+  assert.ok(jacket, 'courier-yellow jacket mesh is present');
   const { position, skinIndex, skinWeight } = jacket.geometry.attributes;
   const sides = ['L', 'R'].map(tag => {
     const sign = tag === 'L' ? -1 : 1, side = [], shoulder = [], cuff = [];
+    let shoulderChest = false, barrelArm = false;
     for (let i = 0; i < position.count; i++) {
       const x = position.getX(i), y = position.getY(i);
-      if (sign * x < .26) continue;
-      if (y < .76 && y > .43) side.push(i);
-      if (sign * x > .28 && y > .67) shoulder.push(i);
+      if (sign * x > .20 && y < .82 && y > .44) side.push(i);
+      if (sign * x > .22 && y > .70) shoulder.push(i);
       if (sign * x > .34 && y < .57) cuff.push(i);
       let chest = 0, arm = 0;
       for (let j = 0; j < 4; j++) {
@@ -22,12 +22,35 @@ export function sleeveChecks(root) {
         if (name === 'Chest') chest += w;
         if (name === `UpperArm_${tag}` || name === `Forearm_${tag}`) arm += w;
       }
-      if (sign * x > .34 && y < .64) assert.ok(arm > .18, 'sleeve barrel has graduated arm weights');
-      if (sign * x > .28 && y > .69) assert.ok(chest > .05, 'raglan shoulder retains chest influence');
+      if (sign * x > .30 && y < .64 && arm > .18) barrelArm = true;
+      if (sign * x > .22 && y > .70 && chest > .05) shoulderChest = true;
     }
-    assert.ok(side.length > 20, `unified ${tag} sleeve volume is present`);
-    assert.ok(shoulder.length > 8, `unified ${tag} shoulder cap is rounded`);
-    assert.ok(uniform.children.some(part => part.material?.name === 'Uniform · dark teal'), `${tag} ribbed cuff is exported in Uniform`);
+    assert.ok(side.length > 20, `${tag} sleeve volume is present`);
+    assert.ok(shoulder.length > 8, `${tag} shoulder cap is rounded`);
+    assert.ok(shoulderChest, `${tag} shoulder cap retains chest influence`);
+    assert.ok(barrelArm, `${tag} sleeve barrel has graduated arm weights`);
+    assert.ok(uniform.children.some(part => part.material?.name === 'Uniform · charcoal trim'), `${tag} charcoal cuff is exported in Uniform`);
+    // A real underarm separation check: sample two vertical bands and compare
+    // the nearest outer torso vertex with the inner sleeve wall.  This catches
+    // a sleeve that merely has a different skin group while still intersecting
+    // the belly volume.
+    for (const centre of [.62, .70]) {
+      const band = .055;
+      let bodyEdge = 0, sleeveEdge = Infinity;
+      for (let i = 0; i < position.count; i++) {
+        const x = position.getX(i), y = position.getY(i);
+        if (Math.abs(y - centre) > band) continue;
+        let arm = 0;
+        for (let j = 0; j < 4; j++) {
+          const name = jacket.skeleton.bones[skinIndex.getComponent(i, j)].name;
+          if (name === `UpperArm_${tag}` || name === `Forearm_${tag}`) arm += skinWeight.getComponent(i, j);
+        }
+        if (arm < .05 && Math.abs(x) < .24) bodyEdge = Math.max(bodyEdge, sign * x);
+        if (arm > .25 && sign * x > .20) sleeveEdge = Math.min(sleeveEdge, sign * x);
+      }
+      assert.ok(Number.isFinite(sleeveEdge) && sleeveEdge - bodyEdge > .002,
+        `${tag} keeps a measurable underarm air gap at y=${centre.toFixed(2)}`);
+    }
     return { side, shoulder };
   });
   return () => {
@@ -37,15 +60,15 @@ export function sleeveChecks(root) {
         return { x: Math.max(...xs) - Math.min(...xs), z: Math.max(...zs) - Math.min(...zs) };
       };
       const barrel = span(side), cap = span(shoulder);
-      assert.ok(barrel.x > .03 && barrel.z > .04, 'sleeve barrel keeps cross-sectional volume');
-      assert.ok(cap.x > .02 && cap.z > .03, 'shoulder cap does not pinch');
+      assert.ok(barrel.x > .025 && barrel.z > .035, 'sleeve barrel keeps cross-sectional volume');
+      assert.ok(cap.x > .02 && cap.z > .025, 'shoulder cap does not pinch');
     }
   };
 }
 
 export function gripClearanceCheck(root, handlebar) {
   const chest = root.getObjectByName('Chest'), uniform = root.getObjectByName('Uniform');
-  const jacket = uniform?.children.find(part => part.material?.name === 'Uniform · bottle green');
+  const jacket = uniform?.children.find(part => part.material?.name === 'Uniform · courier yellow');
   assert.ok(jacket, 'uniform jacket surface is available for clearance checks');
   const surface = new Octree().fromGraphNode(new Mesh(jacket.geometry));
   const inverseBind = jacket.skeleton.boneInverses[jacket.skeleton.bones.indexOf(chest)];

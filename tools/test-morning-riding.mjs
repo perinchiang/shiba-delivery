@@ -65,6 +65,13 @@ const bindPose = form.map(name => [name, at(dog(name)), dog(name).getWorldScale(
 const fixedLengths = hips.flatMap(s => [['UpperArm_', 'Forearm_'], ['Forearm_', 'Paw_'], ['Thigh_', 'Shin_'], ['Shin_', 'Foot_']]
   .map(([a, b]) => [a + s, b + s, at(dog(a + s)).distanceTo(at(dog(b + s)))]));
 fixedLengths.push(['Pelvis', 'Chest', at(dog('Pelvis')).distanceTo(at(dog('Chest')))]);
+for (const side of hips) {
+  const shoulder = at(dog('UpperArm_' + side)), elbow = at(dog('Forearm_' + side)), paw = at(dog('Paw_' + side));
+  const authoredLength = (shoulder.distanceTo(elbow) + elbow.distanceTo(paw)) / rider.root.scale.y;
+  assert.ok(authoredLength >= .325 && authoredLength <= .340, side + ' arm reaches the long slender target length');
+  const aPose = Math.atan2(Math.abs(elbow.x - shoulder.x), Math.abs(elbow.y - shoulder.y));
+  assert.ok(aPose > THREE.MathUtils.degToRad(26) && aPose < THREE.MathUtils.degToRad(32), side + ' stand arm keeps the A-pose angle');
+}
 const box = bike('Delivery_Box'), saddle = bike('Solo_Saddle'), tank = bike('Two_Tone_Tank');
 function assertClearsBodyPart(object, bone, centre, radii) {
   const skin = dog('Head_Coat').skeleton;
@@ -322,8 +329,10 @@ for (const yaw of [0, 1.73, -2.1]) {
       assert.ok(Math.abs(at(mount.standFoot).y) < .002 && Math.abs(bounds(bike('Stand_Leg_and_Tang')).min.y) < .002, 'side stand footpad rests on the street');
       assert.ok(Math.abs(THREE.MathUtils.radToDeg(scooter.root.rotation.z) + 10) < .01, 'modest left lean on the side stand');
       const seat = at(bike('Seat_Contact'));
-      const clearance = surface(dog('Uniform'), seat, up) - surface(saddle, seat);
-      assert.ok(clearance >= -.022 && clearance <= .003, 'rump rests on the padded seat at a stop');
+      // The new pear hem meets the padded *top* of the saddle; compare like
+      // surfaces rather than the cushion's deep underside.
+      const clearance = surface(dog('Uniform'), seat, up) - surface(saddle, seat, down);
+      assert.ok(clearance >= -.022 && clearance <= .030, 'rump rests on the padded seat at a stop');
       for (const [i, tag] of hips.entries()) {
         const peg = at(mount.feet[i]);
         assert.ok(Math.abs(surface(dog('Shoe_' + tag), peg, up) - surface(bike('Rider_Footpegs'), peg)) < .001, 'both boots stay on tilted pegs at a stop');
@@ -448,8 +457,8 @@ for (const yaw of [0, 1.73, -2.1]) {
 // Sample the two garment surfaces at the tail insertion in pelvis space.
 const uniformParts = [];
 dog('Uniform').traverse(mesh => { if (mesh.isMesh) uniformParts.push(mesh); });
-const jacket = uniformParts.find(mesh => mesh.material.name === 'Uniform · bottle green');
-const trousers = uniformParts.find(mesh => mesh.material.name === 'Uniform · dark teal');
+const jacket = uniformParts.find(mesh => mesh.material.name === 'Uniform · courier yellow');
+const trousers = uniformParts.find(mesh => mesh.material.name === 'Uniform · charcoal pants');
 const goggles = dog('Helmet_Goggles'), pivot = dog('GoggleHinge'), tailBase = dog('Tail');
 const bindToWorld = bone => bone.matrixWorld.clone().multiply(skin.boneInverses[skin.bones.indexOf(bone)]);
 function firstSurface(object, origin, direction, bind) {

@@ -30,20 +30,18 @@ def surface(points, faces):
     return BVHTree.FromPolygons(points, faces, all_triangles=True)
 
 
-# The fabric is one sewn strip all the way from one free end to the other.
-kerchief = bpy.data.objects["Kerchief"].data
-neighbors = [set() for _ in kerchief.vertices]
-for edge in kerchief.edges:
-    a, b = edge.vertices
-    neighbors[a].add(b)
-    neighbors[b].add(a)
-visited = {0}
-pending = [0]
-while pending:
-    for neighbor in neighbors[pending.pop()] - visited:
-        visited.add(neighbor)
-        pending.append(neighbor)
-assert len(visited) == len(neighbors), "detached cloth in the knot, band or front panel"
+# The old printed kerchief and its animation bone are intentionally gone.  The
+# courier now uses one clean charcoal stand collar, kept in the four-material
+# Uniform mesh with the yoke, cuffs and reflective trim.
+assert "Kerchief" not in bpy.data.objects
+assert "KerchiefEnds" not in bpy.data.objects
+uniform = bpy.data.objects["Uniform"]
+uniform_materials = {slot.name for slot in uniform.data.materials}
+assert uniform_materials >= {
+    "Uniform · courier yellow", "Uniform · charcoal trim",
+    "Uniform · charcoal pants", "Uniform · reflective silver",
+}
+assert len(uniform_materials) <= 4, "uniform keeps the garment material budget"
 
 # The rotating strap touches its pivot rivets by design. Test the optical
 # assembly against the actual lacquer shell, ears, eye and face triangles.
@@ -76,9 +74,11 @@ for action in ("Stand", "Walk", "Ride"):
     rig.animation_data.action_slot = bpy.data.actions[action].slots[0]
     for frame in range(1, (73 if action == "Stand" else 25) + 1, 3):
         bpy.context.scene.frame_set(frame)
-        cloth = surface(*triangles("Kerchief", posed=True))
-        for name in ("Uniform", "Head_Coat", "Helmet_Chinstrap"):
-            assert not cloth.overlap(surface(*triangles(name, posed=True))), (
-                f"Cloth intersects {name} in {action} {frame}"
+        # The collar/yoke is a separate charcoal volume; ensure it never
+        # reaches the face or chin strap in any authored pose.
+        trim = surface(*triangles("Uniform", {"Uniform · charcoal trim"}, posed=True))
+        for name in ("Muzzle", "Helmet_Chinstrap"):
+            assert not trim.overlap(surface(*triangles(name, posed=True))), (
+                f"Charcoal collar/trim intersects {name} in {action} {frame}"
             )
-print("PASS: continuous band, 77 visor angles, and cloth fit through all three authored cycles.")
+print("PASS: four-material courier uniform, 77 visor angles, and collar fit through all three authored cycles.")
