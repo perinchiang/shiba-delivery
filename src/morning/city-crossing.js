@@ -4,7 +4,8 @@ import { placeInstances } from './kit-instances.js';
 import { crossing } from './country-route.js';
 import { cityTreePits, cityTreePitRadius, CURB_H } from './street-layout.js';
 import { CITY_PALETTE as P } from './city-palette.js';
-import { bake, box, cylinder, group, oval, piece, rod, sign } from './shapes.js';
+import { bake, box, curve, cylinder, group, oval, piece, rod, sign } from './shapes.js';
+import { ear } from './rider.js';
 
 const { Shape, ExtrudeGeometry } = THREE;
 
@@ -738,6 +739,126 @@ function streetFurniture(root, half) {
   return signalHeads;
 }
 
+function spectacles(parent, frameColor = P.wood) {
+  for (const side of [-1, 1]) {
+    const pts = [];
+    for (let a = 0; a <= 12; a++) {
+      pts.push([
+        side * 0.17 + Math.cos(a * Math.PI / 6) * 0.078,
+        1.0 + Math.sin(a * Math.PI / 6) * 0.067,
+        0.354,
+      ]);
+    }
+    curve(parent, pts, 0.010, frameColor);
+  }
+  rod(parent, [-0.092, 1.008, 0.354], [0.092, 1.008, 0.354], 0.009, frameColor);
+}
+
+// Stylized miniature animal NPC matching Old Street's neighbor() scale (~1.45m) and charm.
+function cityAnimal(parent, ox, oz, yaw, spec) {
+  const n = group(parent, ox, CURB_H, oz);
+  n.rotation.y = yaw;
+  const { kind, fur, muzzle = P.trimCream, coat, sleeve = coat, shoe = P.wood, nose = 0x5c3e34 } = spec;
+
+  // Feet, rounded torso, head & muzzle
+  for (const side of [-1, 1]) oval(n, side * 0.13, 0.12, 0.03, 0.13, 0.11, 0.16, shoe);
+  oval(n, 0, 0.46, 0, 0.30, 0.34, 0.24, coat);
+  oval(n, 0, 0.99, 0, 0.45, 0.39, 0.356, fur);
+  oval(n, 0, 0.88, kind === 'fox' ? 0.24 : 0.22, kind === 'fox' ? 0.23 : 0.27, 0.155, kind === 'fox' ? 0.19 : 0.175, muzzle);
+
+  // Arms (bear raises right paw to hold an iced drink cup)
+  for (const side of [-1, 1]) {
+    if (kind === 'bear' && side === 1) {
+      const arm = oval(n, 0.27, 0.54, 0.15, 0.095, 0.17, 0.095, sleeve);
+      arm.rotation.x = -0.75;
+      oval(n, 0.28, 0.59, 0.25, 0.068, 0.062, 0.068, fur);
+    } else {
+      oval(n, side * 0.27, 0.46, 0.07, 0.10, 0.175, 0.10, sleeve);
+      oval(n, side * 0.27, 0.32, 0.10, 0.062, 0.055, 0.062, fur);
+    }
+  }
+
+  // Species silhouette, face markings, outfits & props
+  if (kind === 'bear') {
+    for (const side of [-1, 1]) {
+      oval(n, side * 0.30, 1.31, -0.02, 0.135, 0.135, 0.09, fur);
+      oval(n, side * 0.30, 1.31, 0.045, 0.072, 0.072, 0.032, 0xe8c49b);
+    }
+    // Teal cafe apron over cream shirt
+    oval(n, 0, 0.69, 0.05, 0.18, 0.05, 0.17, P.teal);
+    oval(n, 0, 0.46, 0.01, 0.315, 0.055, 0.255, P.teal);
+    box(n, 0, 0.43, 0.215, 0.34, 0.44, 0.05, P.teal, 0.02);
+    box(n, 0, 0.34, 0.245, 0.16, 0.11, 0.02, P.jadeTile);
+    // Iced lemon drink cup + straw in right paw
+    cylinder(n, 0.29, 0.65, 0.32, 0.072, 0.054, 0.18, 0xe8b45a, 14);
+    cylinder(n, 0.29, 0.64, 0.32, 0.068, 0.062, 0.06, P.trimCream, 14);
+    cylinder(n, 0.29, 0.745, 0.32, 0.078, 0.076, 0.025, P.trimCream, 14);
+    rod(n, [0.29, 0.74, 0.32], [0.33, 0.89, 0.34], 0.011, P.terracotta);
+  } else if (kind === 'deer') {
+    for (const side of [-1, 1]) {
+      ear(n, side * 0.32, 1.24, -0.02, 0.56, fur, 0xf2d4b8, -side * 0.52);
+      rod(n, [side * 0.14, 1.32, -0.02], [side * 0.24, 1.54, -0.01], 0.020, P.woodDark, 0.014, 8);
+      rod(n, [side * 0.19, 1.43, -0.015], [side * 0.12, 1.53, 0.02], 0.014, P.woodDark, 0.010, 8);
+      rod(n, [side * 0.21, 1.47, -0.01], [side * 0.30, 1.55, -0.02], 0.014, P.woodDark, 0.010, 8);
+    }
+    // Warm tea-house shawl & cream collar trim
+    oval(n, 0, 0.66, 0.01, 0.33, 0.125, 0.265, P.terracottaDeep);
+    oval(n, 0, 0.72, 0.03, 0.22, 0.065, 0.20, P.trimCream);
+    box(n, 0, 0.45, 0.225, 0.055, 0.34, 0.025, P.trimWarm);
+  } else if (kind === 'badger') {
+    // Classic cream center blaze & slate eye-mask stripes
+    oval(n, 0, 1.08, 0.255, 0.095, 0.24, 0.115, P.trimCream);
+    for (const side of [-1, 1]) {
+      oval(n, side * 0.175, 1.04, 0.22, 0.105, 0.195, 0.118, 0x5a6362);
+      oval(n, side * 0.29, 1.29, -0.02, 0.115, 0.11, 0.075, 0x525a59);
+      oval(n, side * 0.30, 1.34, 0.00, 0.075, 0.055, 0.055, P.trimCream);
+    }
+    // Sage-green waistcoat over cream shirt + bow-tie + spectacles
+    oval(n, 0, 0.69, 0.07, 0.17, 0.085, 0.17, P.trimCream);
+    oval(n, 0, 0.68, 0.23, 0.075, 0.036, 0.025, P.terracotta);
+    for (let k = 0; k < 3; k++) oval(n, 0, 0.56 - k * 0.10, 0.235, 0.022, 0.022, 0.015, P.trimWarm);
+    spectacles(n, P.wood);
+  } else if (kind === 'turtle') {
+    // Warm cream cardigan trim + dark-jade tortoise shell on back + spectacles
+    oval(n, 0, 0.70, 0.04, 0.21, 0.07, 0.19, P.jade);
+    for (let k = 0; k < 3; k++) oval(n, 0, 0.58 - k * 0.10, 0.238, 0.024, 0.024, 0.015, P.wood);
+    oval(n, 0, 0.48, -0.13, 0.315, 0.365, 0.065, P.trimWarm);
+    oval(n, 0, 0.48, -0.22, 0.30, 0.35, 0.18, P.roofJade);
+    oval(n, 0, 0.56, -0.35, 0.14, 0.13, 0.07, P.teal);
+    oval(n, 0, 0.38, -0.34, 0.13, 0.12, 0.07, P.teal);
+    spectacles(n, P.wood);
+  } else if (kind === 'fox') {
+    for (const side of [-1, 1]) {
+      oval(n, side * 0.24, 0.89, 0.16, 0.20, 0.14, 0.15, P.trimCream);
+      ear(n, side * 0.28, 1.21, -0.02, 0.66, fur, P.trimCream, -side * 0.26);
+    }
+    // Jaunty teal artist beret & terracotta scarf
+    const beret = oval(n, -0.03, 1.34, -0.02, 0.29, 0.095, 0.28, P.teal);
+    beret.rotation.set(-0.08, 0, 0.14);
+    rod(n, [-0.05, 1.42, -0.03], [-0.07, 1.49, -0.04], 0.018, P.teal);
+    oval(n, 0, 0.70, 0.03, 0.27, 0.085, 0.24, P.terracotta);
+    box(n, 0.12, 0.53, 0.22, 0.10, 0.26, 0.045, P.terracotta, 0.015);
+    box(n, 0.12, 0.40, 0.225, 0.10, 0.03, 0.048, P.trimCream);
+    // Fluffy cream-tipped tail behind
+    const tail = oval(n, 0.04, 0.33, -0.34, 0.14, 0.16, 0.28, fur);
+    tail.rotation.set(0.45, 0.22, 0);
+    oval(n, 0.09, 0.42, -0.52, 0.11, 0.115, 0.14, P.trimCream);
+  }
+
+  // Expressive eyes & nose
+  const eyeColor = kind === 'badger' ? 0x262220 : 0x3b3532;
+  for (const side of [-1, 1]) oval(n, side * 0.17, 1.0, 0.323, 0.037, 0.049, 0.025, eyeColor);
+  if (kind !== 'turtle') {
+    const noseZ = kind === 'fox' ? 0.415 : 0.382;
+    const noseRx = kind === 'bear' ? 0.055 : 0.044;
+    const noseRy = kind === 'bear' ? 0.038 : 0.028;
+    oval(n, 0, 0.916, noseZ, noseRx, noseRy, 0.028, nose);
+  }
+
+  bake(n);
+  return n;
+}
+
 export function createCityCrossing(parent, banyan) {
   const { x, z, half, arm } = crossing;
   const root = group(parent, x, 0, z);
@@ -793,8 +914,20 @@ export function createCityCrossing(parent, banyan) {
   });
   root.add(lamps);
 
+  // Stylized animal NPCs at the 5 City Crossing pickup & delivery spots (baked individually for idle sway).
+  const npcs = [
+    cityAnimal(root, 11.5, 7.58, Math.PI, { kind: 'bear', fur: 0xc68a58, coat: P.wallCream, nose: P.woodDark }),
+    cityAnimal(root, -11.5, 7.58, Math.PI, { kind: 'deer', fur: 0xd5a273, coat: P.terracotta, nose: P.woodDark }),
+    cityAnimal(root, -11.5, -7.62, 0, { kind: 'badger', fur: 0x8e9593, coat: P.jade, sleeve: P.trimCream, nose: 0x3b3532 }),
+    cityAnimal(root, -7.6, -28.17, Math.PI / 2, { kind: 'turtle', fur: 0x7ba07c, muzzle: 0xd9e1c4, coat: P.wallCream }),
+    cityAnimal(root, 7.6, 27.83, -Math.PI / 2, { kind: 'fox', fur: 0xd87c46, coat: P.wallCream, nose: 0x3b3532 }),
+  ];
+
   let last = -1;
   return time => {
+    npcs.forEach((npc, idx) => {
+      npc.rotation.z = Math.sin(time * 1.8 + idx * 1.3) * 0.024;
+    });
     const t = time % 22, phase = t < 9 ? 0 : t < 11 ? 1 : t < 20 ? 2 : 3;
     if (last === phase) return;
     last = phase;

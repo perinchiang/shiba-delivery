@@ -28,6 +28,8 @@ export const sceneJumps = {
   willow: { title: '桥头阔叶树', state: onCountryRoad(892),
     camera: { fov: 40, fitWidth: true, focus: [891.5, 3.6, centerZ(891.5) + 11.2], offset: [-10, 2.4, -13] } },
   crossing: { title: '城市十字路口', state: onCountryRoad(70, 2.2) },
+  cityIce: { title: '城区单·冰室取茶', state: { ...onCountryRoad(68, 2.0), order: orders.find(o => o.id === 'ice'), phase: 'pickup', mode: 'ride' } },
+  cityTea: { title: '城区单·茶行送北街', state: { ...onCountryRoad(68, 2.0), order: orders.find(o => o.id === 'tea'), phase: 'pickup', mode: 'ride' } },
   cityEdge: {
     title: '城市边角·路缘细节', state: onCountryRoad(79, 2.5),
     camera: { fov: 46, focus: [95.5, 1.4, 10.8], offset: [-14.2, 2.1, -4.8] },

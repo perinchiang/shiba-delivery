@@ -7,9 +7,10 @@ import { beginSequence, isStandSequence, standFrame, isBoxSequence, boxFrame, do
 export function createMovement(state, { street, scooter }, input) {
   let walking = 0, stride = 0;
   const courierScale = scooter.root.scale.y;
+  const openRoad = () => state.phase === 'free' || Boolean(state.order?.cityRoute);
 
   function ride(dx, dz, dt) {
-    if (state.phase === 'free') {
+    if (openRoad()) {
       const travel = stepFreeRide(state, dx, dz, scooter.wheelbase*courierScale, dt);
       scooter.roll(Math.sign(state.speed)*travel);
       stride += travel*3.4;
@@ -50,7 +51,7 @@ export function createMovement(state, { street, scooter }, input) {
     const length = Math.hypot(dx, dz), step = 2.45 * dt / Math.max(1, length);
     const inside = state.mode === 'shop';
     const oldX = state.x, oldZ = state.z;
-    if (state.phase === 'free') Object.assign(state, constrainToRoad(oldX+dx*step, oldZ+dz*step, true));
+    if (openRoad() && !inside) Object.assign(state, constrainToRoad(oldX+dx*step, oldZ+dz*step, true));
     else {
       state.x = clamp(oldX + dx * step, inside ? -2.75 : -8.3, inside ? 2.75 : 37.7);
       state.z = clamp(oldZ + dz * step, inside ? -0.18 : -0.72, inside ? 2.66 : 7.1);
@@ -81,7 +82,7 @@ export function createMovement(state, { street, scooter }, input) {
       stride += travel * 5.4;
       return;
     }
-    if (blocked && state.phase === 'free') {
+    if (blocked && openRoad()) {
       state.reverseHold = state.throttle = state.brakePressure = state.steerInput = 0;
     }
     if (state.phase === 'offer' || state.phase === 'done' || state.dialog || blocked) return;

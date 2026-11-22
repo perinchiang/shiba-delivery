@@ -75,34 +75,38 @@ export function createView(renderer, state, world) {
     const room = rooms[state.order.room.template];
     for (const candidate of roomList) candidate.root.visible = inside && candidate === room;
     room.bag.visible = state.phase === 'pickup';
-    const free = state.phase === 'free';
-    const outsideTown = free && state.x > 52;
-    country.root.visible = free;
-    if (free) country.update(state, time, scene.fog?.color, scene.fog?.density);
-    street.eastTrees.visible = !free;
-    street.root.visible = !inside && (!free || state.x < 240);
+    const openRoad = state.phase === 'free' || Boolean(state.order?.cityRoute);
+    const outsideTown = openRoad && state.x > 52;
+    country.root.visible = openRoad;
+    if (openRoad) country.update(state, time, scene.fog?.color, scene.fog?.density);
+    street.eastTrees.visible = !openRoad;
+    street.root.visible = !inside && (!openRoad || state.x < 240);
     scooter.root.visible = !inside;
     if (inside) room.update(time); else street.update(time);
-    const ground = free ? roadHeight(state.x) : 0;
-    const cityCurb = free && Math.abs(state.x-crossing.x) < 28
-      && Math.abs(state.z-crossing.z) > halfWidth(state.x) && Math.abs(state.x-crossing.x) > crossing.half;
-    const height = ground + (cityCurb ? .115 : !inside && !outsideTown && state.z < CURB_Z ? CURB_H : 0);
+    const ground = openRoad ? roadHeight(state.x) : 0;
+    const cityCurbEW = openRoad && Math.abs(state.x - crossing.x) < 29
+      && Math.abs(state.z - crossing.z) > halfWidth(state.x) && Math.abs(state.x - crossing.x) > crossing.half;
+    const cityCurbNS = openRoad && Math.abs(state.x - crossing.x) > crossing.half
+      && Math.abs(state.x - crossing.x) < crossing.half + 3.5
+      && Math.abs(state.z - crossing.z) > crossing.half && Math.abs(state.z - crossing.z) < crossing.arm + 2;
+    const cityCurb = cityCurbEW || cityCurbNS;
+    const height = ground + (cityCurb ? CURB_H : !inside && !outsideTown && state.z < CURB_Z ? CURB_H : 0);
     const facing = closeUp && !riding ? 0.45 : state.yaw;
     shiba.root.rotation.y = riding || handling || snap ? facing : dampAngle(shiba.root.rotation.y, facing, 15, dt);
     scooter.root.rotation.y = state.bikeYaw;
-    scooter.root.position.set(state.bikeX, free ? roadHeight(state.bikeX) : 0, state.bikeZ);
+    scooter.root.position.set(state.bikeX, openRoad ? roadHeight(state.bikeX) : 0, state.bikeZ);
     scooter.steer(state.steer);
     scooter.setStand(state.stand);
-    const grade = free ? roadHeight(state.bikeX+.5)-roadHeight(state.bikeX-.5) : 0;
-    const rideMotion = free && riding && !state.sequence ? suspension.update(state, dt) : null;
+    const grade = openRoad ? roadHeight(state.bikeX+.5)-roadHeight(state.bikeX-.5) : 0;
+    const rideMotion = openRoad && riding && !state.sequence ? suspension.update(state, dt) : null;
     scooter.setSuspension(rideMotion?.frontTravel ?? 0, rideMotion?.rearTravel ?? 0);
     scooter.root.position.y += rideMotion?.height ?? 0;
     scooter.root.rotation.x = -Math.atan(grade*Math.sin(state.bikeYaw)) + (rideMotion?.pitch ?? 0);
-    scooter.root.rotation.z += free && riding ? state.bank : 0;
+    scooter.root.rotation.z += openRoad && riding ? state.bank : 0;
     tireEffects.update(state, dt);
     shiba.root.rotation.order = 'YXZ';
     shiba.root.rotation.x = riding ? scooter.root.rotation.x : 0;
-    shiba.root.rotation.z = free && riding ? state.bank : 0;
+    shiba.root.rotation.z = openRoad && riding ? state.bank : 0;
     shiba.root.position.set(state.x, riding ? scooter.root.position.y : height, state.z);
     const posed = nextView === 'portrait' || nextView === 'intro';
     const lookTowardCamera = nextView === 'stand' ? .42 : posed ? .78 : -.12;
@@ -143,9 +147,9 @@ export function createView(renderer, state, world) {
     }
     if (nextView === 'chase') {
       followYaw = dampAngle(followYaw, state.bikeYaw, 5.4, dt);
-      const fov = (aspect < .85 ? 63 : 55) + (free ? 7*Math.min(1, Math.abs(state.speed)/maxTrialSpeed)**2 : 0);
+      const fov = (aspect < .85 ? 63 : 55) + (openRoad ? 7*Math.min(1, Math.abs(state.speed)/maxTrialSpeed)**2 : 0);
       if (Math.abs(chase.fov-fov) > .03) { chase.fov = fov; chase.updateProjectionMatrix(); }
-      const far = free ? 245 : 100;
+      const far = openRoad ? 245 : 100;
       if (chase.far !== far) { chase.far = far; chase.updateProjectionMatrix(); }
       if (outsideTown) countryCamera(chase, state, followYaw, focus);
       else frameRide(chase, state, followYaw, focus);
@@ -175,13 +179,24 @@ export function createView(renderer, state, world) {
           if (!outsideTown) eye.z = Math.max(eye.z, -.95);
           eyeOffset.copy(eye).sub(desiredFocus);
         } else eyeOffset.set(0.8, 2.5, 9.2);
+      } else if (outsideTown && nextView === 'street') {
+        desiredFocus.set(state.x, ground + 1.55, state.z);
+        const onSideStreet = Math.abs(state.x - crossing.x) < 10 && Math.abs(state.z - crossing.z) > crossing.half + 1.5;
+        if (onSideStreet) {
+          const toRoadX = state.x > crossing.x ? -1 : 1;
+          const toCrossZ = state.z > crossing.z ? -1 : 1;
+          eyeOffset.set(toRoadX * 6.8, 4.2, toCrossZ * 5.0);
+        } else {
+          const toRoadZ = state.z > crossing.z ? -1 : 1;
+          eyeOffset.set(-4.5, 4.2, toRoadZ * 6.8);
+        }
       } else {
         desiredFocus.set(inside ? 0 : state.x, inside ? 1.50 : ground+1.74, inside ? -0.12 : state.z - 0.63);
         eyeOffset.set(inside ? -3.3 : 2.95, inside ? 4.60 : 3.9, 11);
       }
       if (snap) focus.copy(desiredFocus); else focus.lerp(desiredFocus, 1 - Math.exp(-7 * dt));
       activeCamera.position.copy(focus).add(eyeOffset);
-      if (free && !fieldInspection && Math.abs(state.x-crossing.x)<29) {
+      if (openRoad && !fieldInspection && Math.abs(state.x-crossing.x)<29) {
         // Keep the walking/parking view on the street side of the city facades.
         const pos = activeCamera.position, safe = constrainToRoad(pos.x,pos.z,true);
         if (Math.hypot(pos.x-safe.x,pos.z-safe.z) > .01) {
@@ -197,13 +212,13 @@ export function createView(renderer, state, world) {
     street.shopSide.visible = !fromShopSide;
     street.opposite.visible = nextView === 'chase' || fromShopSide;
     const lightX = Math.round(focus.x * 2) / 2;
-    const lightZ = free ? Math.round(focus.z*2)/2 : 0;
+    const lightZ = openRoad ? Math.round(focus.z*2)/2 : 0;
     sun.target.position.set(lightX, ground+.3, lightZ);
-    const openCountry = free ? THREE.MathUtils.smoothstep(state.x, 52, 170) : 0;
+    const openCountry = openRoad ? THREE.MathUtils.smoothstep(state.x, 52, 170) : 0;
     sun.position.set(lightX - 6 + 20*openCountry, ground + 11.5 - 4*openCountry, lightZ + 7.5 - 13*openCountry);
-    if (free) scene.fog.density = 0.016 - 0.0122 * THREE.MathUtils.smoothstep(state.x, 28, 120);
+    if (openRoad) scene.fog.density = 0.016 - 0.0122 * THREE.MathUtils.smoothstep(state.x, 28, 120);
     view = nextView;
-    if (free) country.sky.position.copy(activeCamera.position);
+    if (openRoad) country.sky.position.copy(activeCamera.position);
     renderer.render(scene, activeCamera);
   }
 

@@ -9,12 +9,15 @@ export function initialState() {
     ...start, bikeX: start.x, bikeZ: start.z, bikeYaw: Math.PI / 2, yaw: Math.PI / 2,
     throttle: 0, brakePressure: 0, reverseHold: 0, steerInput: 0,
     speed: 0, bank: 0, steer: 0, returnToBike: false, tiptoe: 0, reach: 0, stand: 1, lift: 0, braking: false,
+    completedCount: 0, totalEarnedCents: 0,
   };
 }
 
 export function createDelivery(state) {
   const bike = () => ({ x: state.bikeX, z: state.bikeZ });
-  const parkedAtHome = () => Math.abs(state.bikeX - state.order.customer.point.x) < 4.1;
+  const parkedAtHome = () => !state.order.cityRoute
+    ? Math.abs(state.bikeX - state.order.customer.point.x) < 4.1
+    : distance(bike(), state.order.customer.point) < 7.2;
   function availableAction() {
     if (state.sequence || state.braking) return '';
     if (state.phase === 'free' && state.mode === 'walk') {
@@ -30,8 +33,15 @@ export function createDelivery(state) {
       if (distance(state, state.order.room.exit) < 0.95) return 'exit';
       return '';
     }
-    if (state.phase === 'pickup' && distance(state, state.order.door) < 1.02) return 'enter';
-    if (state.cargo === 'hand' && !state.returnToBike && distance(state, state.order.customer.point) < 1.04) return 'deliver';
+    if (state.phase === 'pickup') {
+      if (state.order.pickupMode === 'curbside') {
+        if (distance(state, state.order.door) < 1.85) return 'talk';
+      } else if (distance(state, state.order.door) < 1.02) {
+        return 'enter';
+      }
+    }
+    const deliverRadius = state.order.cityRoute ? 1.85 : 1.04;
+    if (state.cargo === 'hand' && !state.returnToBike && distance(state, state.order.customer.point) < deliverRadius) return 'deliver';
     if (distance(state, bike()) < 1.82) {
       if (state.cargo === 'hand') return state.returnToBike || !parkedAtHome() ? 'pack' : '';
       if (state.cargo === 'box' && parkedAtHome()) return 'unpack';
@@ -72,17 +82,20 @@ export function createDelivery(state) {
         break;
       case 'talk':
         state.dialog = 'shopkeeper';
-        state.yaw = Math.PI;
+        state.yaw = state.order.pickupMode === 'curbside' && state.order.door.z > 4.17 ? 0 : Math.PI;
         break;
       case 'collect':
         Object.assign(state, { dialog: null, phase: 'delivery', cargo: 'hand', returnToBike: true });
         break;
       case 'deliver':
         state.dialog = 'customer';
-        state.yaw = Math.PI;
+        state.yaw = !state.order.cityRoute || state.order.customer.point.x < 52
+          ? Math.PI : state.order.customer.point.x < 92 ? -Math.PI / 2 : Math.PI / 2;
         break;
       case 'sign':
         Object.assign(state, { dialog: null, phase: 'done', cargo: 'delivered' });
+        state.completedCount = (state.completedCount || 0) + 1;
+        state.totalEarnedCents = (state.totalEarnedCents || 0) + Math.max(0, state.order.feeCents - state.order.insuranceCents);
         break;
     }
 
