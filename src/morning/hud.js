@@ -340,7 +340,7 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     }
     write('action-text', state.order.actions[action] || '');
     if (state.mode !== lastMode) {
-      write('keys', riding ? 'W/S 油门与刹车　 A/D 转向　 E 互动' : '方向键 / WASD 步行　 E 互动');
+      write('keys', riding ? 'W/S 油门刹车　A/D 转向　拖动转视角　E 互动' : 'WASD 步行　拖动转视角　R 回正　E 互动');
       stick.setAttribute('aria-label', riding ? '骑行摇杆，上推加速，下拉刹车或倒车，左右转向' : '步行摇杆，向任意方向拖动');
       lastMode = state.mode;
     }

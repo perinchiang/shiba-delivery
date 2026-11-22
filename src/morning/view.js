@@ -99,30 +99,127 @@ export function createView(renderer, state, world) {
   let aspect = 1, view = '', closeUp = false, followYaw = Math.PI / 2, walkCamYaw = Math.PI / 2;
   let hasPerspectivePos = false, camBlend = 0;
   const portraitStart = Math.atan2(3.68, 2);
-  let portraitAngle = portraitStart, dragX;
+  let portraitAngle = portraitStart, portraitPitch = 0.20;
+  let walkPitch = 0.24, streetOrbit = false;
+  let rideYawOffset = 0, ridePitchOffset = 0, rideOrbitIdle = 99;
+  let inspectYawOffset = 0, inspectPitchOffset = 0;
+  let userWalkHold = 0;
+  let dragPointer = null, dragX = 0, dragY = 0;
+  const orbitKeys = { left: false, right: false };
   const stage = $('stage');
+
+  function canOrbit() {
+    return state.mode !== 'shop' && !state.sequence && !state.braking;
+  }
+  function recenterCamera() {
+    portraitAngle = portraitStart;
+    portraitPitch = 0.20;
+    walkPitch = 0.24;
+    rideYawOffset = 0;
+    ridePitchOffset = 0;
+    rideOrbitIdle = 99;
+    inspectYawOffset = 0;
+    inspectPitchOffset = 0;
+    streetOrbit = false;
+    if (state.mode === 'walk' && state.x > OLD_STREET_LIMIT_X) {
+      walkCamYaw = state.yaw;
+    }
+  }
   function setCloseUp(value) {
     closeUp = value;
     portraitAngle = portraitStart;
-    dragX = undefined;
-    stage.classList.toggle('turntable', value && state.mode === 'ride');
+    portraitPitch = 0.20;
+    dragPointer = null;
+    stage.classList.toggle('turntable', value && state.mode !== 'shop');
     $('look').setAttribute('aria-pressed', String(value));
     $('look').querySelector('span').textContent = value ? '返回街景' : '近看阿柴';
   }
+  function applyOrbitDelta(dx, dy) {
+    if (!canOrbit()) return;
+    const yawStep = dx;
+    const pitchStep = dy;
+    if (shopReview) {
+      inspectYawOffset += yawStep;
+      inspectPitchOffset = clamp(inspectPitchOffset + pitchStep, -0.35, 0.55);
+      return;
+    }
+    if (closeUp) {
+      portraitAngle += yawStep;
+      portraitPitch = clamp(portraitPitch + pitchStep, -0.18, 0.58);
+      return;
+    }
+    if (state.mode === 'ride') {
+      if (view === 'intro' && !streetOrbit) {
+        streetOrbit = true;
+        // Start from the street-side view (+Z) matching the opening intro framing.
+        rideYawOffset = Math.PI - followYaw - 0.25;
+        ridePitchOffset = 0.08;
+      }
+      rideYawOffset += yawStep;
+      ridePitchOffset = clamp(ridePitchOffset + pitchStep, -0.16, 0.44);
+      rideOrbitIdle = 0;
+      return;
+    }
+    // Walking mode (both Old Street and Crossing/Country)
+    if (state.x <= OLD_STREET_LIMIT_X && !streetOrbit) {
+      streetOrbit = true;
+      // Start from the street-side (+Z) angle matching the Old Street view.
+      walkCamYaw = Math.PI - 0.25;
+      walkPitch = 0.24;
+    }
+    walkCamYaw += yawStep;
+    walkPitch = clamp(walkPitch + pitchStep, -0.12, 0.48);
+    userWalkHold = 0.7;
+  }
   stage.addEventListener('pointerdown', event => {
-    if (!closeUp || state.mode !== 'ride' || !event.isPrimary || event.button !== 0) return;
-    stage.setPointerCapture(event.pointerId);
+    if (!canOrbit() || !event.isPrimary || (event.button !== 0 && event.button !== 2)) return;
+    if (dragPointer !== null) return;
+    dragPointer = event.pointerId;
     dragX = event.clientX;
+    dragY = event.clientY;
+    stage.setPointerCapture(dragPointer);
   });
   stage.addEventListener('pointermove', event => {
-    if (dragX === undefined || !stage.hasPointerCapture(event.pointerId)) return;
-    portraitAngle = clamp(portraitAngle + (dragX - event.clientX) * 2.5 / stage.clientWidth, 0.30, 1.95);
+    if (event.pointerId !== dragPointer || !stage.hasPointerCapture(event.pointerId)) return;
+    const scale = 3.8 / Math.max(360, stage.clientWidth);
+    const dx = (dragX - event.clientX) * scale;
+    const dy = (event.clientY - dragY) * scale * 0.65;
     dragX = event.clientX;
+    dragY = event.clientY;
+    if (Math.abs(dx) > 1e-5 || Math.abs(dy) > 1e-5) applyOrbitDelta(dx, dy);
   });
-  stage.addEventListener('lostpointercapture', () => { dragX = undefined; });
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    stage.addEventListener(type, event => {
+      if (event.pointerId === dragPointer) dragPointer = null;
+    });
+  }
+  stage.addEventListener('dblclick', () => {
+    if (canOrbit()) recenterCamera();
+  });
+  window.addEventListener('keydown', event => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const tag = event.target?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (event.code === 'BracketLeft') orbitKeys.left = true;
+    else if (event.code === 'BracketRight') orbitKeys.right = true;
+    else if (event.code === 'KeyR' && !event.repeat && canOrbit()) {
+      event.preventDefault();
+      recenterCamera();
+    }
+  });
+  window.addEventListener('keyup', event => {
+    if (event.code === 'BracketLeft') orbitKeys.left = false;
+    else if (event.code === 'BracketRight') orbitKeys.right = false;
+  });
+  window.addEventListener('blur', () => {
+    orbitKeys.left = orbitKeys.right = false;
+    dragPointer = null;
+  });
 
   function clearInspection() {
     shopReview = null;
+    inspectYawOffset = 0;
+    inspectPitchOffset = 0;
     if (closeUp) setCloseUp(false);
   }
   function reset(preset) {
@@ -131,6 +228,15 @@ export function createView(renderer, state, world) {
     view = '';
     followYaw = state.bikeYaw;
     walkCamYaw = state.bikeYaw;
+    walkPitch = 0.24;
+    streetOrbit = false;
+    rideYawOffset = 0;
+    ridePitchOffset = 0;
+    rideOrbitIdle = 99;
+    inspectYawOffset = 0;
+    inspectPitchOffset = 0;
+    userWalkHold = 0;
+    dragPointer = null;
     hasPerspectivePos = false;
     camBlend = 0;
     if (state.mode === 'shop' || state.x <= OLD_STREET_LIMIT_X) {
@@ -154,7 +260,7 @@ export function createView(renderer, state, world) {
   }
 
   function walkBasis() {
-    if (state.mode === 'shop' || state.x <= OLD_STREET_LIMIT_X) {
+    if (state.mode === 'shop' || (state.x <= OLD_STREET_LIMIT_X && !streetOrbit)) {
       return { rightX: 1, rightZ: 0, backX: 0, backZ: 1 };
     }
     return { ...basis };
@@ -173,19 +279,31 @@ export function createView(renderer, state, world) {
   function draw(dt, time, { stride, walking }) {
     const inside = state.mode === 'shop', riding = state.mode === 'ride';
     const outsideTown = !inside && state.x > OLD_STREET_LIMIT_X;
+    if (inside) {
+      streetOrbit = false;
+      rideYawOffset = 0;
+      ridePitchOffset = 0;
+    }
+    if (orbitKeys.left || orbitKeys.right) {
+      const dir = (orbitKeys.left ? 1 : 0) - (orbitKeys.right ? 1 : 0);
+      if (dir) applyOrbitDelta(dir * 1.9 * dt, 0);
+    }
+    userWalkHold = Math.max(0, userWalkHold - dt);
+    stage.classList.toggle('orbitable', canOrbit());
+    stage.classList.toggle('turntable', closeUp && !inside);
     const packing = isBoxSequence(state.sequence);
     const handling = isStandSequence(state.sequence);
     const seatBlend = handling ? state.sequence.seat ?? (riding ? 1 : 0) : Number(riding);
-    const atSpawn = state.phase === 'offer' && riding
+    const atSpawn = state.phase === 'offer' && riding && !streetOrbit
       && Math.hypot(state.x - start.x, state.z - start.z) < 0.12
       && Math.abs(state.speed) < 0.05
       && state.throttle < 0.05
       && !state.reverseHold;
-    const nextView = state.sequence?.approaching ? (outsideTown ? 'walk' : 'street') :
+    const nextView = state.sequence?.approaching ? (outsideTown || streetOrbit ? 'walk' : 'street') :
       state.braking && !state.speed ? 'stand' : state.sequence ? (handling ? 'stand' : packing ? 'box' : 'door') :
-      (shopReview ? 'inspection' : (closeUp ? 'portrait' : inside ? 'shop' : !riding ? (outsideTown ? 'walk' : 'street') : atSpawn ? 'intro' : 'chase'));
+      (shopReview ? 'inspection' : (closeUp ? 'portrait' : inside ? 'shop' : !riding ? (outsideTown || streetOrbit ? 'walk' : 'street') : atSpawn ? 'intro' : 'chase'));
     const fieldInspection = nextView === 'inspection' && shopReview.fov;
-    const perspectiveView = nextView === 'chase' || nextView === 'walk' || fieldInspection;
+    const perspectiveView = nextView === 'chase' || nextView === 'walk' || nextView === 'portrait' || fieldInspection;
     const activeCamera = perspectiveView ? chase : camera;
     const snap = nextView !== view;
     const room = rooms[state.order.room.template];
@@ -268,7 +386,21 @@ export function createView(renderer, state, world) {
     }
     if (nextView === 'chase') {
       followYaw = dampAngle(followYaw, state.bikeYaw, 5.4, dt);
-      walkCamYaw = followYaw;
+      if (dragPointer === null && !orbitKeys.left && !orbitKeys.right) {
+        if (Math.abs(state.speed) > 0.4) {
+          rideOrbitIdle += dt;
+          if (rideOrbitIdle > 1.5) {
+            rideYawOffset = damp(rideYawOffset, 0, 3.2, dt);
+            ridePitchOffset = damp(ridePitchOffset, 0, 3.2, dt);
+            if (Math.abs(rideYawOffset) < 0.002 && Math.abs(ridePitchOffset) < 0.002) {
+              rideYawOffset = 0;
+              ridePitchOffset = 0;
+            }
+          }
+        }
+      }
+      const activeYaw = followYaw + rideYawOffset;
+      walkCamYaw = activeYaw;
       const fov = (aspect < .85 ? 63 : 55) + 7 * Math.min(1, Math.abs(state.speed) / maxTrialSpeed) ** 2;
       if (Math.abs(chase.fov - fov) > .03 || chase.near !== 0.25 || chase.far !== 245) {
         chase.fov = fov;
@@ -278,11 +410,29 @@ export function createView(renderer, state, world) {
       }
       const prevPos = desiredEye.copy(chase.position);
       const prevFocus = desiredFocus.copy(focus);
-      if (outsideTown) {
-        countryCamera(chase, state, followYaw, focus);
-        clearCrossingObstacles(chase.position, focus);
-        chase.lookAt(focus);
-        chase.rotateZ(state.bank * .07);
+      const userOrbited = Math.abs(rideYawOffset) > 0.005 || Math.abs(ridePitchOffset) > 0.005;
+      if (outsideTown || userOrbited) {
+        if (userOrbited && !outsideTown) {
+          // Smooth 360-degree user orbit around the scooter on Old Street.
+          const radius = 5.2;
+          const elev = Math.max(0.85, 2.25 + ridePitchOffset * 3.8);
+          chase.position.set(
+            state.x - Math.sin(activeYaw) * radius,
+            ground + elev,
+            state.z - Math.cos(activeYaw) * radius,
+          );
+          focus.set(state.x, ground + 1.05, state.z);
+          chase.lookAt(focus);
+        } else {
+          countryCamera(chase, state, activeYaw, focus);
+          if (userOrbited) {
+            chase.position.y = Math.max(roadHeight(chase.position.x) + 1.15, chase.position.y + ridePitchOffset * 3.8);
+            focus.set(state.x, ground + 1.18, state.z);
+          }
+          clearCrossingObstacles(chase.position, focus);
+          chase.lookAt(focus);
+          chase.rotateZ(state.bank * .07);
+        }
       } else {
         frameRide(chase, state, followYaw, focus);
       }
@@ -306,7 +456,7 @@ export function createView(renderer, state, world) {
         chase.far = 245;
         chase.updateProjectionMatrix();
       }
-      if (walkBoomBlocked(walkCamYaw, walkDist)) {
+      if (outsideTown && dragPointer === null && userWalkHold <= 0 && walkBoomBlocked(walkCamYaw, walkDist)) {
         for (let step = 0.25; step <= 2.3; step += 0.25) {
           if (!walkBoomBlocked(walkCamYaw + step, walkDist)) {
             walkCamYaw = dampAngle(walkCamYaw, walkCamYaw + step, 4.5, dt);
@@ -318,22 +468,53 @@ export function createView(renderer, state, world) {
           }
         }
       }
-      desiredFocus.set(state.x, height + 1.18, state.z);
-      const rawX = state.x - Math.sin(walkCamYaw) * walkDist;
-      const rawZ = state.z - Math.cos(walkCamYaw) * walkDist;
-      desiredEye.set(rawX, Math.max(roadHeight(rawX) + 1.55, ground + 2.55), rawZ);
-      clearCrossingObstacles(desiredEye, desiredFocus);
+      desiredFocus.set(state.x, height + 1.12, state.z);
+      const horiz = walkDist * Math.cos(walkPitch);
+      const rawX = state.x - Math.sin(walkCamYaw) * horiz;
+      const rawZ = state.z - Math.cos(walkCamYaw) * horiz;
+      const rawY = Math.max(roadHeight(rawX) + 1.05, height + 1.12 + walkDist * Math.sin(walkPitch) + 0.55);
+      desiredEye.set(rawX, rawY, rawZ);
+      if (outsideTown) clearCrossingObstacles(desiredEye, desiredFocus);
       const farJump = !hasPerspectivePos || Math.hypot(chase.position.x - desiredEye.x, chase.position.z - desiredEye.z) > 18;
       if (farJump) {
         focus.copy(desiredFocus);
         chase.position.copy(desiredEye);
         hasPerspectivePos = true;
       } else {
-        const alpha = 1 - Math.exp(-6.5 * dt);
+        const alpha = 1 - Math.exp(-(dragPointer !== null ? 18 : 7.5) * dt);
         focus.lerp(desiredFocus, alpha);
         chase.position.lerp(desiredEye, alpha);
       }
       chase.lookAt(focus);
+    } else if (nextView === 'portrait') {
+      const portraitFov = aspect < 0.85 ? 46 : 38;
+      if (Math.abs(chase.fov - portraitFov) > 0.03 || chase.near !== 0.12 || chase.far !== 245) {
+        chase.fov = portraitFov;
+        chase.near = 0.12;
+        chase.far = 245;
+        chase.updateProjectionMatrix();
+      }
+      const radius = (riding ? 3.55 : 2.75) * courierScale;
+      const baseYaw = riding ? state.bikeYaw : 0;
+      const theta = baseYaw + portraitAngle;
+      const horiz = radius * Math.cos(portraitPitch);
+      const focusY = (riding ? ground + 1.06 : height + 0.94) * courierScale + (riding ? 0 : (1 - courierScale) * height);
+      desiredFocus.set(state.x, focusY, state.z);
+      desiredEye.set(
+        state.x + Math.sin(theta) * horiz,
+        Math.max(ground + 0.45, focusY + radius * Math.sin(portraitPitch) + 0.18),
+        state.z + Math.cos(theta) * horiz,
+      );
+      if (snap) {
+        focus.copy(desiredFocus);
+        chase.position.copy(desiredEye);
+      } else {
+        const alpha = 1 - Math.exp(-(dragPointer !== null ? 20 : 10) * dt);
+        focus.lerp(desiredFocus, alpha);
+        chase.position.lerp(desiredEye, alpha);
+      }
+      chase.lookAt(focus);
+      hasPerspectivePos = true;
     } else {
       if (nextView === 'stand') {
         scooter.root.localToWorld(desiredFocus.set(.32, 1.05, -.16));
@@ -352,6 +533,18 @@ export function createView(renderer, state, world) {
       } else if (shopReview) {
         desiredFocus.fromArray(shopReview.focus);
         eyeOffset.fromArray(shopReview.offset);
+        if (Math.abs(inspectYawOffset) > 1e-4 || Math.abs(inspectPitchOffset) > 1e-4) {
+          eyeOffset.applyAxisAngle(cameraUp, inspectYawOffset);
+          const horiz = Math.hypot(eyeOffset.x, eyeOffset.z);
+          if (horiz > 0.05) {
+            const pitch = clamp(Math.atan2(eyeOffset.y, horiz) + inspectPitchOffset, -0.25, 0.85);
+            const dist = eyeOffset.length();
+            const scaleH = Math.cos(pitch) * dist / horiz;
+            eyeOffset.x *= scaleH;
+            eyeOffset.z *= scaleH;
+            eyeOffset.y = Math.sin(pitch) * dist;
+          }
+        }
       } else if (posed) {
         desiredFocus.set(state.x, ground + (riding ? 1.21 : 1.10) * courierScale, state.z);
         if (riding) {
@@ -376,7 +569,7 @@ export function createView(renderer, state, world) {
       }
       activeCamera.lookAt(focus);
     }
-    if (inside || state.x <= OLD_STREET_LIMIT_X) {
+    if (inside || (state.x <= OLD_STREET_LIMIT_X && !streetOrbit)) {
       basis.rightX = 1; basis.rightZ = 0; basis.backX = 0; basis.backZ = 1;
     } else {
       const fx = focus.x - activeCamera.position.x;
@@ -387,11 +580,12 @@ export function createView(renderer, state, world) {
         basis.rightX = -nz; basis.rightZ = nx; basis.backX = -nx; basis.backZ = -nz;
       }
     }
-    // Dress the far side of a close-up; the shop row behind the lens can
-    // otherwise put a counter or a tree across the boots and stand.
-    const fromShopSide = !perspectiveView && camera.position.z < focus.z;
+    // Hide the shop facade row only when the camera orbits behind it on Old Street
+    // so a 360-degree close-up or walk orbit never gets blocked by a storefront wall.
+    const behindOldShops = !inside && !outsideTown && activeCamera.position.z < -1.35;
+    const fromShopSide = (!perspectiveView && camera.position.z < focus.z) || behindOldShops;
     street.shopSide.visible = !fromShopSide;
-    street.opposite.visible = perspectiveView || fromShopSide;
+    street.opposite.visible = (perspectiveView && !(activeCamera.position.z > 8.2 && !outsideTown)) || fromShopSide;
     const lightX = Math.round(focus.x * 2) / 2;
     const lightZ = inside ? 0 : Math.round(focus.z * 2) / 2;
     sun.target.position.set(lightX, ground + .3, lightZ);
