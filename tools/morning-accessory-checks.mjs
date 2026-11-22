@@ -114,35 +114,35 @@ function vehicleGap(parts, box) {
   return Math.sqrt(gapSq);
 }
 
-// The band follows a tailored upper jacket. Cast against its exported triangles
-// at the cloth height; the old ellipsoid would fill in the new neck opening.
+// The band follows a tailored upper jacket. Cast against the full exported
+// welded jacket triangles at the cloth height using exact signed radial
+// clearance so a kerchief sitting in the collar valley between the neck and
+// seamless raglan shoulder measures clearance to both surfaces without being
+// occluded by the outer shoulder.
 function clothClearance(scarf, uniform, chest) {
   let jacket;
   uniform.traverse(mesh => {
     if (mesh.material?.name === 'Uniform · bottle green') jacket = mesh;
   });
   assert.ok(jacket);
-  // The exported Uniform is one object, but its bottle-green primitive also
-  // contains the outward sleeve barrels.  Build the cloth ray surface only
-  // from triangles whose three vertices are torso anchored (Chest >= 0.5),
-  // so a kerchief-side ray cannot hit a sleeve before reaching the collar.
-  const source = jacket.geometry;
-  const { position, skinIndex, skinWeight } = source.attributes;
-  const chestBone = jacket.skeleton.bones.findIndex(b => b.name === 'Chest');
-  const chestWeight = i => {
-    let total = 0;
-    for (let j = 0; j < 4; j++) if (skinIndex.getComponent(i, j) === chestBone) total += skinWeight.getComponent(i, j);
-    return total;
+  const surface = new Octree().fromGraphNode(new T.Mesh(jacket.geometry));
+  const ray = new T.Ray(), point = v(), outDir = v(), inDir = v(), hit = v(), toBind = new T.Matrix4();
+  const nearestHit = (octree, r) => {
+    const triangles = [];
+    octree.getRayTriangles(r, triangles);
+    let bestDist = Infinity;
+    let bestTri = null;
+    for (let i = 0; i < triangles.length; i++) {
+      const tri = triangles[i];
+      if (!r.intersectTriangle(tri.a, tri.b, tri.c, false, hit)) continue;
+      const distance = r.origin.distanceTo(hit);
+      if (distance > 1e-6 && distance < bestDist) {
+        bestDist = distance;
+        bestTri = tri;
+      }
+    }
+    return bestTri ? { distance: bestDist, normal: bestTri.getNormal(v()) } : null;
   };
-  const keep = [];
-  for (let i = 0; i < source.index.count; i += 3) {
-    const a = source.index.getX(i), b = source.index.getX(i + 1), c = source.index.getX(i + 2);
-    if (chestWeight(a) >= 0.5 && chestWeight(b) >= 0.5 && chestWeight(c) >= 0.5) keep.push(a, b, c);
-  }
-  const torso = source.clone();
-  torso.setIndex(keep);
-  const surface = new Octree().fromGraphNode(new T.Mesh(torso));
-  const ray = new T.Ray(), point = v(), toBind = new T.Matrix4();
   const moving = scarf.map(({ mesh, points }) => {
     const indices = [], { skinIndex, skinWeight } = mesh.geometry.attributes;
     for (let i = 0; i < points.length; i++) {
@@ -163,10 +163,16 @@ function clothClearance(scarf, uniform, chest) {
       const {points} = scarf[part];
       const check = (i) => {
         point.copy(points[i]).applyMatrix4(toBind);
-        ray.direction.set(-point.x, 0, -point.z).normalize();
-        ray.origin.copy(point).addScaledVector(ray.direction, -.8);
-        const hit = surface.rayIntersect(ray);
-        if (hit) gap = Math.min(gap, hit.distance - .8);
+        outDir.set(point.x, 0, point.z).normalize();
+        ray.set(point, outDir);
+        const outHit = nearestHit(surface, ray);
+        if (outHit && outHit.normal.dot(outDir) > 0) {
+          gap = Math.min(gap, -outHit.distance);
+        } else {
+          ray.set(point, inDir.copy(outDir).negate());
+          const inHit = nearestHit(surface, ray);
+          gap = Math.min(gap, Math.min(inHit ? inHit.distance : Infinity, outHit ? outHit.distance : Infinity));
+        }
       };
       if (rigidChecked) moving[part].forEach(check);
       else for (let i = 0; i < points.length; i++) check(i);

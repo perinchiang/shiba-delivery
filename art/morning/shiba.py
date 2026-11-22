@@ -365,7 +365,11 @@ def make_character(collection, rig, coat_path):
             groups["UpperArm_" + side].add([vertex.index], arm * (1 - fore), "REPLACE")
             groups["Forearm_" + side].add([vertex.index], arm * fore, "REPLACE")
         else:
-            groups["Chest"].add([vertex.index], 1.0, "REPLACE")
+            hem = rear_hem(q)
+            if hem["Pelvis"] > 0.0:
+                groups["Pelvis"].add([vertex.index], hem["Pelvis"], "REPLACE")
+            if hem["Chest"] > 0.0:
+                groups["Chest"].add([vertex.index], hem["Chest"], "REPLACE")
 
     # Pants, zipper, pocket, and cuffs are trims joined into the same exported
     # Uniform object after the shell is welded.
