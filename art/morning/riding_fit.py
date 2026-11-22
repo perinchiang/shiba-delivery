@@ -30,4 +30,6 @@ def grip(side):
 
 
 def palm(side):
-    return grip(side) + V((0, 0.079, -0.010))
+    # The marker is the paw centre over the rubber, authored once in bike
+    # space.  Runtime IK consumes this exact point (no hidden reach offset).
+    return grip(side) + V((0, 0.079, 0.035))

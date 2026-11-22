@@ -114,7 +114,7 @@ def rear_open_shell(parts, profiles, cap_start, cap_end, cap_start_z=1, cap_end_
             mat = paint(mid_y) if callable(paint) else paint
             parts.face((rows[i][j], rows[i][k], rows[i + 1][k], rows[i + 1][j]), mat)
     for row, axial, paint in [(rows[0], cap_start_z, cap_start), (rows[-1], cap_end_z, cap_end)]:
-        rim = [parts.vertex(parts.p[i], (0, 0, axial)) for i in row]
+        rim = [parts.vertex(parts.p[i], (0, 0, axial), already_transformed=True) for i in row]
         parts.face(tuple(rim), paint)
 
 

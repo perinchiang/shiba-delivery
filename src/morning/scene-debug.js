@@ -21,6 +21,26 @@ function onCountryRoad(x, laneOffset = 0) {
 // State overrides are applied to a fresh delivery. Optional camera presets are cleared on movement.
 export const sceneJumps = {
   street: { title: '老街起点' },
+  shibaFront: {
+    title: '阿柴正面·站姿',
+    state: { phase: 'free', mode: 'walk', x: 2.0, z: 0.4, yaw: 0, bikeX: -2.2, bikeZ: start.z, bikeYaw: Math.PI / 2, stand: 1 },
+    camera: { fov: 36, focus: [2.0, 0.78, 0.4], offset: [0.18, 0.22, 2.75] },
+  },
+  shibaSide: {
+    title: '阿柴侧面·斜视',
+    state: { phase: 'free', mode: 'walk', x: 2.0, z: 0.4, yaw: 0, bikeX: -2.2, bikeZ: start.z, bikeYaw: Math.PI / 2, stand: 1 },
+    camera: { fov: 36, focus: [2.0, 0.78, 0.4], offset: [2.45, 0.28, 1.35] },
+  },
+  shibaBack: {
+    title: '阿柴背面·站姿',
+    state: { phase: 'free', mode: 'walk', x: 2.0, z: 0.4, yaw: Math.PI, bikeX: -2.2, bikeZ: start.z, bikeYaw: Math.PI / 2, stand: 1 },
+    camera: { fov: 36, focus: [2.0, 0.78, 0.4], offset: [0.18, 0.24, 2.75] },
+  },
+  shibaRide: {
+    title: '阿柴骑姿·近景',
+    state: { phase: 'free', mode: 'ride', x: 2.0, z: start.z, yaw: Math.PI / 2, bikeX: 2.0, bikeZ: start.z, bikeYaw: Math.PI / 2, stand: 1 },
+    camera: { fov: 38, focus: [2.0, 0.92, start.z], offset: [2.25, 0.45, 2.35] },
+  },
   banyan: { title: '街边小榕树', state: bakeryFront,
     camera: { height: 4.9, width: 5.8, focus: [-2.4, 1.23, .86], offset: [2.2, 3.5, 8] } },
   bark: { title: '近看树干', state: { ...bakeryFront, ...parked(bunFacade.x - 2) },

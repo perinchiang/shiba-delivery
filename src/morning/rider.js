@@ -414,10 +414,8 @@ export function createScooter(asset) {
   };
   const palms = ['L', 'R'].map(t => {
     const target = node('PalmTarget_' + t);
-    // The longer forearm needs a small forward cup over the rubber grip;
-    // keep the authored bike marker untouched and apply the rider-space
-    // offset only to the runtime IK target.
-    target.position.z += .045;
+    // PalmTarget is authored on the real rubber grip; the arm solver uses it
+    // directly so every steering angle is a genuine contact, not a reach cheat.
     return target;
   });
   const mount = { seat: node('Seat_Rider'), turn: 0, kick: 0, lean: 0,

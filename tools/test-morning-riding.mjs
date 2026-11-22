@@ -68,7 +68,7 @@ fixedLengths.push(['Pelvis', 'Chest', at(dog('Pelvis')).distanceTo(at(dog('Chest
 for (const side of hips) {
   const shoulder = at(dog('UpperArm_' + side)), elbow = at(dog('Forearm_' + side)), paw = at(dog('Paw_' + side));
   const authoredLength = (shoulder.distanceTo(elbow) + elbow.distanceTo(paw)) / rider.root.scale.y;
-  assert.ok(authoredLength >= .325 && authoredLength <= .340, side + ' arm reaches the long slender target length');
+  assert.ok(authoredLength >= .285 && authoredLength <= .298, side + ' arm reaches the compact rounded target length');
   const aPose = Math.atan2(Math.abs(elbow.x - shoulder.x), Math.abs(elbow.y - shoulder.y));
   assert.ok(aPose > THREE.MathUtils.degToRad(26) && aPose < THREE.MathUtils.degToRad(32), side + ' stand arm keeps the A-pose angle');
 }
@@ -94,7 +94,7 @@ const head = dog('Head'), skin = dog('Head_Coat').skeleton;
 const headFromBind = head.matrixWorld.clone().multiply(skin.boneInverses[skin.bones.indexOf(head)]);
 const smile = dog('Muzzle_Smile');
 for (const x of [-.048, .048]) {
-  const eye = new THREE.Vector3(x, 1.092, .75).applyMatrix4(headFromBind);
+  const eye = new THREE.Vector3(x * .9, .8 + .9 * (1.092 - .8), .035 + .9 * (.75 - .035)).applyMatrix4(headFromBind);
   ray.set(eye, new THREE.Vector3(0, 0, -1).transformDirection(headFromBind));
   const hit = ray.intersectObjects([smile, dog('Muzzle'), dog('Head_Coat')], true)[0];
   assert.ok(hit && smile.getObjectById(hit.object.id), 'visible smile on each side of the nose');
@@ -107,7 +107,7 @@ for (const s of hips) {
 }
 const cushion = bounds(saddle).getSize(new THREE.Vector3()).divideScalar(scooter.root.scale.y);
 assert.ok(cushion.x > .40 && cushion.z > .55, 'broad motorcycle bench');
-let worstGrip = 0, minTail = Infinity;
+let worstGrip = 0, minTail = Infinity, minRideBend = Infinity, maxRideBend = -Infinity;
 for (const yaw of [0, 1.74, -2.30]) {
   for (const root of [rider.root, scooter.root]) {
     root.position.set(2*yaw, 0, -yaw); root.rotation.y = yaw;
@@ -130,7 +130,9 @@ for (const yaw of [0, 1.74, -2.30]) {
       const paw = at(dog('Paw_'+s)), elbow = at(dog('Forearm_'+s)), arm = at(dog('UpperArm_'+s));
       worstGrip = Math.max(worstGrip, paw.distanceTo(at(mount.palms[i])));
       const bend = elbow.clone().sub(arm).angleTo(paw.clone().sub(elbow));
-      assert.ok(bend > .45 && bend < 1.75, 'elbow remains bent');
+      minRideBend = Math.min(minRideBend, bend);
+      maxRideBend = Math.max(maxRideBend, bend);
+      assert.ok(bend > .65 && bend < 1.65, 'elbow remains softly bent');
       const rubber = at(bike('Grip_'+s));
       const overlap = surface(bike('Swept_Handlebar'), rubber) - surface(dog('Mitten_'+s), rubber, up);
       assert.ok(overlap > .012 && overlap < .052, 'paw cups physical rubber at ' + angle);
@@ -159,7 +161,7 @@ for (const yaw of [0, 1.74, -2.30]) {
         rider.pose({ ...basePose, mount, headTurn });
         rider.root.updateMatrixWorld(true);
         for (const part of [dog('Mitten_L'), dog('Mitten_R'), bike('Fork_Headlamp_and_Mirrors')]) {
-          assertClearsBodyPart(part, head, new THREE.Vector3(0,1.25,.035), new THREE.Vector3(.574,.492,.463));
+          assertClearsBodyPart(part, head, new THREE.Vector3(0,1.205,.035), new THREE.Vector3(.5166,.4428,.4167));
         }
       }
       rider.pose({ ...basePose, mount });
@@ -493,7 +495,7 @@ for (const mounted of [false,true,false]) {
     assert.ok(insertion > 0 && insertion < .030, 'the root is seated just inside the hem');
     if (i !== 18) continue;
     for (const side of [-1,1]) {
-      const headBind = bindToWorld(head), eyePoint = new THREE.Vector3(side*.238,1.279,.90);
+      const headBind = bindToWorld(head), eyePoint = new THREE.Vector3(side*.2142,1.2311,.8135);
       const forward = new THREE.Vector3(0,0,-1);
       const eye = firstSurface(dog(side < 0 ? 'Eye_L_Mesh' : 'Eye_R_Mesh'),eyePoint,forward,headBind);
       const lens = firstSurface(goggles,eyePoint,forward,headBind);
@@ -539,7 +541,7 @@ for (const dir of [-1, 1]) {
     }
     if (i % 6 === 0) {
       checkSleeves();
-      assertClearsBodyPart(bike('Fork_Headlamp_and_Mirrors'), head, new THREE.Vector3(0,1.25,.035), new THREE.Vector3(.574,.492,.463));
+      assertClearsBodyPart(bike('Fork_Headlamp_and_Mirrors'), head, new THREE.Vector3(0,1.205,.035), new THREE.Vector3(.5166,.4428,.4167));
     }
     state.bikeX += speed*dt*dir;
   }
@@ -551,4 +553,4 @@ rider.resetTail();
 console.log('Maximum gap between garment surfaces at the tail root', (1000*maxSeam).toFixed(2), 'mm');
 checkAccessories(rider, scooter);
 console.log('PASS: Blender clips, loadable skin, fixed limb lengths, rump/foot/grip contact, solo box, hinge and camera.');
-console.log('Max palm error', (worstGrip*1000).toFixed(3), 'mm; conservative tail/box clearance', (minTail*1000).toFixed(1), 'mm.');
+console.log('Ride elbow range', minRideBend.toFixed(3), '–', maxRideBend.toFixed(3), 'rad; Max palm error', (worstGrip*1000).toFixed(3), 'mm; conservative tail/box clearance', (minTail*1000).toFixed(1), 'mm.');

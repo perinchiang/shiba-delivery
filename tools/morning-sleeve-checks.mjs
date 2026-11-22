@@ -10,6 +10,7 @@ export function sleeveChecks(root) {
   const sides = ['L', 'R'].map(tag => {
     const sign = tag === 'L' ? -1 : 1, side = [], shoulder = [], cuff = [];
     let shoulderChest = false, barrelArm = false;
+    let shoulderUpperMax = 0, wristForeMax = 0;
     for (let i = 0; i < position.count; i++) {
       const x = position.getX(i), y = position.getY(i);
       if (sign * x > .20 && y < .82 && y > .44) side.push(i);
@@ -24,11 +25,22 @@ export function sleeveChecks(root) {
       }
       if (sign * x > .30 && y < .64 && arm > .18) barrelArm = true;
       if (sign * x > .22 && y > .70 && chest > .05) shoulderChest = true;
+      let upper = 0, forearm = 0;
+      for (let j = 0; j < 4; j++) {
+        const name = jacket.skeleton.bones[skinIndex.getComponent(i, j)].name;
+        const w = skinWeight.getComponent(i, j);
+        if (name === `UpperArm_${tag}`) upper += w;
+        if (name === `Forearm_${tag}`) forearm += w;
+      }
+      if (sign * x > .20 && y > .67) shoulderUpperMax = Math.max(shoulderUpperMax, upper);
+      if (sign * x > .31 && y < .54) wristForeMax = Math.max(wristForeMax, forearm);
     }
     assert.ok(side.length > 20, `${tag} sleeve volume is present`);
     assert.ok(shoulder.length > 8, `${tag} shoulder cap is rounded`);
     assert.ok(shoulderChest, `${tag} shoulder cap retains chest influence`);
     assert.ok(barrelArm, `${tag} sleeve barrel has graduated arm weights`);
+    assert.ok(shoulderUpperMax > .70, `${tag} shoulder UpperArm weight stays monotonic (>0.7)`);
+    assert.ok(wristForeMax > .85, `${tag} wrist Forearm weight stays monotonic (>0.85)`);
     assert.ok(uniform.children.some(part => part.material?.name === 'Uniform · charcoal trim'), `${tag} charcoal cuff is exported in Uniform`);
     // A real underarm separation check: sample two vertical bands and compare
     // the nearest outer torso vertex with the inner sleeve wall.  This catches
@@ -46,7 +58,9 @@ export function sleeveChecks(root) {
           if (name === `UpperArm_${tag}` || name === `Forearm_${tag}`) arm += skinWeight.getComponent(i, j);
         }
         if (arm < .05 && Math.abs(x) < .24) bodyEdge = Math.max(bodyEdge, sign * x);
-        if (arm > .25 && sign * x > .20) sleeveEdge = Math.min(sleeveEdge, sign * x);
+        if (arm > .25 && sign * x > .20) {
+          sleeveEdge = Math.min(sleeveEdge, sign * x);
+        }
       }
       assert.ok(Number.isFinite(sleeveEdge) && sleeveEdge - bodyEdge > .002,
         `${tag} keeps a measurable underarm air gap at y=${centre.toFixed(2)}`);

@@ -5,9 +5,12 @@ import struct
 import zlib
 import bpy
 from mathutils import Quaternion
-from forms import Parts, V, X, UP, Z, TAU, blender_v, material, smooth
+from forms import (
+    Parts, V, X, UP, Z, TAU, blender_v, material, smooth,
+    HEAD_SCALE, HEAD_PIVOT, head_transform, spline,
+)
 from riding_fit import CHASSIS_DROP, RIDER_ORIGIN, PELVIS_TILT, CHEST_TILT, HEAD_LEVEL, SOLE_DEPTH, footrest, palm
-from helmet import make_helmet, HINGE, PARK_ANGLE
+from helmet import make_helmet, HINGE, HINGE_RAW, PARK_ANGLE
 from accessories import curled_tail, tail_rotations, TAIL_JOINTS, TAIL_PATH
 
 BONES = {}
@@ -20,22 +23,25 @@ def rig_bones():
     def add(name, start, end, parent=None):
         d[name] = (V(start), V(end), parent)
 
+    def add_head(name, start, end, parent=None):
+        d[name] = (head_transform(start), head_transform(end), parent)
+
     add("Root", (0, 0, 0), (0, 0.12, 0))
     add("Pelvis", (0, 0.39, 0), (0, 0.57, 0), "Root")
     add("Chest", (0, 0.57, 0), (0, 0.87, 0), "Pelvis")
-    add("Head", (0, 1.25, 0.035), (0, 1.52, 0.035), "Chest")
-    add("GoggleHinge", HINGE, (0, HINGE[1]+.10, HINGE[2]), "Head")
+    add_head("Head", (0, 1.25, 0.035), (0, 1.52, 0.035), "Chest")
+    add_head("GoggleHinge", HINGE_RAW, (0, HINGE_RAW[1] + .10, HINGE_RAW[2]), "Head")
     for name, start, end, parent in TAIL_JOINTS:
         add(name, TAIL_PATH[start], TAIL_PATH[end], parent)
     for s, tag in SIDES:
-        add("Ear_" + tag, (s * 0.36, 1.57, 0.01), (s * 0.48, 1.90, 0.025), "Head")
-        add("Eye_" + tag, (s * 0.238, 1.279, 0.442), (s * 0.238, 1.325, 0.442), "Head")
+        add_head("Ear_" + tag, (s * 0.36, 1.57, 0.01), (s * 0.48, 1.90, 0.025), "Head")
+        add_head("Eye_" + tag, (s * 0.238, 1.279, 0.442), (s * 0.238, 1.325, 0.442), "Head")
         # A clean Animal Crossing-style A pose.  The shoulder starts on the
         # narrow outer yoke; the long, slender two-bone chain stays outside
         # the pear-shaped torso instead of being buried in the belly.
-        add("UpperArm_" + tag, (s * 0.208, 0.750, 0.018), (s * 0.290, 0.615, 0.040), "Chest")
-        add("Forearm_" + tag, (s * 0.290, 0.615, 0.040), (s * 0.395, 0.485, 0.070), "UpperArm_" + tag)
-        add("Paw_" + tag, (s * 0.395, 0.485, 0.070), (s * 0.410, 0.452, 0.076), "Forearm_" + tag)
+        add("UpperArm_" + tag, (s * 0.208, 0.720, 0.015), (s * 0.280, 0.590, 0.040), "Chest")
+        add("Forearm_" + tag, (s * 0.280, 0.590, 0.040), (s * 0.379, 0.490, 0.070), "UpperArm_" + tag)
+        add("Paw_" + tag, (s * 0.379, 0.490, 0.070), (s * 0.394, 0.457, 0.076), "Forearm_" + tag)
         add("Thigh_" + tag, (s * 0.151, 0.39, 0), (s * 0.151, 0.20, 0), "Pelvis")
         add("Shin_" + tag, (s * 0.151, 0.20, 0), (s * 0.151, 0.098, 0.051), "Thigh_" + tag)
         add("Foot_" + tag, (s * 0.151, 0.098, 0.051), (s * 0.151, 0.094, 0.164), "Shin_" + tag)
@@ -186,7 +192,7 @@ def riding_shoe(parts, ankle, leather, rubber):
                 k = (j + 1) % segments
                 parts.face((rings[-1][j], rings[-1][k], row[k], row[j]), rubber if i <= 4 else leather)
         rings.append(row)
-    parts.face(tuple(parts.vertex(parts.p[i], -UP) for i in rings[0]), rubber)
+    parts.face(tuple(parts.vertex(parts.p[i], -UP, already_transformed=True) for i in rings[0]), rubber)
     top = parts.vertex(ankle + UP * SOLE_DEPTH, UP)
     for j in range(segments):
         parts.face((rings[-1][j], rings[-1][(j + 1) % segments], top), leather)
@@ -208,6 +214,11 @@ def make_character(collection, rig, coat_path):
 
     def part(name, bone):
         p = Parts()
+        if name in {
+            "Head_Coat", "Muzzle", "Muzzle_Smile",
+            "Ear_L_Mesh", "Ear_R_Mesh", "Eye_L_Mesh", "Eye_R_Mesh",
+        }:
+            p.transform = head_transform
         p.bind = bone
         return p, lambda: p.finish(name, collection, armature=rig)
 
@@ -273,23 +284,43 @@ def make_character(collection, rig, coat_path):
     jacket_parts = Parts()
     p = jacket_parts
     def body_weights(point):
-        chest = smooth(.33, .86, point.y)
+        chest = smooth(.435, .745, point.y)
         return {"Pelvis": 1 - chest, "Chest": chest}
 
-    # Upper-narrow, lower-wide A-line pear body.  The upper yoke is 0.195 m
-    # across in radius; the lower jacket settles at rx 0.270 / rz 0.220 m.
+    # Short, softly inflated pear jacket.  The lower hem sits at the waist,
+    # while the 25 longitudinal rings keep every trim surface genuinely
+    # curved instead of approximating the torso with boxes.
+    profile = [(.430, .258, .215), (.455, .265, .222), (.56, .258, .221),
+               (.66, .228, .212), (.715, .208, .195), (.745, .200, .178),
+               (.790, .192, .175)]
+
+    def coat_shape(y):
+        y = max(profile[0][0], min(profile[-1][0], y))
+        for (ya, rxa, rza), (yb, rxb, rzb) in zip(profile, profile[1:]):
+            if y <= yb:
+                t = (y - ya) / (yb - ya)
+                return rxa + (rxb - rxa) * t, rza + (rzb - rza) * t
+        return profile[-1][1:]
+
+    def coat_surface(y, angle, lift=.0025):
+        rx, rz = coat_shape(y)
+        side_factor = 0.62 + 0.38 * abs(math.sin(angle)) if .54 <= y <= .78 else 1.0
+        radial = V((math.cos(angle) / (rx * side_factor), 0, math.sin(angle) / rz)).normalized()
+        return V((rx * side_factor * math.cos(angle), y, rz * math.sin(angle))) + lift * radial
+
     p.bind = body_weights
-    sections = [(.265, .265, .216), (.320, .272, .222), (.46, .275, .225),
-                (.62, .245, .218), (.76, .218, .202), (.88, .205, .190),
-                (.93, .195, .182)]
     rings = []
     seg = 56
-    for y, rx, rz in sections:
+    vertical = 25
+    for i in range(vertical):
+        y = profile[0][0] + (profile[-1][0] - profile[0][0]) * i / (vertical - 1)
+        rx, rz = coat_shape(y)
         row = []
         for j in range(seg):
             a = TAU * j / seg
-            x, z = rx * math.cos(a), rz * math.sin(a)
-            row.append(p.vertex((x, y, z), V((math.cos(a) / rx, 0, math.sin(a) / rz))))
+            side_factor = 0.62 + 0.38 * abs(math.sin(a)) if .54 <= y <= .78 else 1.0
+            x, z = rx * side_factor * math.cos(a), rz * math.sin(a)
+            row.append(p.vertex((x, y, z), V((math.cos(a) / (rx * side_factor), 0, math.sin(a) / rz))))
         rings.append(row)
     for a, b in zip(rings, rings[1:]):
         for j in range(seg):
@@ -298,55 +329,101 @@ def make_character(collection, rig, coat_path):
     p.face(tuple(reversed(rings[0])), jacket)
     p.face(tuple(rings[-1]), jacket)
 
-    # Sleeves are slender, gently tapered tubes.  Their centres sit 20 mm
-    # outside the bones at the upper arm so the inner wall never sinks into
-    # the chest volume; only the rounded cap meets the charcoal yoke.
+    # Sleeves are rounded rubber-hose tubes.  The centreline is sampled into
+    # sixteen sections and weights are computed from its true arc-length
+    # parameter, never from world Y (the elbow is deliberately below the
+    # shoulder and that old shortcut inverted the two bones).
     for s, t in SIDES:
-        shoulder = BONES["UpperArm_" + t][0] + V((s * .022, 0, 0))
-        elbow = BONES["Forearm_" + t][0] + V((s * .022, 0, 0))
-        wrist = BONES["Forearm_" + t][1] + V((s * .022, 0, 0))
-        path = [shoulder, elbow, wrist]
+        shoulder = BONES["UpperArm_" + t][0] + V((s * .024, 0, 0))
+        elbow = BONES["Forearm_" + t][0] + V((s * .024, 0, 0))
+        wrist = BONES["Forearm_" + t][1] + V((s * .024, 0, 0))
+        path = spline([shoulder, elbow, wrist], 8)
+        cumulative = [0.0]
+        for a, b in zip(path, path[1:]):
+            cumulative.append(cumulative[-1] + (b - a).length)
+        total = cumulative[-1]
+
+        def arm_t(point, points=path, lengths=cumulative, length=total):
+            best_d, best_t = float("inf"), 0.0
+            for i, (a, b) in enumerate(zip(points, points[1:])):
+                ab = b - a
+                u = max(0.0, min(1.0, (V(point) - a).dot(ab) / max(ab.length_squared, 1e-12)))
+                q = a + u * ab
+                d = (V(point) - q).length_squared
+                if d < best_d:
+                    best_d, best_t = d, (lengths[i] + u * ab.length) / length
+            return max(0.0, min(1.0, best_t))
+
         def sleeve_weights(point, tag=t):
-            f = smooth(.63, .79, point.y)
-            fore = smooth(.51, .66, point.y)
-            upper = (1 - f) * (1 - fore)
-            lower = (1 - f) * fore
-            return {"Chest": f, "UpperArm_" + tag: upper, "Forearm_" + tag: lower}
+            t_axis = arm_t(point)
+            chest = .18 * (1 - smooth(0.0, .16, t_axis))
+            fore = smooth(.25, .75, t_axis)
+            return {"Chest": chest, "UpperArm_" + tag: (1 - chest) * (1 - fore),
+                    "Forearm_" + tag: (1 - chest) * fore}
         jacket_parts.bind = sleeve_weights
-        jacket_parts.oval(shoulder, (.069, .073, .069), jacket, 28, 14,
+        jacket_parts.oval(shoulder, (.079, .081, .079), jacket, 28, 14,
                            rot=Quaternion(Z, -s * .13))
-        jacket_parts.tube(path, lambda u: .068 - .006 * u, jacket, 24, 1)
+        jacket_parts.tube(path, lambda u: .078 - .008 * u, jacket, 24, 2)
     jacket_obj = jacket_parts.finish("Uniform", collection, armature=rig)
 
     # Charcoal collar/yoke, pants, cuffs, zipper and compact reflective bands
     # are kept in the same exported Uniform object (four garment materials).
     trim_parts = Parts()
     trim_parts.bind = "Pelvis"
-    trim_parts.oval((0, 0.44, -0.005), (0.27, 0.17, 0.22), pants)
-    trim_parts.bind = "Chest"
-    trim_parts.box((0, 0.785, 0.192), (0.41, 0.050, 0.032), 0.012, charcoal)
-    trim_parts.box((0, 0.64, 0.225), (0.014, 0.30, 0.018), 0.004, charcoal)
-    trim_parts.box((-0.125, 0.675, 0.222), (0.12, 0.10, 0.025), 0.012, charcoal)
-    trim_parts.box((-0.125, 0.675, 0.238), (0.075, 0.012, 0.006), 0.003, reflective)
-    trim_parts.box((0, 0.695, 0.226), (0.25, 0.018, 0.007), 0.003, reflective)
-    trim_parts.box((0, 0.695, -0.226), (0.25, 0.018, 0.007), 0.003, reflective)
-    trim_parts.box((0, 0.465, -0.205), (0.42, 0.018, 0.012), 0.004, charcoal)
-    # Collar ring is deliberately below the chin and behind the muzzle.
-    trim_parts.tube([(0.145 * math.cos(a), .825, 0.145 * math.sin(a)) for a in [TAU*j/20 for j in range(21)]],
-                     .018, charcoal, 12, 1, caps=False)
+    trim_parts.oval((0, 0.411, -0.005), (0.27, 0.17, 0.22), pants)
+    def surface_strip(y0, y1, mat, a0=0.0, a1=TAU, around=48, steps=6, lift=.0038):
+        rows = []
+        for s_idx in range(steps + 1):
+            y = y0 + (y1 - y0) * s_idx / steps
+            rows.append([trim_parts.vertex(coat_surface(y, a, lift), V((math.cos(a), 0, math.sin(a))))
+                         for a in [a0 + (a1 - a0) * j / around for j in range(around + 1)]])
+        for ra, rb in zip(rows, rows[1:]):
+            for j in range(around):
+                trim_parts.face((ra[j], ra[j + 1], rb[j + 1], rb[j]), mat)
+
+    trim_parts.bind = body_weights
+    # Shoulder yoke, snug waist side panels, hem and collar all follow the
+    # same torso profile and weights.  No rigid applique floats or Z-fights.
+    surface_strip(.712, .754, charcoal, steps=5, lift=.0038)
+    surface_strip(.430, .456, charcoal, steps=4, lift=.0038)
+    surface_strip(.752, .788, charcoal, steps=4, lift=.0042)
+    for centre in (0, math.pi):
+        surface_strip(.515, .685, charcoal, centre - .26, centre + .26, 14, steps=6, lift=.0038)
+    # Silver bands wrap the front and back curvature in one continuous ring.
+    surface_strip(.630, .643, reflective, steps=2, lift=.0046)
+    # A fine front placket follows the surface normal from hem to collar.
+    trim_parts.tube([coat_surface(y, math.pi / 2, .0045) for y in [
+        .456 + (.756 - .456) * i / 12 for i in range(13)]], .0055, charcoal, 12, 3)
+    # Small left chest pocket cleanly seated on the yellow chest below the yoke.
+    pocket = []
+    for s_idx in range(5):
+        y = .652 + (.695 - .652) * s_idx / 4
+        row = []
+        for a in [1.78 + .30 * j / 8 for j in range(9)]:
+            row.append(trim_parts.vertex(coat_surface(y, a, .0044), V((math.cos(a), 0, math.sin(a)))))
+        pocket.append(row)
+    for ra, rb in zip(pocket, pocket[1:]):
+        for j in range(8): trim_parts.face((ra[j], ra[j + 1], rb[j + 1], rb[j]), charcoal)
     for s, t in SIDES:
-        shoulder = BONES["UpperArm_" + t][0] + V((s * .022, 0, 0))
-        elbow = BONES["Forearm_" + t][0] + V((s * .022, 0, 0))
-        wrist = BONES["Forearm_" + t][1] + V((s * .022, 0, 0))
+        shoulder = BONES["UpperArm_" + t][0] + V((s * .024, 0, 0))
+        elbow = BONES["Forearm_" + t][0] + V((s * .024, 0, 0))
+        wrist = BONES["Forearm_" + t][1] + V((s * .024, 0, 0))
         axis = (BONES["Forearm_" + t][1] - BONES["Forearm_" + t][0]).normalized()
-        cuff_a = wrist - axis * 0.060
-        cuff_b = wrist - axis * 0.012
+        cuff_a = wrist - axis * 0.058
+        cuff_b = wrist - axis * 0.010
         trim_parts.bind = "Forearm_" + t
-        trim_parts.tube([cuff_a, cuff_b], lambda u: .069, charcoal, 18, 1)
-        # Narrow silver safety bands ride on the forward sleeve surface.
-        stripe = [p + V((0, 0, .064)) for p in (shoulder, elbow, wrist)]
+        trim_parts.tube([cuff_a, cuff_b], lambda u: .0755, charcoal, 24, 4)
+        # Narrow silver safety bands are concentric rings around each forearm.
+        axis = (wrist - elbow).normalized()
+        stripe_center = elbow + axis * .50 * (wrist - elbow).length
+        ring_u = axis.cross(UP).normalized()
+        ring_v = axis.cross(ring_u).normalized()
+        stripe = []
+        for j in range(25):
+            a = TAU * j / 24
+            stripe.append(stripe_center + .0755 * (ring_u * math.cos(a) + ring_v * math.sin(a)))
         trim_parts.bind = "Forearm_" + t
-        trim_parts.tube(stripe[1:3], .006, reflective, 10, 1)
+        trim_parts.tube(stripe, .0045, reflective, 8, 1, caps=False)
     trim_obj = trim_parts.finish("Uniform trims", collection, armature=rig)
     curled_tail(collection, rig)
     for s, t in SIDES:
@@ -399,7 +476,9 @@ def riding_limbs(s, tag):
     upper, lower = bend_limb(
         "UpperArm_" + tag,
         "Forearm_" + tag,
-        back.inverted() @ (palm(s) + V((0, 0, .045)) - shoulder),
+        # The authored palm marker is the real grip point; no hidden reach
+        # offset is needed now that the arm lengths match the motorcycle.
+        back.inverted() @ (palm(s) - shoulder),
         V((s * 0.40, -1, -0.22)),
     )
     hip_joint = RIDER_ORIGIN + hip + PELVIS_TILT @ (BONES["Thigh_" + tag][0] - hip)

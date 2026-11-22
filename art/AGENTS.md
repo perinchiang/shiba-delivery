@@ -7,7 +7,7 @@
 1. **脚本可复现优先**：优先通过 Blender Python 脚本（无头执行 `blender --background --factory-startup --python-exit-code 2 --python <script>.py`）生成与导出 `.glb`，不要只手改二进制 `.glb` 导致源脚本脱节。
 2. **坐标与比例红线**：
    - Blender 源空间：米制、X 横、Z 上、车头朝 `-Y`；导出 glTF 自动转为 Y 上、车头朝 `+Z`。
-   - 角色与摩托车统一 `0.84` 街景缩放基线；不得改动核心比例，不得破坏 `Seat_Contact`、`Grip_L/R`、`Footrest_L/R`、`Cargo_Floor`、`soleDepth` 等接触锚点。
+   - 角色与摩托车统一 `0.84` 街景缩放基线；角色身形与服装可按动森风 A 字廓形持续优化，但不得破坏 `Seat_Contact`、`Grip_L/R`、`Footrest_L/R`、`Cargo_Floor`、`soleDepth` 等接触锚点。
 3. **材质与防 Z-fighting**：
    - 优先使用顶点色与 `CITY_PALETTE`（[`src/morning/city-palette.js`](../src/morning/city-palette.js)）协调的有限材质槽，避免为一小组道具拆出十几个冗余材质导致 Draw Calls 暴涨。
    - 严禁共面叠加（背板、牌面、地面标线、门窗框等必须留清晰厚度或法向偏移），导出前检查法线朝向与背面剔除效果。

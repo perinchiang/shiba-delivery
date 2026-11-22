@@ -1,11 +1,12 @@
 """A-Chai's open-face helmet with ear ports and articulated touring goggles. Artist coordinates are Y-up, +Z forward."""
 
 import math
-from forms import Parts, V, TAU, material, smooth
+from forms import Parts, V, TAU, material, smooth, HEAD_SCALE, HEAD_PIVOT, head_transform
 
 CENTER = V((0, 1.255, 0.027))
 RX, RY, RZ = 0.604, 0.554, 0.501
-HINGE = (0, 1.271, 0.030)
+HINGE_RAW = (0, 1.271, 0.030)
+HINGE = tuple(head_transform(HINGE_RAW))
 PARK_ANGLE = math.radians(-38)
 
 
@@ -119,7 +120,7 @@ def helmet_mounts(p, trim, liner, band, metal):
     rows = []
     for i in range(81):
         theta = theta0 + math.pi * i / 80
-        h = HINGE[1] - 0.060 * (-math.cos(theta))
+        h = HINGE_RAW[1] - 0.060 * (-math.cos(theta))
         rows.append(
             [
                 p.vertex(*shell_at(theta, polar_at(h + dy), lift))
@@ -138,7 +139,7 @@ def helmet_mounts(p, trim, liner, band, metal):
             (0.621, 0.634, 0.034, metal),
             (0.633, 0.636, 0.015, liner),
         ]:
-            p.tube([(side * x0, HINGE[1], HINGE[2]), (side * x1, HINGE[1], HINGE[2])], r, mat, 32)
+            p.tube([(side * x0, HINGE_RAW[1], HINGE_RAW[2]), (side * x1, HINGE_RAW[1], HINGE_RAW[2])], r, mat, 32)
 
         # Two intake slots sit in the lacquer above the open face.
         for angle in [0.26, 0.39]:
@@ -203,10 +204,10 @@ def goggles(p, gasket, frame, elastic, glass, glint):
         for i in range(32):
             t = i / 31
             theta = 0.704 + (math.pi / 2 - 0.704) * t
-            y = 1.311 + (HINGE[1] - 1.311) * smooth(0, 1, t) + 0.005 * math.sin(t * math.pi)
+            y = 1.311 + (HINGE_RAW[1] - 1.311) * smooth(0, 1, t) + 0.005 * math.sin(t * math.pi)
             half = 0.018 + 0.009 * math.sin(math.pi * t)
             radial = V((side * math.sin(theta), 0, math.cos(theta)))
-            centre = V((side * 0.616 * math.sin(theta), y, HINGE[2] + 0.528 * math.cos(theta)))
+            centre = V((side * 0.616 * math.sin(theta), y, HINGE_RAW[2] + 0.528 * math.cos(theta)))
             rows.append(
                 [
                     p.vertex(centre + V((0, half * dy, 0)) + dist * radial, radial)
@@ -281,15 +282,18 @@ def make_helmet(collection, rig):
     glass.surface_render_method = "BLENDED"
     glint = material("Goggles · sky reflection", "d4e9df", 0.10, 0.28)
     p = Parts()
+    p.transform = head_transform
     p.bind = "Head"
     build_shell(p, lacquer, edging, liner, stripe)
     helmet_mounts(p, edging, liner, band, rim)
     p.finish("Helmet", collection, armature=rig)
     p = Parts()
+    p.transform = head_transform
     p.bind = "Head"
     chinstrap(p, band, liner, rim)
     p.finish("Helmet_Chinstrap", collection, armature=rig)
     p = Parts()
+    p.transform = head_transform
     p.bind = "GoggleHinge"
     goggles(p, gasket, rim, band, glass, glint)
     p.finish("Helmet_Goggles", collection, armature=rig)

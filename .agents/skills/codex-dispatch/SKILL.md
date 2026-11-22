@@ -32,8 +32,9 @@ Antigravity 保持**主调度器与最终调度权**，继续通过本机可用�
    - 给 Codex 的 prompt 只放精炼 Task Brief、目标文件路径、精确约束与验收命令，让 Codex 按需自读文件；不把整段长聊天记录灌进去。
 3. **Trigger 0 产物存在性校验**：
    - Codex 返回后，先用 `git status` / `git diff` / 文件检查确认其承诺修改的文件与产物真实落盘，不轻信口头总结。
-4. **安全并行与串行接力**：
+4. **安全并行、禁止越权提交**：
    - 仅当两个子任务写入的文件集完全互斥（如 `art/city-kit/` vs `src/morning/hud.js`）时才并行；存在共享文件风险时串行或使用 `--worktree`。
+   - **严禁 Codex 子任务擅自执行 `git commit` 或 `git push`**（必须在每次写权限 prompt 中显式声明），所有视觉验收、提交与 GitHub Pages 发布统一由 Antigravity 把关。
 5. **反循环熔断**：
    - 同一缺陷最多 2 轮自动修复（第 1 轮失败后必须先做根因定性再决定换模型或改方案）；2 轮仍未过即停止并向 Patrick 汇报。
 

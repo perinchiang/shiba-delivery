@@ -139,13 +139,13 @@ export function checkAccessories(rider, scooter) {
       radii: v(...r),
     };
   };
-  const head = shape('Head', [0, 1.25, 0.035], [0.574, 0.492, 0.463]);
+  const head = shape('Head', [0, 1.205, 0.035], [0.5166, 0.4428, 0.4167]);
   const chest = shape('Chest', [0, 0.6, 0], [0.275, 0.36, 0.225]);
   const shoulders = ['L', 'R'].map((s, i) =>
-    shape('UpperArm_' + s, [(i ? 1 : -1) * 0.282, 0.710, 0.03], [0.070, 0.115, 0.075]),
+    shape('UpperArm_' + s, [(i ? 1 : -1) * 0.244, 0.655, 0.028], [0.079, 0.150, 0.082]),
   );
   const paws = ['L', 'R'].map((s, i) =>
-    shape('Paw_' + s, [(i ? 1 : -1) * 0.400, 0.493, 0.074], [0.070, 0.072, 0.068]),
+    shape('Paw_' + s, [(i ? 1 : -1) * 0.379, 0.490, 0.070], [0.075, 0.077, 0.073]),
   );
   const chassis = ['Delivery_Box', 'Cargo_Lid', 'Solo_Saddle'].map(bike);
   const scale = scooter.root.scale.x;

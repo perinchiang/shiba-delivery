@@ -13,6 +13,19 @@ X = V((1, 0, 0))
 Z = V((0, 0, 1))
 ZERO = V((0, 0, 0))
 
+# The head is authored around the neck pivot so every face, helmet part and
+# articulated head accessory keeps its relative fit when the silhouette is
+# brought down to the final 2.0-head proportion.
+HEAD_SCALE = 0.90
+HEAD_PIVOT = V((0, 0.80, 0.035))
+
+
+def head_transform(point, normal=None):
+    point = HEAD_PIVOT + HEAD_SCALE * (V(point) - HEAD_PIVOT)
+    if normal is None:
+        return point
+    return point, V(normal).normalized()
+
 
 def blender_v(p):
     return V((p[0], -p[2], p[1]))
@@ -79,9 +92,12 @@ class Parts:
         self.p, self.n, self.uv, self.weights = [], [], [], []
         self.faces, self.mat_ids, self.mats = [], [], []
         self.bind = None
+        self.transform = None
 
-    def vertex(self, pos, normal, uv=(0, 0)):
+    def vertex(self, pos, normal, uv=(0, 0), already_transformed=False):
         p, n = V(pos), V(normal).normalized()
+        if self.transform and not already_transformed:
+            p, n = self.transform(p, n)
         self.p.append(p)
         self.n.append(n)
         self.uv.append(uv)
@@ -182,7 +198,7 @@ class Parts:
                 (grid[0], path[0], path[0] - path[1]),
                 (grid[-1], path[-1], path[-1] - path[-2]),
             ]:
-                rim = [self.vertex(self.p[v], t) for v in row]
+                rim = [self.vertex(self.p[v], t, already_transformed=True) for v in row]
                 mid = self.vertex(p, t)
                 for j in range(segments):
                     self.face((mid, rim[j], rim[(j + 1) % segments]), mat)
@@ -238,7 +254,7 @@ class Parts:
                 m = mat(math.sin((j + 0.5) * TAU / sides)) if callable(mat) else mat
                 self.face((rings[i][j], rings[i][k], rings[i + 1][k], rings[i + 1][j]), m)
         for row, sign in [(rings[0], -1), (rings[-1], 1)]:
-            rim = [self.vertex(self.p[v], Z * sign) for v in row]
+            rim = [self.vertex(self.p[v], Z * sign, already_transformed=True) for v in row]
             self.face(tuple(rim), mat(0) if callable(mat) else mat)
 
     def finish(self, name, collection, parent=None, armature=None, origin=(0, 0, 0)):
