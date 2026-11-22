@@ -22,6 +22,17 @@
 - 保留已有的卡通视觉与阿柴／摩托车比例；场景优先程序化和模块化，Blender 用于验证后的重点精修，不擅自切换成全量手工建模。
 - 以小而完整的玩家体验验证新系统，避免将长期设想一次性铺开；未经要求不擅自更换引擎、添加大系统或扩大功能范围。
 
+## 轻量研发工作流与多模型调度
+
+本仓库在 `.agents/skills/` 中维护轻量游戏开发工作流（按需触发，不常驻污染上下文），并遵循以下工程红线：
+
+- **验收先行**：跨文件或涉及玩法/美术/UI 的任务，先明确任务分型、可核验验收条件（AC）、改动边界与必拍机位（见 `.agents/skills/shiba-task-plan/`），再动手实现。
+- **美术规范索引**：视觉与 3D 资产改动遵守 [`docs/ART-BIBLE.md`](docs/ART-BIBLE.md) 与目录级 [`art/AGENTS.md`](art/AGENTS.md)，不擅自打破 0.84 比例、色板与性能预算。
+- **视觉改动必看实机图**：凡涉及玩家可见改动，必须运行游戏并检查落盘截图（`.agents/skills/shiba-visual-qa/`）与 Console/Draw Calls 读数；编译通过或单测通过不能替代视觉验收，无法核验的项必须标明 `NOT ASSESSED` 或 `DEFERRED`。
+- **失败先根因、2 轮熔断**：验收不通过时，禁止直接猜数值反复盲改——必须先定位根因类别再改；同一缺陷连续 2 轮自动修复仍未过关，立即停止并向 Patrick 汇报对比图与备选方案。
+- **动态调度 Codex**：由 Antigravity 自主决策是否调用 Codex（`gpt-6.2-sol` / `gpt-6.2-astra`）及思考档位（`low`/`medium`/`high`，高难疑难按需升档）；只读调研与代码审查必须显式加 `-c sandbox_mode="read-only"`，且审查发现需逐条核实代码后才采纳（见 `.agents/skills/codex-dispatch/` 与 `.agents/skills/shiba-code-review/`）。
+- **显式披露 Own Calls**：需求未写死、由 AI 自主拍板的数值、颜色或交互细节，交付时单独列出供 Patrick 确认保留或调整。
+
 ## 交付时
 
 每次完成可玩改动，将交付提交推送到 `shiba-delivery-update`，等待 GitHub Pages 发布成功，在完整版固定首页 https://perinchiang.github.io/shiba-delivery/ 核验本轮改动，并把同一个首页链接交给 Patrick。具体场景可通过游戏内入口进入。
