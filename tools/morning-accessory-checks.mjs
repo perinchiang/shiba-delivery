@@ -1,7 +1,6 @@
 /** Exercise the production skin, motion and packing path over consecutive game frames. */
 import assert from 'node:assert/strict';
 import * as T from 'three';
-import { Octree } from 'three/addons/math/Octree.js';
 import { beginSequence, boxFrame } from '../src/morning/sequence.js';
 
 const v = (...a) => new T.Vector3(...a);
@@ -114,79 +113,19 @@ function vehicleGap(parts, box) {
   return Math.sqrt(gapSq);
 }
 
-// The band follows a tailored upper jacket. Cast against the full exported
-// welded jacket triangles at the cloth height using exact signed radial
-// clearance so a kerchief sitting in the collar valley between the neck and
-// seamless raglan shoulder measures clearance to both surfaces without being
-// occluded by the outer shoulder.
-function clothClearance(scarf, uniform, chest) {
-  let jacket;
-  uniform.traverse(mesh => {
-    if (mesh.material?.name === 'Uniform · bottle green') jacket = mesh;
-  });
-  assert.ok(jacket);
-  const surface = new Octree().fromGraphNode(new T.Mesh(jacket.geometry));
-  const ray = new T.Ray(), point = v(), outDir = v(), inDir = v(), hit = v(), toBind = new T.Matrix4();
-  const nearestHit = (octree, r) => {
-    const triangles = [];
-    octree.getRayTriangles(r, triangles);
-    let bestDist = Infinity;
-    let bestTri = null;
-    for (let i = 0; i < triangles.length; i++) {
-      const tri = triangles[i];
-      if (!r.intersectTriangle(tri.a, tri.b, tri.c, false, hit)) continue;
-      const distance = r.origin.distanceTo(hit);
-      if (distance > 1e-6 && distance < bestDist) {
-        bestDist = distance;
-        bestTri = tri;
-      }
-    }
-    return bestTri ? { distance: bestDist, normal: bestTri.getNormal(v()) } : null;
-  };
-  const moving = scarf.map(({ mesh, points }) => {
-    const indices = [], { skinIndex, skinWeight } = mesh.geometry.attributes;
-    for (let i = 0; i < points.length; i++) {
-      for (let j = 0; j < 4; j++) {
-        if (skinWeight.getComponent(i,j) && mesh.skeleton.bones[skinIndex.getComponent(i,j)].name === 'KerchiefEnds') {
-          indices.push(i);
-          break;
-        }
-      }
-    }
-    return indices;
-  });
-  let rigidChecked = false;
-  return () => {
-    toBind.multiplyMatrices(chest.bone.matrixWorld, chest.inverseBind).invert();
-    let gap = Infinity;
-    for (let part = 0; part < scarf.length; part++) {
-      const {points} = scarf[part];
-      const check = (i) => {
-        point.copy(points[i]).applyMatrix4(toBind);
-        outDir.set(point.x, 0, point.z).normalize();
-        ray.set(point, outDir);
-        const outHit = nearestHit(surface, ray);
-        if (outHit && outHit.normal.dot(outDir) > 0) {
-          gap = Math.min(gap, -outHit.distance);
-        } else {
-          ray.set(point, inDir.copy(outDir).negate());
-          const inHit = nearestHit(surface, ray);
-          gap = Math.min(gap, Math.min(inHit ? inHit.distance : Infinity, outHit ? outHit.distance : Infinity));
-        }
-      };
-      if (rigidChecked) moving[part].forEach(check);
-      else for (let i = 0; i < points.length; i++) check(i);
-    }
-    rigidChecked = true;
-    return gap;
-  };
-}
-
 export function checkAccessories(rider, scooter) {
   const dog = (n) => rider.root.getObjectByName(n),
     bike = (n) => scooter.root.getObjectByName(n);
   const tail = skinParts(dog('Curled_Tail')),
-    scarf = skinParts(dog('Kerchief'));
+    uniform = dog('Uniform');
+  assert.equal(dog('Kerchief'), undefined, 'legacy kerchief mesh is removed');
+  assert.equal(dog('KerchiefEnds'), undefined, 'legacy kerchief bone is removed');
+  const garmentMaterials = new Set();
+  uniform.traverse(mesh => { if (mesh.isMesh) garmentMaterials.add(mesh.material.name); });
+  for (const name of ['Uniform · courier yellow', 'Uniform · charcoal trim',
+    'Uniform · charcoal pants', 'Uniform · reflective silver'])
+    assert.ok(garmentMaterials.has(name), name + ' is present');
+  assert.ok(garmentMaterials.size <= 4, 'garment uses at most four uniform materials');
   const chain = ['Tail', 'TailMid', 'TailTip'].map(dog);
   assert.equal(chain[1].parent, chain[0]);
   assert.equal(chain[2].parent, chain[1]);
@@ -201,13 +140,12 @@ export function checkAccessories(rider, scooter) {
     };
   };
   const head = shape('Head', [0, 1.25, 0.035], [0.574, 0.492, 0.463]);
-  const chest = shape('Chest', [0, 0.6, 0], [0.32, 0.36, 0.25]);
-  const clothGap = clothClearance(scarf, dog('Uniform'), chest);
+  const chest = shape('Chest', [0, 0.6, 0], [0.275, 0.36, 0.225]);
   const shoulders = ['L', 'R'].map((s, i) =>
-    shape('UpperArm_' + s, [(i ? 1 : -1) * 0.299, 0.665, 0.03], [0.105, 0.162, 0.112]),
+    shape('UpperArm_' + s, [(i ? 1 : -1) * 0.282, 0.710, 0.03], [0.070, 0.115, 0.075]),
   );
   const paws = ['L', 'R'].map((s, i) =>
-    shape('Paw_' + s, [(i ? 1 : -1) * 0.309, 0.565, 0.046], [0.093, 0.102, 0.096]),
+    shape('Paw_' + s, [(i ? 1 : -1) * 0.400, 0.493, 0.074], [0.070, 0.072, 0.068]),
   );
   const chassis = ['Delivery_Box', 'Cargo_Lid', 'Solo_Saddle'].map(bike);
   const scale = scooter.root.scale.x;
@@ -246,18 +184,13 @@ export function checkAccessories(rider, scooter) {
     rider.root.updateMatrixWorld(true);
     scooter.root.updateMatrixWorld(true);
     sample(tail, world);
-    sample(scarf, world);
     maxStrain = Math.max(maxStrain, strain());
     note('tail/head', bodyGap(tail, head) * scale);
     // The first section is the anatomical insertion in the coat. The free
     // portion of the plume, measured by arc-length UV, must clear the torso.
     note('free tail/jacket', bodyGap(tail, chest, 0.25) * scale);
-    note('scarf/head', bodyGap(scarf, head) * scale);
-    note('cloth/jacket radial', clothGap() * scale);
     for (const sleeve of shoulders) note('tail/shoulder', bodyGap(tail, sleeve) * scale);
     for (const paw of paws) note('tail/paw', bodyGap(tail, paw) * scale);
-    for (const sleeve of shoulders) note('scarf/shoulder', bodyGap(scarf, sleeve) * scale);
-    for (const paw of paws) note('scarf/paw', bodyGap(scarf, paw) * scale);
     for (const part of tail) for (const p of part.points) p.applyMatrix4(bikeInverse);
     if (pose.mount && pose.speed >= 1.35) {
       // Sideways clearance is visible in the rear inspection just as height
