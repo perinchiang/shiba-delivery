@@ -9,6 +9,7 @@ import { ear, parcel } from './rider.js';
 import { bunFacade, streetResident } from './orders.js';
 
 import { CURB_H, CURB_Z, treePitRadius, treePitZ, streetTreeXs } from './street-layout.js';
+import { OLD_STREET_TREE_SCALE } from './city-palette.js';
 const cream = 0xffecc5, wood = 0x986643, teal = 0x397d73;
 const glass = 0x547c77, glassLight = 0x86a9a0, charcoal = 0x485953;
 
@@ -316,7 +317,7 @@ export function createStreet(steamers, banyan) {
   bake(skyline);
   const soilTop = treePits(shopSide);
   const streetTrees = streetTreeXs.map((x, i) => {
-    const scale = .53 + (i % 3) * .025;
+    const scale = OLD_STREET_TREE_SCALE(i);
     return [x, soilTop, treePitZ, .90 + i * 2.4, scale, scale, scale];
   });
   placeInstances(shopSide, banyan, streetTrees);

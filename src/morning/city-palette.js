@@ -1,0 +1,43 @@
+// Shared warm miniature-town palette extracted from Old Street (town.js).
+// Keep city architecture, curbs and street furniture in this cohesive vocabulary.
+export const CITY_PALETTE = Object.freeze({
+  wallCream: 0xf2e2bf,
+  wallApricot: 0xe6b992,
+  wallSage: 0xc2d2bc,
+  wallOlive: 0xd0d6b4,
+  wallSand: 0xe6cfa8,
+  wallBlush: 0xe3baa6,
+  teal: 0x397d73,
+  jade: 0x5d8f80,
+  jadeTile: 0x4f8479,
+  terracotta: 0xbd7154,
+  terracottaDeep: 0x975341,
+  lantern: 0xd97348,
+  wood: 0x946342,
+  woodDark: 0x624432,
+  trimCream: 0xf6e7c6,
+  trimWarm: 0xe2ca9d,
+  roofJade: 0x4f766f,
+  roofTerra: 0xb3694e,
+  asphalt: 0xa2a096,
+  asphaltEdge: 0x7c8079,
+  gutter: 0x6e736b,
+  sidewalkTop: 0xdac8a8,
+  sidewalkAlt: 0xd0bc9b,
+  sidewalkJoint: 0xb9aa90,
+  curbTop: 0xe5d3b1,
+  curbAlt: 0xd4be97,
+  curbFace: 0x948069,
+  roadPaint: 0xf3e7cb,
+  laneYellow: 0xe3bd6d,
+  glass: 0x4e7975,
+  glassLight: 0x89aea5,
+  metal: 0x415a54,
+  metalDark: 0x2f4642,
+  brickClay: [0xb87957, 0xc18763, 0xae7255, 0xc08a68],
+  soil: 0x715441,
+  soilClod: [0x806047, 0x947257, 0x6a4c36],
+});
+
+export const OLD_STREET_TREE_SCALE = i => 0.56 + (i % 3) * 0.03;
+export const CROSSING_TREE_SCALE = i => [0.66, 0.64, 0.63, 0.67][i % 4];
