@@ -469,6 +469,50 @@ function brickTreePit(root, x, z, i) {
   }
 }
 
+// Reusable thin extruded straight + right-turn lane arrow in XZ plane (points -Z, turns +X).
+function laneArrowGeometry() {
+  const s = new Shape();
+  s.moveTo(-0.32, -1.45);
+  s.lineTo(-0.04, -1.45);
+  s.lineTo(-0.04, -0.52);
+  s.lineTo(0.64, -0.18);
+  s.lineTo(0.64, -0.46);
+  s.lineTo(1.26, -0.02);
+  s.lineTo(0.64, 0.42);
+  s.lineTo(0.64, 0.12);
+  s.lineTo(-0.04, -0.20);
+  s.lineTo(-0.04, 0.56);
+  s.lineTo(0.30, 0.56);
+  s.lineTo(-0.18, 1.56);
+  s.lineTo(-0.66, 0.56);
+  s.lineTo(-0.32, 0.56);
+  s.closePath();
+  const geo = new ExtrudeGeometry(s, { depth: 0.008, bevelEnabled: false });
+  geo.rotateX(-Math.PI / 2);
+  return geo;
+}
+
+// Solid curved half-cylinder visor/hood arching over a signal lens and projecting along +Z.
+function signalHood(parent, x, y, z, outerR, innerR, depth, color) {
+  const s = new Shape();
+  s.absarc(0, 0, outerR, -0.08 * Math.PI, 1.08 * Math.PI, false);
+  s.absarc(0, 0, innerR, 1.08 * Math.PI, -0.08 * Math.PI, true);
+  s.closePath();
+  const geo = new ExtrudeGeometry(s, { depth, curveSegments: 14, bevelEnabled: false });
+  return piece(parent, geo, color, x, y, z);
+}
+
+// Recessed circular bezel ring framing a signal lens along +Z.
+function signalBezel(parent, x, y, z, outerR, innerR, depth, color) {
+  const s = new Shape();
+  s.absarc(0, 0, outerR, 0, Math.PI * 2, false);
+  const hole = new THREE.Path();
+  hole.absarc(0, 0, innerR, 0, Math.PI * 2, true);
+  s.holes.push(hole);
+  const geo = new ExtrudeGeometry(s, { depth, curveSegments: 16, bevelEnabled: false });
+  return piece(parent, geo, color, x, y, z);
+}
+
 // True 3D raised street cross-section: flush side-street asphalt, raised curbstones,
 // recessed gutters with drainage grates, tiled sidewalks tucked cleanly under buildings.
 function sidewalkDetails(root, half, arm) {
@@ -477,7 +521,8 @@ function sidewalkDetails(root, half, arm) {
   // 1. North & South side-street asphalt roads + flanking raised sidewalks + end garden wall
   for (const side of [-1, 1]) {
     const midZ = side * (half + sideLen / 2);
-    box(root, 0, -0.04, midZ, half * 2 + 0.3, 0.095, sideLen, P.asphalt);
+    // Flush top at y = 0.006 (-0.04 + 0.092 / 2) so there is no step seam against the main road.
+    box(root, 0, -0.04, midZ, half * 2 + 0.3, 0.092, sideLen, P.asphalt);
     for (const flank of [-1, 1]) {
       const curbX = flank * half;
       const walkW = 4.6; // Tucks well under the side-street buildings so ZERO grass bleeds out!
@@ -521,49 +566,131 @@ function sidewalkDetails(root, half, arm) {
     }
   }
 
-  // 3. Crisp 4-way intersection markings (zebra crosswalks, stop lines, double-yellow approaches)
+  // 3. Crisp 4-way engineered road markings (zebra crosswalks, stop lines, edge lines, double-yellow, arrows, corner guides)
+  const stopX = (0.24 + half - 0.42) / 2;
+  const stopW = half - 0.66;
+  const turnGuideR = 2.65;
   for (let i = 0; i < 4; i++) {
     const a = group(root);
     a.rotation.y = i * Math.PI / 2;
-    for (let j = -5; j <= 5; j++) box(a, j * 0.92, 0.026, half + 1.9, 0.47, 0.018, 2.35, P.roadPaint);
-    box(a, half / 2, 0.026, half + 4.0, half - 0.4, 0.018, 0.23, P.roadPaint);
-    for (const dx of [-0.13, 0.13]) box(a, dx, 0.027, half + 9.4, 0.09, 0.018, 10.4, P.laneYellow);
-    if (i % 2 === 0) {
-      for (let d = 23; d < arm - 2; d += 7) box(a, 0, 0.023, d, 0.12, 0.016, 2.8, 0xe5cc93);
+    const isMain = i % 2 === 1;
+
+    // 9 generous painted zebra crosswalk bars
+    for (let j = -4; j <= 4; j++) {
+      box(a, j * 1.04, 0.015, half + 2.0, 0.50, 0.008, 2.65, P.roadPaint);
     }
+
+    // Bold stop line spanning the right-hand approach lane cleanly
+    box(a, stopX, 0.015, half + 4.35, stopW, 0.008, 0.34, P.roadPaint);
+
+    // Continuous off-white lane edge lines
+    const edgeLen = isMain ? 18.0 : arm - half - 4.0;
+    for (const sx of [-1, 1]) {
+      box(a, sx * (half - 0.36), 0.015, half + 4.35 + edgeLen / 2, 0.11, 0.008, edgeLen, P.roadPaint);
+    }
+
+    // Vibrant double-yellow centerline starting neatly at the stop line
+    const solidLen = isMain ? 13.5 : 11.5;
+    for (const dx of [-0.13, 0.13]) {
+      box(a, dx, 0.016, half + 4.45 + solidLen / 2, 0.10, 0.008, solidLen, P.laneYellow);
+    }
+    if (!isMain) {
+      for (let d = half + 4.45 + solidLen + 2.8; d + 1.4 < arm - 1.5; d += 6.2) {
+        box(a, 0, 0.016, d, 0.11, 0.008, 2.8, P.laneYellow);
+      }
+    }
+
+    // Painted straight + right-turn directional lane arrow on right-hand approach
+    piece(a, laneArrowGeometry(), P.roadPaint, half * 0.50, 0.011, half + 8.6);
+
+    // Subtle curved corner turn guide dashes connecting the lanes cleanly without cluttering center square
+    for (const frac of [0.22, 0.50, 0.78]) {
+      const phi = frac * (Math.PI / 2);
+      const gx = half - turnGuideR * Math.cos(phi);
+      const gz = half - turnGuideR * Math.sin(phi);
+      box(a, gx, 0.015, gz, 0.10, 0.008, 0.58, P.roadPaint).rotation.y = -phi;
+    }
+
     // Slatted drainage grate flush in the gutter just before each crosswalk
-    const grate = group(a, half - 0.22, 0.018, half + 4.65);
-    box(grate, 0, 0, 0, 0.30, 0.016, 0.62, P.metalDark);
-    for (let g = -2; g <= 2; g++) box(grate, 0, 0.010, g * 0.11, 0.22, 0.012, 0.032, P.metal);
+    const grate = group(a, half - 0.16, 0.018, half + 4.65);
+    box(grate, 0, 0, 0, 0.26, 0.016, 0.62, P.metalDark);
+    for (let g = -2; g <= 2; g++) box(grate, 0, 0.010, g * 0.11, 0.19, 0.012, 0.032, P.metal);
   }
 
   // 4. Two subtle flush cast-iron manhole covers in the crossing square
   for (const [mx, mz] of [[-2.1, 1.7], [2.3, -2.0]]) {
-    cylinder(root, mx, 0.015, mz, 0.44, 0.44, 0.022, P.metalDark, 24);
-    cylinder(root, mx, 0.027, mz, 0.36, 0.36, 0.008, P.asphaltEdge, 24);
+    cylinder(root, mx, 0.011, mz, 0.44, 0.44, 0.016, P.metalDark, 24);
+    cylinder(root, mx, 0.020, mz, 0.36, 0.36, 0.006, P.asphaltEdge, 24);
   }
 }
 
 function streetFurniture(root, half) {
-  // 1. Four refined miniature-town traffic signal poles (connected arms, clean sightline to 榕湾百货!)
+  const signalBackplate = P.signalBackplate ?? 0xe8e0cb;
+  const signalWarn = P.signalWarn ?? 0xe5b84b;
+
+  // 1. Four crafted miniature-town traffic signal poles (exact sightline positions — 榕湾百货 blade unobstructed!)
   const signalHeads = [];
   for (let i = 0; i < 4; i++) {
     const a = group(root);
-    a.rotation.y = i * Math.PI / 2;
+    const rotY = i * Math.PI / 2;
+    a.rotation.y = rotY;
     const pole = group(a, half + 0.92, 0, -(half + 1.05));
-    cylinder(pole, 0, 0.22, 0, 0.22, 0.28, 0.44, P.trimCream, 12);
-    cylinder(pole, 0, 0.46, 0, 0.25, 0.25, 0.08, P.metal, 12);
-    cylinder(pole, 0, 2.95, 0, 0.075, 0.125, 5.10, P.metalDark, 12);
-    // Horizontal arm connected cleanly from pole center (x=0) to head (x=-3.25)
-    rod(pole, [0, 5.38, 0], [-3.25, 5.38, 0], 0.068, P.metalDark, 0.062, 10);
-    rod(pole, [0, 4.92, 0], [-0.58, 5.38, 0], 0.035, P.metal, 0.035, 8);
-    box(pole, -3.25, 4.78, 0, 0.56, 1.54, 0.36, P.metalDark, 0.09);
+
+    // Stepped warm cream stone plinth (h = 0.38) + beveled dark-jade flange ring
+    cylinder(pole, 0, 0.12, 0, 0.27, 0.30, 0.24, P.trimWarm, 14);
+    cylinder(pole, 0, 0.31, 0, 0.21, 0.24, 0.14, P.trimCream, 14);
+    cylinder(pole, 0, 0.42, 0, 0.19, 0.22, 0.08, P.metalDark, 14);
+    cylinder(pole, 0, 0.48, 0, 0.14, 0.18, 0.04, P.metal, 14);
+
+    // Slender tapered dark-jade post + tiny rounded acorn finial at y = 5.62
+    cylinder(pole, 0, 3.00, 0, 0.072, 0.118, 5.04, P.metalDark, 14);
+    cylinder(pole, 0, 5.54, 0, 0.095, 0.085, 0.05, P.metal, 12);
+    oval(pole, 0, 5.62, 0, 0.078, 0.095, 0.078, P.metalDark);
+    oval(pole, 0, 5.71, 0, 0.026, 0.035, 0.026, P.trimWarm);
+
+    // Subtle reflective safety collar (signalWarn + dark-jade bands around y = 0.85..1.30m)
+    cylinder(pole, 0, 0.91, 0, 0.123, 0.125, 0.11, signalWarn, 14);
+    cylinder(pole, 0, 1.015, 0, 0.122, 0.123, 0.09, P.metalDark, 14);
+    cylinder(pole, 0, 1.115, 0, 0.121, 0.122, 0.11, signalWarn, 14);
+    cylinder(pole, 0, 1.21, 0, 0.120, 0.121, 0.07, P.metalDark, 14);
+    cylinder(pole, 0, 1.275, 0, 0.119, 0.120, 0.06, signalWarn, 14);
+
+    // Refined cantilever arm [0, 5.40, 0] -> [-3.25, 5.40, 0] + end cap + double diagonal brace truss
+    cylinder(pole, 0, 5.40, 0, 0.096, 0.096, 0.18, P.metal, 12);
+    cylinder(pole, 0, 4.75, 0, 0.094, 0.094, 0.08, P.metal, 12);
+    rod(pole, [0, 5.40, 0], [-3.25, 5.40, 0], 0.066, P.metalDark, 0.056, 12);
+    const armCap = cylinder(pole, -3.28, 5.40, 0, 0.068, 0.068, 0.10, P.metal, 12);
+    armCap.rotation.z = Math.PI / 2;
+    oval(pole, -3.35, 5.40, 0, 0.055, 0.058, 0.058, P.trimWarm);
+    rod(pole, [0, 4.75, 0], [-0.85, 5.40, 0], 0.032, P.metal, 0.030, 8);
+    rod(pole, [0, 5.08, 0], [-0.42, 5.40, 0], 0.026, P.metal, 0.026, 8);
+    box(pole, -3.25, 5.40, -0.18, 0.24, 0.20, 0.16, P.metal);
+
+    // Upgraded 3-lamp main signal head at (-3.25, 4.76, 0) with cream reflective backplate, recessed bezels & curved hoods
+    box(pole, -3.25, 4.76, -0.14, 0.76, 1.74, 0.06, signalBackplate, 0.025);
+    box(pole, -3.25, 4.76, 0, 0.58, 1.56, 0.34, P.metalDark, 0.08);
     for (let l = 0; l < 3; l++) {
-      box(pole, -3.25, 5.31 - l * 0.47, 0.20, 0.46, 0.085, 0.44, P.metalDark);
-      const at = new THREE.Vector3(-3.25, 5.18 - l * 0.47, 0.22);
+      const ly = 5.22 - l * 0.46;
+      signalBezel(pole, -3.25, ly, 0.16, 0.215, 0.168, 0.055, P.metal);
+      signalHood(pole, -3.25, ly, 0.15, 0.22, 0.188, 0.34, P.metalDark);
+      const at = new THREE.Vector3(-3.25, ly, 0.20);
       pole.localToWorld(at);
       root.worldToLocal(at);
-      signalHeads.push({ at, axis: i % 2, lamp: l });
+      signalHeads.push({ at, rotY, axis: i % 2, lamp: l, scale: [0.168, 0.168, 0.095], ped: false });
+    }
+
+    // Pedestrian crossing signal box at (0, 2.72, 0.24) facing +Z toward crosswalk pedestrians
+    cylinder(pole, 0, 2.72, 0, 0.115, 0.115, 0.14, P.metal, 12);
+    box(pole, 0, 2.72, 0.10, 0.12, 0.14, 0.14, P.metal);
+    box(pole, 0, 2.72, 0.145, 0.42, 0.76, 0.04, signalBackplate, 0.015);
+    box(pole, 0, 2.72, 0.24, 0.34, 0.68, 0.24, P.metalDark, 0.045);
+    for (const [py, lamp] of [[2.88, 0], [2.56, 2]]) {
+      signalBezel(pole, 0, py, 0.355, 0.105, 0.082, 0.032, P.metal);
+      signalHood(pole, 0, py, 0.35, 0.112, 0.094, 0.15, P.metalDark);
+      const at = new THREE.Vector3(0, py, 0.375);
+      pole.localToWorld(at);
+      root.worldToLocal(at);
+      signalHeads.push({ at, rotY, axis: i % 2, lamp, scale: [0.084, 0.084, 0.052], ped: true });
     }
   }
 
@@ -657,10 +784,10 @@ export function createCityCrossing(parent, banyan) {
 
   const lamps = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial(), signalHeads.length);
   const disk = new THREE.Object3D(), color = new THREE.Color();
-  signalHeads.forEach(({ at }, i) => {
+  signalHeads.forEach(({ at, rotY, scale }, i) => {
     disk.position.copy(at);
-    disk.scale.set(0.175, 0.175, 0.105);
-    disk.rotation.y = Math.floor(i / 3) * Math.PI / 2;
+    disk.scale.set(...scale);
+    disk.rotation.y = rotY;
     disk.updateMatrix();
     lamps.setMatrixAt(i, disk.matrix);
   });
@@ -671,9 +798,9 @@ export function createCityCrossing(parent, banyan) {
     const t = time % 22, phase = t < 9 ? 0 : t < 11 ? 1 : t < 20 ? 2 : 3;
     if (last === phase) return;
     last = phase;
-    signalHeads.forEach(({ axis, lamp }, i) => {
-      const active = axis !== Math.floor(phase / 2) ? 0 : phase % 2 ? 1 : 2;
-      lamps.setColorAt(i, color.setHex(active === lamp ? [0xff6045, 0xffca50, 0x6cf3ae][lamp] : 0x384641));
+    signalHeads.forEach(({ axis, lamp, ped }, i) => {
+      const active = axis !== Math.floor(phase / 2) ? 0 : phase % 2 ? (ped ? 0 : 1) : 2;
+      lamps.setColorAt(i, color.setHex(active === lamp ? [0xff583d, 0xffcf48, 0x4cf09a][lamp] : 0x283532));
     });
     lamps.instanceColor.needsUpdate = true;
   };

@@ -9,7 +9,7 @@ import { ear, parcel } from './rider.js';
 import { bunFacade, streetResident } from './orders.js';
 
 import { CURB_H, CURB_Z, treePitRadius, treePitZ, streetTreeXs } from './street-layout.js';
-import { OLD_STREET_TREE_SCALE } from './city-palette.js';
+import { CITY_PALETTE, OLD_STREET_TREE_SCALE } from './city-palette.js';
 const cream = 0xffecc5, wood = 0x986643, teal = 0x397d73;
 const glass = 0x547c77, glassLight = 0x86a9a0, charcoal = 0x485953;
 
@@ -50,28 +50,28 @@ function awning(g, color) {
   const count = 13, width = 6.37 / count;
   for (let i = 0; i < count; i++) {
     const x = (i - 6) * width, tint = i % 2 ? cream : color;
-    const fabric = box(g, x, 2.73, -1.60, width + 0.002, 0.065, 0.98, tint);
+    const fabric = box(g, x, 3.36, -1.60, width + 0.002, 0.065, 0.98, tint);
     fabric.rotation.x = 0.23;
-    box(g, x, 2.53, -1.12, width, 0.16, 0.06, tint);
-    oval(g, x, 2.456, -1.12, width * 0.50, 0.074, 0.035, tint);
+    box(g, x, 3.16, -1.12, width, 0.16, 0.06, tint);
+    oval(g, x, 3.086, -1.12, width * 0.50, 0.074, 0.035, tint);
   }
-  rod(g, [-3.12, 2.56, -1.145], [3.12, 2.56, -1.145], 0.034, wood);
+  rod(g, [-3.12, 3.19, -1.145], [3.12, 3.19, -1.145], 0.034, wood);
 }
 
 function porch(g, residential) {
   const width = residential ? 3.1 : 5.95, x = residential ? 1.1 : 0;
-  const roof = box(g, x, 2.75, -1.67, width, 0.17, 1.02, residential ? 0x849b89 : 0x718d78);
+  const roof = box(g, x, 3.38, -1.67, width, 0.17, 1.02, residential ? 0x849b89 : 0x718d78);
   roof.rotation.x = 0.12;
-  box(g, x, 2.63, -1.16, width, 0.12, 0.09, residential ? wood : teal);
+  box(g, x, 3.26, -1.16, width, 0.12, 0.09, residential ? wood : teal);
   for (const side of [-1, 1]) {
     const anchor = x + side * (width / 2 - 0.30);
-    rod(g, [anchor, 2.14, -2.0], [anchor, 2.69, -1.29], 0.038, residential ? wood : teal);
+    rod(g, [anchor, 2.74, -2.0], [anchor, 3.32, -1.29], 0.038, residential ? wood : teal);
   }
   if (!residential) {
     for (const lx of [-1.22, 1.53]) {
-      rod(g, [lx, 2.69, -1.45], [lx, 2.50, -1.45], 0.023, 0x795c43);
-      cylinder(g, lx, 2.47, -1.45, 0.07, 0.15, 0.09, 0xb89053);
-      oval(g, lx, 2.36, -1.45, 0.14, 0.13, 0.14, 0xffe4a0);
+      rod(g, [lx, 3.32, -1.45], [lx, 3.12, -1.45], 0.023, 0x795c43);
+      cylinder(g, lx, 3.09, -1.45, 0.07, 0.15, 0.09, 0xb89053);
+      oval(g, lx, 2.98, -1.45, 0.14, 0.13, 0.14, 0xffe4a0);
     }
   }
 }
@@ -79,7 +79,7 @@ function porch(g, residential) {
 function streetShop(g, spec, i, steamers) {
   const { x, name, sub, wall, stripe, ink } = spec;
   const p = group(g, x, CURB_H, 0);
-  const top = 5.10 + (i % 3) * 0.42;
+  const top = 7.35 + (i % 3) * 0.55;
   const pharmacy = name === '便民药店';
   // The pharmacy has a real passage through the façade; the door can fold into it.
   const jambLeft = 0.66, jambRight = 2.44;
@@ -90,21 +90,23 @@ function streetShop(g, spec, i, steamers) {
     box(p, (jambRight + half) / 2, y, z, half - jambRight, height, depth, color);
   }
   if (steamers) {
-    box(p, 0, (top + 2.84) / 2, -3.75, 6.94, top - 2.84, 3.26, wall);
+    box(p, 0, (top + 3.44) / 2, -3.75, 6.94, top - 3.44, 3.26, wall);
   } else {
     facade(top / 2, -3.75, 6.94, top, 3.26, wall);
-    facade(0.40, -2.10, 6.91, 0.80, 0.12, spec.base);
+    facade(0.44, -2.10, 6.91, 0.88, 0.12, spec.base);
   }
   if (pharmacy) {
-    box(p, 1.55, (top + 2.40) / 2, -3.75, 1.78, top - 2.40, 3.26, wall);
-    box(p, 1.55, 1.19, -5.24, 1.78, 2.40, 0.12, 0x876e50);
+    box(p, 1.55, (top + 2.90) / 2, -3.75, 1.78, top - 2.90, 3.26, wall);
+    box(p, 1.55, 1.45, -5.24, 1.78, 2.90, 0.12, 0x876e50);
     box(p, 1.55, -0.032, -3.56, 1.78, 0.067, 3.26, 0xc6ad87);
   }
   box(p, 0, top, -3.72, 7.10, 0.16, 3.54, cream);
+  box(p, 0, top - 0.13, -2.07, 7.02, 0.10, 0.22, cream);
   box(p, 0, top + 0.14, -2.13, 6.95, 0.21, 0.15, spec.base);
-  box(p, 0, 3.65, -2.05, 6.94, 0.10, 0.30, cream);
-  const upper = (top + 3.67) / 2;
-  for (const wx of [-1.77, 0.05, 1.85]) windowFrame(p, wx, upper, -2.09, 1.09, top - 3.96, cream, i % 3 === 0);
+  box(p, 0, 4.46, -2.05, 6.94, 0.10, 0.30, cream);
+  const upper = (top + 4.48) / 2;
+  const upperH = Math.min(1.72, top - 5.15);
+  for (const wx of [-1.77, 0.05, 1.85]) windowFrame(p, wx, upper, -2.09, 1.16, upperH, cream, i % 3 === 0);
   // A parapet, water tank and drying rail break the row-house silhouette.
   if (i % 2 === 0) {
     cylinder(p, -2.01, top + 0.38, -3.2, 0.53, 0.53, 0.76, 0x91aaa1);
@@ -120,24 +122,24 @@ function streetShop(g, spec, i, steamers) {
     bake(p);
     return door;
   }
-  box(p, 0, 3.20, -2.01, 6.39, 0.76, 0.22, spec.base, 0.047);
-  sign(p, 0, 3.2, -1.887, 6.25, 0.654, name, { bg: spec.sign, ink, sub });
+  box(p, 0, 3.92, -2.01, 6.39, 0.82, 0.22, spec.base, 0.047);
+  sign(p, 0, 3.92, -1.887, 6.25, 0.70, name, { bg: spec.sign, ink, sub });
   if (name === '便民药店' || name === '榕树里') porch(p, name === '榕树里');
   else awning(p, stripe);
-  windowFrame(p, -1.23, 1.45, -2.06, 2.87, 1.35, spec.base);
+  windowFrame(p, -1.23, 1.72, -2.06, 2.87, 1.62, spec.base);
   // Closed glazed shopfronts give only a hint of light until the rider opens the door.
   if (pharmacy) {
-    for (const px of [0.64, 2.46]) box(p, px, 1.20, -2.01, 0.09, 2.4, 0.16, spec.base);
-    box(p, 1.55, 2.40, -2.01, 1.92, 0.12, 0.16, spec.base);
-  } else box(p, 1.55, 1.19, -2.01, 1.42, 2.37, 0.15, spec.base);
+    for (const px of [0.64, 2.46]) box(p, px, 1.45, -2.01, 0.09, 2.90, 0.16, spec.base);
+    box(p, 1.55, 2.90, -2.01, 1.92, 0.12, 0.16, spec.base);
+  } else box(p, 1.55, 1.44, -2.01, 1.42, 2.88, 0.15, spec.base);
   const door = group(p, 0.945, 0, -1.918);
-  box(door, 0.605, 1.18, 0, 1.21, 2.21, 0.08, stripe);
-  box(door, 0.605, 1.61, 0.049, 0.99, 1.02, 0.035, name === '便民药店' ? 0xe8d798 : glassLight);
-  box(door, 0.605, 0.59, 0.058, 0.99, 0.54, 0.035, spec.base);
-  rod(door, [1.055, 0.90, 0.103], [1.055, 1.22, 0.103], 0.034, cream);
+  box(door, 0.605, 1.36, 0, 1.21, 2.72, 0.08, stripe);
+  box(door, 0.605, 1.88, 0.049, 0.99, 1.24, 0.035, name === '便民药店' ? 0xe8d798 : glassLight);
+  box(door, 0.605, 0.68, 0.058, 0.99, 0.64, 0.035, spec.base);
+  rod(door, [1.055, 1.02, 0.103], [1.055, 1.34, 0.103], 0.034, cream);
   if (name === '便民药店') {
     door.position.x = jambLeft;
-    door.scale.set(1.78 / 1.21, 1.07, 1);
+    door.scale.set(1.78 / 1.21, 2.86 / 2.72, 1);
     bake(door);
   }
   box(p, 1.55, 0.018, -1.60, 1.43, 0.036, 0.48, 0xa98058);
@@ -156,24 +158,24 @@ function streetShop(g, spec, i, steamers) {
     cylinder(p, -0.65, 1.135, -1.33, 0.048, 0.054, 0.21, 0x86563c);
     cylinder(p, -0.65, 1.26, -1.33, 0.030, 0.033, 0.06, 0xba5d42);
     sign(p, -0.80, 0.60, -0.944, 0.59, 0.38, '现蒸', { ink: '#994c35' });
-    sign(p, -1.21, 1.52, -1.924, 0.79, 0.35, '早市', { bg: '#edcc88', ink: '#714934' });
-    sign(p, -2.27, 1.46, -1.924, 0.53, 0.72, '鲜虾肠', { bg: '#f9dab2', ink: '#934c39', vertical: true });
-    sign(p, 2.68, 1.67, -2.009, 0.37, 0.49, '12', { bg: '#688c7d', ink: '#fff2c8', font: 'hei' });
-    box(p, 0.28, 1.80, -1.92, 0.26, 0.48, 0.06, 0xc08569);
+    sign(p, -1.21, 1.78, -1.924, 0.79, 0.35, '早市', { bg: '#edcc88', ink: '#714934' });
+    sign(p, -2.27, 1.72, -1.924, 0.53, 0.72, '鲜虾肠', { bg: '#f9dab2', ink: '#934c39', vertical: true });
+    sign(p, 2.68, 1.98, -2.009, 0.37, 0.49, '12', { bg: '#688c7d', ink: '#fff2c8', font: 'hei' });
+    box(p, 0.28, 2.08, -1.92, 0.26, 0.48, 0.06, 0xc08569);
   } else if (name === '便民药店') {
-    box(p, -2.94, 2.64, -1.51, 0.10, 0.10, 1.21, teal);
-    box(p, -2.92, 2.04, -0.97, 0.70, 0.77, 0.15, teal, 0.074);
-    box(p, -2.92, 2.04, -0.875, 0.43, 0.135, 0.04, cream);
-    box(p, -2.92, 2.04, -0.867, 0.14, 0.43, 0.04, cream);
-    sign(p, -1.77, 1.32, -1.915, 0.91, 0.40, '营业中', { bg: '#fff1c7', ink: '#397967' });
-    box(p, -0.66, 0.934, -1.90, 0.98, 0.068, 0.28, wood);
+    box(p, -2.94, 3.22, -1.51, 0.10, 0.10, 1.21, teal);
+    box(p, -2.92, 2.62, -0.97, 0.70, 0.77, 0.15, teal, 0.074);
+    box(p, -2.92, 2.62, -0.875, 0.43, 0.135, 0.04, cream);
+    box(p, -2.92, 2.62, -0.867, 0.14, 0.43, 0.04, cream);
+    sign(p, -1.77, 1.56, -1.915, 0.91, 0.40, '营业中', { bg: '#fff1c7', ink: '#397967' });
+    box(p, -0.66, 1.02, -1.90, 0.98, 0.068, 0.28, wood);
     for (let j = 0; j < 3; j++) {
       const px = -0.94 + j * 0.29;
-      cylinder(p, px, 1.11, -1.91, 0.083, 0.089, 0.27 + j * 0.036, 0x98734e);
-      cylinder(p, px, 1.26 + j * 0.018, -1.91, 0.071, 0.071, 0.045, cream);
+      cylinder(p, px, 1.196, -1.91, 0.083, 0.089, 0.27 + j * 0.036, 0x98734e);
+      cylinder(p, px, 1.346 + j * 0.018, -1.91, 0.071, 0.071, 0.045, cream);
     }
   } else if (name === '榕树里') {
-    sign(p, 2.68, 1.88, -1.991, 0.47, 0.55, '3', { bg: '#327b70', ink: '#ffebbd', font: 'hei' });
+    sign(p, 2.68, 2.15, -1.991, 0.47, 0.55, '3', { bg: '#327b70', ink: '#ffebbd', font: 'hei' });
     box(p, -0.89, 0.63, -1.56, 1.50, 0.09, 0.48, wood);
     for (const px of [-1.51, -0.27]) box(p, px, 0.33, -1.56, 0.10, 0.60, 0.31, charcoal);
   } else if (i % 2 === 0) {
@@ -269,20 +271,21 @@ function treePits(parent) {
 export function createStreet(steamers, banyan) {
   const root = new THREE.Group();
   const road = group(root);
-  box(road, 12, -0.17, 2, 80, 0.33, 23, 0xaaa598);
+  box(road, 12, -0.17, 2, 80, 0.33, 23, CITY_PALETTE.asphalt);
+  box(road, 12, 0.004, CURB_Z + 0.16, 73, 0.012, 0.30, CITY_PALETTE.gutter);
   const back = -2.15, pavementWidth = CURB_Z - back;
   box(road, 12, .05, (back + CURB_Z) / 2, 73, .18, pavementWidth, 0xd5c2a1);
   for (let i = -17; i < 51; i++) {
     box(road, i, 0.076, CURB_Z - .105, 0.978, 0.138, 0.21, i % 4 === 0 ? 0xd4bf99 : 0xe3cfab);
     if (i % 2 === 0) box(road, i, .141, (back + CURB_Z - .22) / 2, .018, .003, pavementWidth - .22, 0xbcae94);
-    if (i % 3 === 0) box(road, i, 0.005, (CURB_Z + 7.05) / 2, 1.18, 0.009, 0.075, 0xe2d4b8);
+    if (i % 3 === 0) box(road, i, 0.006, (CURB_Z + 7.05) / 2, 1.22, 0.011, 0.09, CITY_PALETTE.roadPaint);
     if (i % 7 === 0) {
       box(road, i, 0.009, CURB_Z + .22, 0.52, 0.01, 0.20, 0x787d72);
       for (let j = 0; j < 6; j++) box(road, i - 0.20 + j * 0.079, 0.017, CURB_Z + .22, 0.022, 0.008, 0.16, 0xa0a395);
     }
   }
   for (const cross of [-5.45, 20.0, 36.3]) {
-    for (let i = 0; i < 8; i++) box(road, cross, 0.006, CURB_Z + .36 + i * .53, 1.22, 0.01, 0.26, 0xe4dcca);
+    for (let i = 0; i < 8; i++) box(road, cross, 0.007, CURB_Z + .36 + i * .53, 1.26, 0.012, 0.28, CITY_PALETTE.roadPaint);
   }
   bake(road);
   const shopSide = group(root);
@@ -310,7 +313,7 @@ export function createStreet(steamers, banyan) {
   const rng = new RNG('morning-roofs');
   const skyline = group(root);
   for (let i = -6; i <= 17; i++) {
-    const h = rng.range(5.2, 9.2), x = i * 3.8;
+    const h = rng.range(8.6, 12.6), x = i * 3.8;
     box(skyline, x, h / 2, -12 - i % 3, rng.range(3.2, 4.7), h, 2.5, rng.pick([0xaac2b5, 0xbac6b4, 0xbac9b9]));
     for (let k = 0; k < 3; k++) box(skyline, x + k - 1, h - 1.1, -10.71 - i % 3, 0.45, 0.75, 0.07, 0x93afa3);
   }

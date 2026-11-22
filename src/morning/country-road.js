@@ -56,24 +56,34 @@ function getRoadMaterial() {
           float countryBlend = smoothstep(115.0, 148.0, wp.x);
           float bridgeBlend = smoothstep(892.5, 895.0, wp.x) * (1.0 - smoothstep(949.0, 951.5, wp.x));
 
-          // Clean limited-palette slate asphalt (crisp contrast against golden rice & warm Shiba)
-          vec3 townRoad = vec3(0.41, 0.40, 0.36);
+          // Clean limited-palette charcoal-slate asphalt (crisp contrast against warm curbs, golden rice & Shiba)
+          vec3 townDark  = vec3(0.098, 0.110, 0.118);
+          vec3 townMid   = vec3(0.122, 0.135, 0.143);
+          vec3 townTire  = vec3(0.144, 0.157, 0.165);
           vec3 slateDark = vec3(0.105, 0.128, 0.145);
           vec3 slateMid  = vec3(0.135, 0.162, 0.180);
           vec3 slateTire = vec3(0.172, 0.198, 0.214);
 
-          vec3 road = mix(slateDark, slateMid, smoothstep(0.32, 0.72, nBroad));
+          float broadMix = smoothstep(0.32, 0.72, nBroad);
           // Subtle polished tire tracks along both lanes
           float tireOffset = (d - hw * 0.44) / 0.52;
           float tireLane = exp(-tireOffset * tireOffset);
-          road = mix(road, slateTire, tireLane * 0.55);
-          // Slight edge darkening
-          road = mix(road, slateDark * 0.88, smoothstep(hw - 0.65, hw, d) * 0.35);
+          float edgeDark = smoothstep(hw - 0.65, hw, d);
           // Gentle transverse expansion/repaving cadence for high-speed rhythm
           float seam = 1.0 - smoothstep(0.0, 0.09, abs(fract(s / 9.5) - 0.5));
+
+          vec3 townAsphalt = mix(townDark, townMid, broadMix);
+          townAsphalt = mix(townAsphalt, townTire, tireLane * 0.42);
+          townAsphalt = mix(townAsphalt, townDark * 0.86, edgeDark * 0.38);
+          townAsphalt *= 1.0 - seam * 0.045;
+          townAsphalt *= 0.96 + 0.08 * nFine;
+
+          vec3 road = mix(slateDark, slateMid, broadMix);
+          road = mix(road, slateTire, tireLane * 0.55);
+          road = mix(road, slateDark * 0.88, edgeDark * 0.35);
           road *= 1.0 - seam * 0.065;
           road *= 0.96 + 0.08 * nFine;
-          road = mix(townRoad, road, countryBlend);
+          road = mix(townAsphalt, road, countryBlend);
 
           // Analytical anti-aliased crisp markings (suppressed in crossing, bridge & village turnaround)
           float markMask = smoothstep(138.0, 152.0, wp.x)
