@@ -69,8 +69,8 @@ for (const side of hips) {
   const shoulder = at(dog('UpperArm_' + side)), elbow = at(dog('Forearm_' + side)), paw = at(dog('Paw_' + side));
   const authoredLength = (shoulder.distanceTo(elbow) + elbow.distanceTo(paw)) / rider.root.scale.y;
   assert.ok(authoredLength >= .285 && authoredLength <= .298, side + ' arm reaches the compact rounded target length');
-  const aPose = Math.atan2(Math.abs(elbow.x - shoulder.x), Math.abs(elbow.y - shoulder.y));
-  assert.ok(aPose > THREE.MathUtils.degToRad(26) && aPose < THREE.MathUtils.degToRad(32), side + ' stand arm keeps the A-pose angle');
+  const forearmHang = Math.atan2(Math.abs(paw.x - elbow.x), Math.abs(paw.y - elbow.y));
+  assert.ok(forearmHang > THREE.MathUtils.degToRad(8) && forearmHang < THREE.MathUtils.degToRad(24), side + ' forearm hangs naturally clear of the waist');
 }
 const box = bike('Delivery_Box'), saddle = bike('Solo_Saddle'), tank = bike('Two_Tone_Tank');
 function assertClearsBodyPart(object, bone, centre, radii) {
@@ -132,7 +132,7 @@ for (const yaw of [0, 1.74, -2.30]) {
       const bend = elbow.clone().sub(arm).angleTo(paw.clone().sub(elbow));
       minRideBend = Math.min(minRideBend, bend);
       maxRideBend = Math.max(maxRideBend, bend);
-      assert.ok(bend > .65 && bend < 1.65, 'elbow remains softly bent');
+      assert.ok(bend > .50 && bend < 1.65, 'elbow remains softly bent');
       const rubber = at(bike('Grip_'+s));
       const overlap = surface(bike('Swept_Handlebar'), rubber) - surface(dog('Mitten_'+s), rubber, up);
       assert.ok(overlap > .012 && overlap < .052, 'paw cups physical rubber at ' + angle);
@@ -459,19 +459,21 @@ for (const yaw of [0, 1.73, -2.1]) {
 // Sample the two garment surfaces at the tail insertion in pelvis space.
 const uniformParts = [];
 dog('Uniform').traverse(mesh => { if (mesh.isMesh) uniformParts.push(mesh); });
-const jacket = uniformParts.find(mesh => mesh.material.name === 'Uniform · courier yellow');
+const jacket = uniformParts.filter(mesh =>
+  mesh.material.name === 'Uniform · courier yellow' || mesh.material.name === 'Uniform · charcoal trim');
 const trousers = uniformParts.find(mesh => mesh.material.name === 'Uniform · charcoal pants');
 const goggles = dog('Helmet_Goggles'), pivot = dog('GoggleHinge'), tailBase = dog('Tail');
 const bindToWorld = bone => bone.matrixWorld.clone().multiply(skin.boneInverses[skin.bones.indexOf(bone)]);
 function firstSurface(object, origin, direction, bind) {
-  object.traverse(m => {
+  const targets = Array.isArray(object) ? object : [object];
+  for (const target of targets) target.traverse(m => {
     if (m.isSkinnedMesh) {
       m.computeBoundingSphere();
       if (m.boundingBox) m.computeBoundingBox();
     }
   });
   ray.set(origin.clone().applyMatrix4(bind), direction.clone().transformDirection(bind));
-  return ray.intersectObject(object, true)[0];
+  return ray.intersectObjects(targets, true)[0];
 }
 rider.resetTail();
 let maxSeam = 0;

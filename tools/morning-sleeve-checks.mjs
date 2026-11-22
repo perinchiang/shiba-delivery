@@ -42,29 +42,47 @@ export function sleeveChecks(root) {
     assert.ok(shoulderUpperMax > .70, `${tag} shoulder UpperArm weight stays monotonic (>0.7)`);
     assert.ok(wristForeMax > .85, `${tag} wrist Forearm weight stays monotonic (>0.85)`);
     assert.ok(uniform.children.some(part => part.material?.name === 'Uniform · charcoal trim'), `${tag} charcoal cuff is exported in Uniform`);
-    // A real underarm separation check: sample two vertical bands and compare
-    // the nearest outer torso vertex with the inner sleeve wall.  This catches
-    // a sleeve that merely has a different skin group while still intersecting
-    // the belly volume.
-    for (const centre of [.62, .70]) {
-      const band = .055;
-      let bodyEdge = 0, sleeveEdge = Infinity;
-      for (let i = 0; i < position.count; i++) {
-        const x = position.getX(i), y = position.getY(i);
-        if (Math.abs(y - centre) > band) continue;
-        let arm = 0;
-        for (let j = 0; j < 4; j++) {
-          const name = jacket.skeleton.bones[skinIndex.getComponent(i, j)].name;
-          if (name === `UpperArm_${tag}` || name === `Forearm_${tag}`) arm += skinWeight.getComponent(i, j);
-        }
-        if (arm < .05 && Math.abs(x) < .24) bodyEdge = Math.max(bodyEdge, sign * x);
-        if (arm > .25 && sign * x > .20) {
-          sleeveEdge = Math.min(sleeveEdge, sign * x);
+    // Single-manifold seamless shoulder & lower-arm torso clearance check:
+    // 1) Torso stays smoothly convex across yellow + charcoal side panels (no L-notch);
+    // 2) Forearm/wrist sleeve stays cleanly separated from the lower waist.
+    const shellMeshes = uniform.children.filter(part =>
+      part.material?.name === 'Uniform · courier yellow' || part.material?.name === 'Uniform · charcoal trim');
+    const torsoMaxAt = y => {
+      let edge = 0;
+      for (const mesh of shellMeshes) {
+        const { position: pos, skinIndex: si, skinWeight: sw } = mesh.geometry.attributes;
+        for (let i = 0; i < pos.count; i++) {
+          if (Math.abs(pos.getY(i) - y) > .03) continue;
+          let arm = 0;
+          for (let j = 0; j < 4; j++) {
+            const name = mesh.skeleton.bones[si.getComponent(i, j)].name;
+            if (name === `UpperArm_${tag}` || name === `Forearm_${tag}`) arm += sw.getComponent(i, j);
+          }
+          if (arm < .05) edge = Math.max(edge, sign * pos.getX(i));
         }
       }
-      assert.ok(Number.isFinite(sleeveEdge) && sleeveEdge - bodyEdge > .002,
-        `${tag} keeps a measurable underarm air gap at y=${centre.toFixed(2)}`);
+      return edge;
+    };
+    const waistEdge = torsoMaxAt(.50), midEdge = torsoMaxAt(.57);
+    assert.ok(waistEdge > .20 && midEdge > .18 && Math.abs(waistEdge - midEdge) < .045,
+      `${tag} torso side profile stays smooth without an L-notch cutout`);
+    let forearmInner = Infinity;
+    for (const mesh of shellMeshes) {
+      const { position: pos, skinIndex: si, skinWeight: sw } = mesh.geometry.attributes;
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i), y = pos.getY(i);
+        if (y < .47 || y > .56) continue;
+        let fore = 0;
+        for (let j = 0; j < 4; j++) {
+          if (mesh.skeleton.bones[si.getComponent(i, j)].name === `Forearm_${tag}`) {
+            fore += sw.getComponent(i, j);
+          }
+        }
+        if (fore > .35 && sign * x > .22) forearmInner = Math.min(forearmInner, sign * x);
+      }
     }
+    assert.ok(Number.isFinite(forearmInner) && forearmInner - waistEdge > .004,
+      `${tag} forearm stays cleanly clear of the lower torso`);
     return { side, shoulder };
   });
   return () => {

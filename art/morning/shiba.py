@@ -3,6 +3,7 @@
 import math
 import struct
 import zlib
+import bmesh
 import bpy
 from mathutils import Quaternion
 from forms import (
@@ -36,12 +37,12 @@ def rig_bones():
     for s, tag in SIDES:
         add_head("Ear_" + tag, (s * 0.36, 1.57, 0.01), (s * 0.48, 1.90, 0.025), "Head")
         add_head("Eye_" + tag, (s * 0.238, 1.279, 0.442), (s * 0.238, 1.325, 0.442), "Head")
-        # A clean Animal Crossing-style A pose.  The shoulder starts on the
-        # narrow outer yoke; the long, slender two-bone chain stays outside
-        # the pear-shaped torso instead of being buried in the belly.
-        add("UpperArm_" + tag, (s * 0.208, 0.720, 0.015), (s * 0.280, 0.590, 0.040), "Chest")
-        add("Forearm_" + tag, (s * 0.280, 0.590, 0.040), (s * 0.379, 0.490, 0.070), "UpperArm_" + tag)
-        add("Paw_" + tag, (s * 0.379, 0.490, 0.070), (s * 0.394, 0.457, 0.076), "Forearm_" + tag)
+        # Party Animals-inspired relaxed long arms: shoulder sits inside the
+        # rounded upper torso socket, curving smoothly over the deltoid into a
+        # natural ~14-degree relaxed hang with full two-bone elbow articulation.
+        add("UpperArm_" + tag, (s * 0.200, 0.704, 0.014), (s * 0.308, 0.592, 0.026), "Chest")
+        add("Forearm_" + tag, (s * 0.308, 0.592, 0.026), (s * 0.340, 0.456, 0.048), "UpperArm_" + tag)
+        add("Paw_" + tag, (s * 0.340, 0.456, 0.048), (s * 0.348, 0.422, 0.054), "Forearm_" + tag)
         add("Thigh_" + tag, (s * 0.151, 0.39, 0), (s * 0.151, 0.20, 0), "Pelvis")
         add("Shin_" + tag, (s * 0.151, 0.20, 0), (s * 0.151, 0.098, 0.051), "Thigh_" + tag)
         add("Foot_" + tag, (s * 0.151, 0.098, 0.051), (s * 0.151, 0.094, 0.164), "Shin_" + tag)
@@ -277,158 +278,275 @@ def make_character(collection, rig, coat_path):
         p.oval(eye + q @ V((-0.016, 0.023, 0.029)), (0.014, 0.016, 0.009), white, 16, 10, rot=q)
         end()
     make_helmet(collection, rig)
-    # Build the garment shell as deliberately separate, weighted volumes.  A
-    # continuous voxel/remesh pass used to weld the sleeves into the belly;
-    # keeping the yoke, body and sleeves as clean islands preserves a real
-    # underarm gap through every pose.
-    jacket_parts = Parts()
-    p = jacket_parts
-    def body_weights(point):
-        chest = smooth(.435, .745, point.y)
-        return {"Pelvis": 1 - chest, "Chest": chest}
+    # Build the courier windbreaker as a SINGLE continuous quad manifold
+    # (Party Animals / Nintendo stylized character topology): a smooth 12-sided
+    # rounded torso cage with an 8-sided circular armhole on each shoulder from
+    # which the plush rubber-hose sleeves are continuously extruded, then
+    # Catmull-Clark subdivided (level 2).  No L-shaped torso notch, no detached
+    # noodle seams, no voxel-melted armpit webbing.
+    bm = bmesh.new()
+    deform = bm.verts.layers.deform.new()
+    group_names = ["Pelvis", "Chest", "UpperArm_L", "Forearm_L", "UpperArm_R", "Forearm_R"]
+    gidx = {name: idx for idx, name in enumerate(group_names)}
 
-    # Short, softly inflated pear jacket.  The lower hem sits at the waist,
-    # while the 25 longitudinal rings keep every trim surface genuinely
-    # curved instead of approximating the torso with boxes.
-    profile = [(.430, .258, .215), (.455, .265, .222), (.56, .258, .221),
-               (.66, .228, .212), (.715, .208, .195), (.745, .200, .178),
-               (.790, .192, .175)]
+    def add_vert(pt, weights):
+        v = bm.verts.new(blender_v(pt))
+        total_w = sum(weights.values()) or 1.0
+        for name, w in weights.items():
+            if w > 1e-6:
+                v[deform][gidx[name]] = w / total_w
+        return v
 
-    def coat_shape(y):
-        y = max(profile[0][0], min(profile[-1][0], y))
-        for (ya, rxa, rza), (yb, rxb, rzb) in zip(profile, profile[1:]):
-            if y <= yb:
-                t = (y - ya) / (yb - ya)
-                return rxa + (rxb - rxa) * t, rza + (rzb - rza) * t
-        return profile[-1][1:]
+    def torso_weights(y):
+        c = smooth(.435, .720, y)
+        return {"Pelvis": 1.0 - c, "Chest": c}
 
-    def coat_surface(y, angle, lift=.0025):
-        rx, rz = coat_shape(y)
-        side_factor = 0.62 + 0.38 * abs(math.sin(angle)) if .54 <= y <= .78 else 1.0
-        radial = V((math.cos(angle) / (rx * side_factor), 0, math.sin(angle) / rz)).normalized()
-        return V((rx * side_factor * math.cos(angle), y, rz * math.sin(angle))) + lift * radial
-
-    p.bind = body_weights
-    rings = []
-    seg = 56
-    vertical = 25
-    for i in range(vertical):
-        y = profile[0][0] + (profile[-1][0] - profile[0][0]) * i / (vertical - 1)
-        rx, rz = coat_shape(y)
+    # 12 columns x 7 smooth convex torso rings (pre-subsurf cage inflated ~4%
+    # to compensate for Catmull-Clark shrinkage).
+    cols = 12
+    torso_spec = [
+        (0.424, 0.248, 0.242),  # 0: hem tuck (meets pants & tail cleanly after subsurf)
+        (0.456, 0.256, 0.236),  # 1: cozy elastic waist hem
+        (0.530, 0.246, 0.229),  # 2: soft rounded lower jacket
+        (0.610, 0.230, 0.218),  # 3: armpit bottom edge
+        (0.678, 0.212, 0.204),  # 4: armhole midline
+        (0.738, 0.190, 0.184),  # 5: shoulder top edge
+        (0.778, 0.152, 0.148),  # 6: collar neckline (well below chinstrap)
+    ]
+    grid = []
+    for i, (y, rx, rz) in enumerate(torso_spec):
         row = []
-        for j in range(seg):
-            a = TAU * j / seg
-            side_factor = 0.62 + 0.38 * abs(math.sin(a)) if .54 <= y <= .78 else 1.0
-            x, z = rx * side_factor * math.cos(a), rz * math.sin(a)
-            row.append(p.vertex((x, y, z), V((math.cos(a) / (rx * side_factor), 0, math.sin(a) / rz))))
-        rings.append(row)
-    for a, b in zip(rings, rings[1:]):
-        for j in range(seg):
-            k = (j + 1) % seg
-            p.face((a[j], a[k], b[k], b[j]), jacket)
-    p.face(tuple(reversed(rings[0])), jacket)
-    p.face(tuple(rings[-1]), jacket)
+        w = torso_weights(y)
+        for j in range(cols):
+            a = TAU * j / cols
+            row.append(add_vert(V((rx * math.cos(a), y, rz * math.sin(a))), w))
+        grid.append(row)
 
-    # Sleeves are rounded rubber-hose tubes.  The centreline is sampled into
-    # sixteen sections and weights are computed from its true arc-length
-    # parameter, never from world Y (the elbow is deliberately below the
-    # shoulder and that old shortcut inverted the two bones).
-    for s, t in SIDES:
-        shoulder = BONES["UpperArm_" + t][0] + V((s * .024, 0, 0))
-        elbow = BONES["Forearm_" + t][0] + V((s * .024, 0, 0))
-        wrist = BONES["Forearm_" + t][1] + V((s * .024, 0, 0))
-        path = spline([shoulder, elbow, wrist], 8)
-        cumulative = [0.0]
-        for a, b in zip(path, path[1:]):
-            cumulative.append(cumulative[-1] + (b - a).length)
-        total = cumulative[-1]
+    # Gently round the 4 corner vertices of each 2x2 armhole into an octagon.
+    for s, (c_mid, c_f, c_b) in [(1, (0, 1, 11)), (-1, (6, 5, 7))]:
+        center = V((s * 0.212, 0.676, 0.010))
+        for ri, ci in [(5, c_f), (3, c_f), (3, c_b), (5, c_b)]:
+            cur = grid[ri][ci].co
+            artist = V((cur.x, cur.z, -cur.y))
+            nudged = artist.lerp(center + (artist - center) * 0.88, 0.45)
+            nudged.x = s * max(abs(nudged.x), 0.172)
+            grid[ri][ci].co = blender_v(nudged)
 
-        def arm_t(point, points=path, lengths=cumulative, length=total):
-            best_d, best_t = float("inf"), 0.0
-            for i, (a, b) in enumerate(zip(points, points[1:])):
-                ab = b - a
-                u = max(0.0, min(1.0, (V(point) - a).dot(ab) / max(ab.length_squared, 1e-12)))
-                q = a + u * ab
-                d = (V(point) - q).length_squared
-                if d < best_d:
-                    best_d, best_t = d, (lengths[i] + u * ab.length) / length
-            return max(0.0, min(1.0, best_t))
+    # Torso quads, omitting the 2x2 armhole patch on each shoulder side.
+    omitted = {(3, 11), (4, 11), (3, 0), (4, 0), (3, 5), (4, 5), (3, 6), (4, 6)}
+    for i in range(len(torso_spec) - 1):
+        for j in range(cols):
+            if (i, j) in omitted:
+                continue
+            k = (j + 1) % cols
+            bm.faces.new((grid[i][j], grid[i][k], grid[i + 1][k], grid[i + 1][j]))
 
-        def sleeve_weights(point, tag=t):
-            t_axis = arm_t(point)
-            chest = .18 * (1 - smooth(0.0, .16, t_axis))
-            fore = smooth(.25, .75, t_axis)
-            return {"Chest": chest, "UpperArm_" + tag: (1 - chest) * (1 - fore),
-                    "Forearm_" + tag: (1 - chest) * fore}
-        jacket_parts.bind = sleeve_weights
-        jacket_parts.oval(shoulder, (.079, .081, .079), jacket, 28, 14,
-                           rot=Quaternion(Z, -s * .13))
-        jacket_parts.tube(path, lambda u: .078 - .008 * u, jacket, 24, 2)
-    jacket_obj = jacket_parts.finish("Uniform", collection, armature=rig)
+    # Clean bottom & top caps (concentric inner ring + center fan-free quad cap).
+    for row_idx, y_cap, inset in [(0, 0.425, 0.55), (len(torso_spec) - 1, 0.780, 0.52)]:
+        outer = grid[row_idx]
+        w = torso_weights(y_cap)
+        inner = []
+        for v in outer:
+            p_a = V((v.co.x * inset, y_cap, -v.co.y * inset))
+            inner.append(add_vert(p_a, w))
+        for j in range(cols):
+            k = (j + 1) % cols
+            bm.faces.new((outer[j], outer[k], inner[k], inner[j]))
+        center_v = add_vert(V((0.0, y_cap, 0.0)), w)
+        for j in range(cols):
+            k = (j + 1) % cols
+            bm.faces.new((inner[j], inner[k], center_v))
 
-    # Charcoal collar/yoke, pants, cuffs, zipper and compact reflective bands
-    # are kept in the same exported Uniform object (four garment materials).
+    # Continuously extrude plush Party Animals arms from each 8-gon armhole.
+    arm_paths = {}
+    for s, tag in SIDES:
+        c_mid, c_f, c_b = (0, 1, 11) if s > 0 else (6, 5, 7)
+        hole = [
+            grid[5][c_mid],  # 0: top (+Y)
+            grid[5][c_f],    # 1: top-front
+            grid[4][c_f],    # 2: mid-front (+Z)
+            grid[3][c_f],    # 3: bot-front
+            grid[3][c_mid],  # 4: armpit bottom (-Y)
+            grid[3][c_b],    # 5: bot-back
+            grid[4][c_b],    # 6: mid-back (-Z)
+            grid[5][c_b],    # 7: top-back
+        ]
+        # Give the armhole ring gentle shoulder influence so the seam flexes
+        # smoothly without pulling the torso belly.
+        hole_arm_w = [0.16, 0.22, 0.26, 0.20, 0.16, 0.20, 0.26, 0.22]
+        for v, aw in zip(hole, hole_arm_w):
+            v[deform][gidx["Pelvis"]] = 0.0
+            v[deform][gidx["Chest"]] = 1.0 - aw
+            v[deform][gidx["UpperArm_" + tag]] = aw
+
+        sh_bone = BONES["UpperArm_" + tag][0]
+        el_bone = BONES["Forearm_" + tag][0]
+        wr_bone = BONES["Forearm_" + tag][1]
+        # Smooth organic Party Animals arm centerline curving over the deltoid
+        # and dropping naturally into the relaxed ~14-degree forearm hang.
+        ctrl = [
+            V((s * 0.206, 0.680, 0.012)),
+            V((s * 0.256, 0.664, 0.017)),
+            V((s * 0.286, 0.630, 0.021)),
+            el_bone,
+            el_bone.lerp(wr_bone, 0.50),
+            wr_bone,
+        ]
+        centres = spline(ctrl, 2)  # 11 smooth stations (indices 0..10), ring 0 is hole
+        arm_paths[tag] = centres
+
+        # Parallel-transport frames so k=0 flows smoothly over the outer arm
+        # and k=2 stays cleanly aligned with the front (+Z) without any twist.
+        up_vec = UP.copy()
+        front_vec = Z.copy()
+        prev_ring = hole
+        n_rings = len(centres) - 1  # 10 extruded arm rings (r=1..10)
+        for r in range(1, len(centres)):
+            u = r / n_rings
+            pt = centres[r]
+            if r < len(centres) - 1:
+                tan = (centres[r + 1] - centres[r - 1]).normalized()
+            else:
+                tan = (centres[r] - centres[r - 1]).normalized()
+            # Project previous frame onto plane perpendicular to new tangent.
+            front_vec = (front_vec - tan * front_vec.dot(tan)).normalized()
+            up_vec = (s * front_vec.cross(tan)).normalized()
+            # Plump deltoid tapering gently into a soft rubber-hose wrist.
+            rad_u = 0.088 * (1.0 - smooth(0.0, 0.25, u)) + (0.084 - 0.010 * u) * smooth(0.0, 0.25, u)
+            rad_f = 0.084 * (1.0 - smooth(0.0, 0.25, u)) + (0.082 - 0.009 * u) * smooth(0.0, 0.25, u)
+            chest_w = 0.36 * (1.0 - smooth(0.0, 0.26, u))
+            fore_w = smooth(0.28, 0.74, u)
+            w = {
+                "Chest": chest_w,
+                "UpperArm_" + tag: (1.0 - chest_w) * (1.0 - fore_w),
+                "Forearm_" + tag: (1.0 - chest_w) * fore_w,
+            }
+            ring = []
+            for k in range(8):
+                phi = k * TAU / 8.0
+                pos = pt + up_vec * (rad_u * math.cos(phi)) + front_vec * (rad_f * math.sin(phi))
+                ring.append(add_vert(pos, w))
+            for k in range(8):
+                kn = (k + 1) % 8
+                bm.faces.new((prev_ring[k], prev_ring[kn], ring[kn], ring[k]))
+            prev_ring = ring
+
+        # Recessed wrist cap inside the mitten so the manifold is watertight.
+        tan_end = (centres[-1] - centres[-2]).normalized()
+        cap_w = {"Forearm_" + tag: 1.0}
+        cap_ring = [
+            add_vert(centres[-1] + tan_end * 0.006 + up_vec * (0.048 * math.cos(k * TAU / 8.0))
+                     + front_vec * (0.048 * math.sin(k * TAU / 8.0)), cap_w)
+            for k in range(8)
+        ]
+        for k in range(8):
+            kn = (k + 1) % 8
+            bm.faces.new((prev_ring[k], prev_ring[kn], cap_ring[kn], cap_ring[k]))
+        cap_mid = add_vert(centres[-1] + tan_end * 0.008, cap_w)
+        for k in range(8):
+            kn = (k + 1) % 8
+            bm.faces.new((cap_ring[k], cap_ring[kn], cap_mid))
+
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    mesh = bpy.data.meshes.new("Uniform")
+    bm.to_mesh(mesh)
+    bm.free()
+    for poly in mesh.polygons:
+        poly.use_smooth = True
+    jacket_obj = bpy.data.objects.new("Uniform", mesh)
+    collection.objects.link(jacket_obj)
+    for mat in (jacket, charcoal, reflective):
+        jacket_obj.data.materials.append(mat)
+    for name in group_names:
+        jacket_obj.vertex_groups.new(name=name)
+
+    # Subdivide the single manifold cage (Catmull-Clark level 2) BEFORE binding
+    # Armature so shoulders, armpits, torso and 32-ring rubber-hose arms are
+    # completely seamless and vertex group weights interpolate cleanly.
+    sub = jacket_obj.modifiers.new("Subsurf", "SUBSURF")
+    sub.levels = 2
+    sub.render_levels = 2
+    bpy.context.view_layer.objects.active = jacket_obj
+    jacket_obj.select_set(True)
+    bpy.ops.object.modifier_apply(modifier=sub.name)
+    jacket_obj.parent = rig
+    mod_arm = jacket_obj.modifiers.new("Armature", "ARMATURE")
+    mod_arm.object = rig
+
+    # Assign Meituan yellow/charcoal/reflective color-blocking directly on the
+    # subdivided manifold faces — zero overlapping strips, zero Z-fighting.
+    arm_vgroups = {
+        "L": (jacket_obj.vertex_groups["UpperArm_L"].index, jacket_obj.vertex_groups["Forearm_L"].index),
+        "R": (jacket_obj.vertex_groups["UpperArm_R"].index, jacket_obj.vertex_groups["Forearm_R"].index),
+    }
+
+    def vert_arm_weight(v_idx):
+        v = jacket_obj.data.vertices[v_idx]
+        wl = wr = 0.0
+        for g in v.groups:
+            if g.group in arm_vgroups["L"]:
+                wl += g.weight
+            elif g.group in arm_vgroups["R"]:
+                wr += g.weight
+        return (wl, "L") if wl >= wr else (wr, "R")
+
+    def arm_arc_u(pt, tag):
+        pts = arm_paths[tag]
+        seg_lens = [(b - a).length for a, b in zip(pts, pts[1:])]
+        total = sum(seg_lens) or 1.0
+        best_d, best_u, acc = float("inf"), 0.0, 0.0
+        for a, b, sl in zip(pts, pts[1:], seg_lens):
+            ab = b - a
+            frac = max(0.0, min(1.0, (pt - a).dot(ab) / max(ab.length_squared, 1e-12)))
+            d = (pt - (a + ab * frac)).length_squared
+            if d < best_d:
+                best_d, best_u = d, (acc + frac * sl) / total
+            acc += sl
+        return best_u
+
+    # Material slots: 0=jacket (yellow), 1=charcoal, 2=reflective
+    for poly in jacket_obj.data.polygons:
+        c = poly.center
+        p = V((c.x, c.z, -c.y))
+        weights = [vert_arm_weight(vi) for vi in poly.vertices]
+        avg_arm = sum(w for w, _ in weights) / len(weights)
+        tag = weights[0][1]
+        if avg_arm >= 0.42:
+            u = arm_arc_u(p, tag)
+            if u >= 0.85:
+                poly.material_index = 1  # charcoal wrist cuff
+            elif 0.77 <= u < 0.82:
+                poly.material_index = 2  # reflective sleeve ring
+            else:
+                poly.material_index = 0  # courier yellow sleeve
+        else:
+            if p.y >= 0.706 or p.y <= 0.456:
+                poly.material_index = 1  # charcoal shoulder yoke & hem
+            elif 0.456 < p.y < 0.585 and abs(p.x) > 0.180 and abs(p.z) < 0.140:
+                poly.material_index = 1  # charcoal slimming side panels
+            elif 0.614 <= p.y <= 0.632 and abs(p.z) > 0.135:
+                poly.material_index = 2  # reflective front & back stripe
+            elif 0.456 < p.y < 0.706 and p.z > 0.14 and abs(p.x) < 0.008:
+                poly.material_index = 1  # center zipper placket
+            elif 0.650 <= p.y <= 0.688 and p.z > 0.14 and -0.118 <= p.x <= -0.052:
+                poly.material_index = 1  # neat left chest pocket
+            else:
+                poly.material_index = 0  # courier yellow body
+
+    # Snug charcoal windbreaker stand collar (below chinstrap) & dark trousers.
     trim_parts = Parts()
     trim_parts.bind = "Pelvis"
-    trim_parts.oval((0, 0.411, -0.005), (0.27, 0.17, 0.22), pants)
-    def surface_strip(y0, y1, mat, a0=0.0, a1=TAU, around=48, steps=6, lift=.0038):
-        rows = []
-        for s_idx in range(steps + 1):
-            y = y0 + (y1 - y0) * s_idx / steps
-            rows.append([trim_parts.vertex(coat_surface(y, a, lift), V((math.cos(a), 0, math.sin(a))))
-                         for a in [a0 + (a1 - a0) * j / around for j in range(around + 1)]])
-        for ra, rb in zip(rows, rows[1:]):
-            for j in range(around):
-                trim_parts.face((ra[j], ra[j + 1], rb[j + 1], rb[j]), mat)
-
-    trim_parts.bind = body_weights
-    # Shoulder yoke, snug waist side panels, hem and collar all follow the
-    # same torso profile and weights.  No rigid applique floats or Z-fights.
-    surface_strip(.712, .754, charcoal, steps=5, lift=.0038)
-    surface_strip(.430, .456, charcoal, steps=4, lift=.0038)
-    surface_strip(.752, .788, charcoal, steps=4, lift=.0042)
-    for centre in (0, math.pi):
-        surface_strip(.515, .685, charcoal, centre - .26, centre + .26, 14, steps=6, lift=.0038)
-    # Silver bands wrap the front and back curvature in one continuous ring.
-    surface_strip(.630, .643, reflective, steps=2, lift=.0046)
-    # A fine front placket follows the surface normal from hem to collar.
-    trim_parts.tube([coat_surface(y, math.pi / 2, .0045) for y in [
-        .456 + (.756 - .456) * i / 12 for i in range(13)]], .0055, charcoal, 12, 3)
-    # Small left chest pocket cleanly seated on the yellow chest below the yoke.
-    pocket = []
-    for s_idx in range(5):
-        y = .652 + (.695 - .652) * s_idx / 4
-        row = []
-        for a in [1.78 + .30 * j / 8 for j in range(9)]:
-            row.append(trim_parts.vertex(coat_surface(y, a, .0044), V((math.cos(a), 0, math.sin(a)))))
-        pocket.append(row)
-    for ra, rb in zip(pocket, pocket[1:]):
-        for j in range(8): trim_parts.face((ra[j], ra[j + 1], rb[j + 1], rb[j]), charcoal)
-    for s, t in SIDES:
-        shoulder = BONES["UpperArm_" + t][0] + V((s * .024, 0, 0))
-        elbow = BONES["Forearm_" + t][0] + V((s * .024, 0, 0))
-        wrist = BONES["Forearm_" + t][1] + V((s * .024, 0, 0))
-        axis = (BONES["Forearm_" + t][1] - BONES["Forearm_" + t][0]).normalized()
-        cuff_a = wrist - axis * 0.058
-        cuff_b = wrist - axis * 0.010
-        trim_parts.bind = "Forearm_" + t
-        trim_parts.tube([cuff_a, cuff_b], lambda u: .0755, charcoal, 24, 4)
-        # Narrow silver safety bands are concentric rings around each forearm.
-        axis = (wrist - elbow).normalized()
-        stripe_center = elbow + axis * .50 * (wrist - elbow).length
-        ring_u = axis.cross(UP).normalized()
-        ring_v = axis.cross(ring_u).normalized()
-        stripe = []
-        for j in range(25):
-            a = TAU * j / 24
-            stripe.append(stripe_center + .0755 * (ring_u * math.cos(a) + ring_v * math.sin(a)))
-        trim_parts.bind = "Forearm_" + t
-        trim_parts.tube(stripe, .0045, reflective, 8, 1, caps=False)
+    trim_parts.oval((0, 0.411, -0.005), (0.244, 0.17, 0.218), pants)
+    trim_parts.bind = "Chest"
+    trim_parts.tube(
+        [(0.146 * math.cos(a), 0.774, 0.142 * math.sin(a)) for a in [TAU * j / 32 for j in range(33)]],
+        0.015, charcoal, 14, 1, caps=False,
+    )
     trim_obj = trim_parts.finish("Uniform trims", collection, armature=rig)
     curled_tail(collection, rig)
     for s, t in SIDES:
         p, mitten_end = part("Mitten_" + t, "Paw_" + t)
-        p.oval(BONES["Paw_" + t][0], (0.070, 0.072, 0.068), cream)
+        p.oval(BONES["Paw_" + t][0], (0.073, 0.075, 0.071), cream)
         mitten_end()
         p, end = part("Haunch_" + t, "Thigh_" + t)
         p.oval((s * 0.151, 0.295, 0), (0.117, 0.16, 0.117), pants)
@@ -439,8 +557,7 @@ def make_character(collection, rig, coat_path):
         riding_shoe(p, BONES["Foot_" + t][0], shoe, outsole)
         end()
 
-    # Join the shell and trims.  The resulting object retains four garment
-    # material islands while the sleeve/body surfaces remain physically separate.
+    # Join the seamless manifold shell with pants & stand collar.
     uniform_obj = jacket_obj
     bpy.ops.object.select_all(action="DESELECT")
     jacket_obj.select_set(True)
@@ -529,23 +646,28 @@ def author_actions(rig):
             root = rig.pose.bones["Root"]
             root.location = root.bone.matrix_local.to_quaternion().inverted() @ blender_v(off)
             if name == "Walk":
-                bone_turn(rig, "Pelvis", Quaternion(Z, 0.055 * math.sin(phase)) @ Quaternion(UP, 0.05 * math.sin(phase)))
-                bone_turn(rig, "Chest", Quaternion(UP, -0.06 * math.sin(phase)) @ Quaternion(Z, -0.03 * math.sin(phase)))
+                # Subtle energetic delivery-trot lean with natural counter-twist.
+                bone_turn(rig, "Pelvis", Quaternion(Z, 0.045 * math.sin(phase)) @ Quaternion(UP, 0.055 * math.sin(phase)))
+                bone_turn(rig, "Chest", Quaternion(X, 0.085) @ Quaternion(UP, -0.075 * math.sin(phase)) @ Quaternion(Z, -0.025 * math.sin(phase)))
             for s, t in SIDES:
                 if name == "Ride":
                     upper, lower, thigh, shin, foot = riding_limbs(s, t)
                 elif name == "Walk":
+                    # Natural 60% human / 40% stylized cartoon jog swing:
+                    # arms swing cleanly forward/back in the sagittal plane with
+                    # a soft bent elbow (no outward Z-flare, no upturned wrists).
                     swing = (-s) * math.sin(phase)
-                    upper = Quaternion(X, swing * 0.54) @ Quaternion(Z, s * (0.04 + 0.04 * abs(swing)))
-                    lower = Quaternion(X, -0.08 - max(0.0, -swing) * 0.16)
+                    arm_fwd = -swing  # opposite to same-side leg
+                    upper = Quaternion(X, -0.46 * arm_fwd)
+                    lower = Quaternion(X, -0.34 - 0.28 * max(0.0, arm_fwd))
                     thigh, shin, foot = (
                         Quaternion(X, -swing * 0.78),
                         Quaternion(),
                         Quaternion(X, swing * 0.78 * 0.42),
                     )
                 else:
-                    upper = Quaternion(X, -0.025)
-                    lower = Quaternion(X, -0.06)
+                    upper = Quaternion(X, -0.02)
+                    lower = Quaternion(X, -0.10)
                     thigh, shin, foot = Quaternion(), Quaternion(), Quaternion()
                 for prefix, q in [
                     ("UpperArm_", upper),

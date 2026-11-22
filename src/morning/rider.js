@@ -341,8 +341,10 @@ export function createShiba(asset) {
         for (const { leg } of parts) turn(leg.a, xAxis, -.17 * reach);
       }
       if (carrying) {
-        turn(parts[1].arm.a, xAxis, -0.42 - lift * 0.78, true);
-        turn(parts[1].arm.b, xAxis, -0.25 + lift * 0.18);
+        // Anatomical left hand (+X, parts[1]) holds the delivery bag steadily
+        // while the right arm (parts[0]) keeps swinging naturally during Walk.
+        turn(parts[1].arm.a, xAxis, -0.36 - lift * 1.02, true);
+        turn(parts[1].arm.b, xAxis, -0.36 + lift * 0.18, true);
       }
       if (lift) {
         turn(parts[0].arm.a, xAxis, -lift * 0.65);
