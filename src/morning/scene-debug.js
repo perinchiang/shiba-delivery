@@ -28,6 +28,14 @@ export const sceneJumps = {
   willow: { title: '桥头阔叶树', state: onCountryRoad(892),
     camera: { fov: 40, fitWidth: true, focus: [891.5, 3.6, centerZ(891.5) + 11.2], offset: [-10, 2.4, -13] } },
   crossing: { title: '城市十字路口', state: onCountryRoad(70, 2.2) },
+  cityEdge: {
+    title: '城市边角·路缘细节', state: onCountryRoad(79, 2.5),
+    camera: { fov: 46, focus: [94, 1.8, 10.6], offset: [-14.5, 2.1, -4.6] },
+  },
+  cityAvenue: {
+    title: '城市大道·榕湾方向', state: onCountryRoad(89, 1.8),
+    camera: { fov: 50, focus: [112, 3.6, 4.17], offset: [-26, 2.2, 2.6] },
+  },
   openPaddy: { title: '开阔水田', state: onCountryRoad(340) },
   riceBend: { title: '稻浪到石桥', state: onCountryRoad(792) },
   harvestView: {
