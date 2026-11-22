@@ -19,6 +19,7 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
   const actionButton = $('action');
   mountBunHandoff(bunDialogue, orders.find(order => order.id === 'buns'));
   let lastMode = '';
+  let lastAudioActive = null;
   let audio;
   function bell(notes) {
     if (!window.AudioContext) return;
@@ -33,8 +34,14 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
   const map = $('street-map');
   function paintMap() {
     if (!map.open) return;
-    if (state.phase === 'free') drawRouteMap($('street-plan'), state);
-    else drawStreetMap($('street-plan'), state, navigate().point);
+    if (state.phase === 'free' || state.x > 130) {
+      drawRouteMap($('street-plan'), state);
+    } else {
+      const mapState = state.x > 45 && !state.order?.cityRoute
+        ? { ...state, order: { ...state.order, cityRoute: true } }
+        : state;
+      drawStreetMap($('street-plan'), mapState, navigate().point);
+    }
   }
   new ResizeObserver(paintMap).observe($('street-plan'));
   function openMap() {
@@ -47,13 +54,14 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     write('map-pickup', state.order.name);
     write('map-delivery', state.order.customer.address);
     const free = state.phase === 'free';
-    const city = !!state.order?.cityRoute;
-    const where = state.mode === 'shop' ? state.order.room.name : city ? roadPlace(state.x) : '榕湾老街';
-    write('map-location', free
-      ? '当前位置 · ' + roadPlace(state.x) + '　全长 ' + (distanceAlong(roadEnd)/1000).toFixed(2) + ' km'
+    const route = free || state.x > 130;
+    const city = !route && (!!state.order?.cityRoute || state.x > 45);
+    const where = state.mode === 'shop' ? state.order.room.name : state.x > 45 ? roadPlace(state.x) : '榕湾老街';
+    write('map-location', route
+      ? '当前位置 · ' + roadPlace(state.x) + '　全长 ' + (distanceAlong(roadEnd) / 1000).toFixed(2) + ' km'
       : '当前位置 · ' + where + '　　目标 · ' + navigate().name);
-    write('map-title', free ? '榕湾村道' : city ? '榕湾城区' : '榕湾老街');
-    $('map-stops').hidden = free;
+    write('map-title', route ? '榕湾村道' : city ? '榕湾城区' : '榕湾老街');
+    $('map-stops').hidden = free || ((state.phase === 'offer' || state.phase === 'done') && route);
     paintMap();
   }
   $('map-open').addEventListener('click', openMap);
@@ -122,16 +130,11 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
   $('phone-main').addEventListener('click', () => {
     if (state.phase === 'offer') {
       state.phase = 'pickup';
-      rideAudio.setActive(!!state.order?.cityRoute);
       shiba.greet();
       view.clearInspection();
       bell([659, 784]);
     }
     setPhoneExpanded(false);
-  });
-  $('free-ride').addEventListener('click', () => {
-    if (state.phase === 'offer') reset({ state: { phase: 'free' } });
-    else if (state.phase === 'free') reset();
   });
   $('ride-sound').addEventListener('click', () => {
     rideAudio.toggle();
@@ -142,7 +145,6 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     if (state.phase !== 'done') return;
     const next = nextOrder(state.order);
     Object.assign(state, { order: next, phase: 'offer', cargo: 'none', returnToBike: false, dialog: null });
-    rideAudio.setActive(!!next?.cityRoute);
     phone.querySelector('.phone-scroll').scrollTop = 0;
     syncHUD();
     $('phone-main').focus({ preventScroll: true });
@@ -283,12 +285,15 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     write('pickup-store', state.order.name);
     write('pickup-person', (state.order.pickupArea || '榕湾老街') + ' · 找' + state.order.staff);
     write('order-note', '备注　' + state.order.note);
-    $('free-ride').hidden = !offer && !free;
-    write('free-ride', free ? '回老街接单' : '自由骑行');
     $('ride-info').hidden = !free;
     if (free) {
       const metres = routeDistances(state.x, state.z);
       write('ride-distance', '距老街 ' + Math.round(metres.town) + ' m　距村口 ' + Math.round(metres.village) + ' m');
+    }
+    const wantAudio = free || offer || done || !!state.order?.cityRoute || state.x > 45;
+    if (wantAudio !== lastAudioActive) {
+      lastAudioActive = wantAudio;
+      rideAudio.setActive(wantAudio);
     }
     write('phase', { free: '骑行', offer: '待接单', pickup: state.order.pickupPhase, delivery: '去送达', done: '已签收' }[state.phase]);
     write('goal', free ? roadPlace(state.x) : done ? state.order.customer.name + '已签收' : task.name);
@@ -308,7 +313,7 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     $('shift-summary').hidden = !hasShift;
     if (hasShift) write('shift-summary', '今日已完成 ' + state.completedCount + ' 单　·　累计到手 ' + formatPay(state.totalEarnedCents || 0));
     write('order-summary', free ? Math.round(Math.abs(state.speed)*3.6) + (state.speed < 0 ? ' km/h · 倒车' : ' km/h · 自由骑行') : done ? '实际到账 ' + net : '送往' + state.order.customer.address);
-    write('place', free ? '榕湾村道' : state.mode === 'shop' ? state.order.room.name : state.order?.cityRoute ? roadPlace(state.x) : '榕湾老街');
+    write('place', free ? '榕湾村道' : state.mode === 'shop' ? state.order.room.name : state.x > 45 ? roadPlace(state.x) : '榕湾老街');
     write('clock', free ? '清晨' : state.order.clock[state.phase]);
     actionButton.hidden = !action || action === 'phone' || action === 'statement' || phoneExpanded;
     const bunHandoff = state.order.id === 'buns' && state.dialog === 'shopkeeper';
@@ -339,7 +344,7 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
       stick.setAttribute('aria-label', riding ? '骑行摇杆，上推加速，下拉刹车或倒车，左右转向' : '步行摇杆，向任意方向拖动');
       lastMode = state.mode;
     }
-    const stickDisabled = offer || done || !!state.dialog || !!state.sequence || state.braking || phoneExpanded;
+    const stickDisabled = !!state.dialog || !!state.sequence || state.braking || phoneExpanded;
     if (stick.getAttribute('aria-disabled') !== String(stickDisabled)) {
       stick.setAttribute('aria-disabled', String(stickDisabled));
       if (stickDisabled) releaseStick();
@@ -359,6 +364,7 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
   }
 
   return { sync: syncHUD, get modalOpen() { return phoneExpanded || map.open; }, close() {
+    lastAudioActive = null;
     setPhoneExpanded(false);
     if (map.open) map.close();
   } };

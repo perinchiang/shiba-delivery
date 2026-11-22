@@ -294,34 +294,36 @@ def make_character(collection, rig, coat_path):
 
         p, end = part("Sleeve_" + t, sleeve)
         p.oval(shoulder + V((s * 0.023, -0.105, 0.016)), (0.105, 0.162, 0.112), jacket)
-        # Tailor only the sleeve head. Its inner edge slips under the collar,
-        # while the outer crown stays plump over the shoulder pivot.
+        # Tailor only the sleeve head into a soft, downward-sloping raglan dome.
+        # Its inner edge tucks under the kerchief band while the outer shoulder
+        # rounds smoothly down into the sleeve barrel without a boxy corner.
         for i, point in enumerate(p.p):
             u = max(0, min(1, (point.y - .720) / .107))
             if u == 0:
                 continue
             blend = smooth(0, 1, u)
             slope = 6 * u * (1 - u) / .107
-            # Fan the high rings across the shoulder instead of flattening
-            # an entire ring against the narrow neckline.
             lateral = s * point.x - .299
-            shift = .079 - .32 * lateral
-            # The neckline-side half sits below the printed band. Lift the
-            # opposite half into a rounded crown along the shoulder outline.
-            drop = .017 - .21 * lateral
+            outer = max(0.0, lateral)
+            shift = .056 - .44 * lateral + 4.4 * outer * outer
+            dshift = -.44 + 8.8 * outer
+            drop = .011 - .04 * lateral + 3.2 * lateral * lateral
+            ddrop = -.04 + 6.4 * lateral
             point.x -= s * shift * blend
             point.y -= drop * blend
             normal = p.n[i]
             # Apply the inverse transpose of the two-dimensional deformation.
-            xx, xy = 1 + .32 * blend, -s * shift * slope
-            yx, yy = s * .21 * blend, 1 - drop * slope
+            xx, xy = 1 - dshift * blend, -s * shift * slope
+            yx, yy = -s * ddrop * blend, 1 - drop * slope
             det = xx * yy - xy * yx
             nx, ny = normal.x, normal.y
             normal.x = (yy * nx - yx * ny) / det
             normal.y = (xx * ny - xy * nx) / det
             normal.normalize()
-            # Anchor the crown before the elbow-driven part folds on a high reach.
-            anchor = smooth(0, .71, u)
+            # Anchor the upper crown to Chest so high reaches stay plump, while
+            # easing the outer deltoid smoothly across four rings so swings never crease.
+            outer_flex = (1 - smooth(.55, .80, u)) * smooth(0.0, .08, outer)
+            anchor = smooth(.04, .78, u) * (1 - .32 * outer_flex)
             p.weights[i] = {"Chest": anchor, "UpperArm_" + t: 1 - anchor}
         end()
         p, end = part("Mitten_" + t, "Paw_" + t)
@@ -411,18 +413,24 @@ def author_actions(rig):
             root = rig.pose.bones["Root"]
             root.location = root.bone.matrix_local.to_quaternion().inverted() @ blender_v(off)
             if name == "Walk":
-                bone_turn(rig, "Pelvis", Quaternion(Z, 0.045 * math.sin(phase)))
+                bone_turn(rig, "Pelvis", Quaternion(Z, 0.048 * math.sin(phase)) @ Quaternion(UP, 0.045 * math.sin(phase)))
+                bone_turn(rig, "Chest", Quaternion(UP, -0.055 * math.sin(phase)) @ Quaternion(Z, -0.025 * math.sin(phase)))
             for s, t in SIDES:
                 if name == "Ride":
                     upper, lower, thigh, shin, foot = riding_limbs(s, t)
-                else:
-                    swing = (-s) * math.sin(phase) if name == "Walk" else 0
-                    upper, lower = Quaternion(X, -0.12 + swing * 0.62), Quaternion()
+                elif name == "Walk":
+                    swing = (-s) * math.sin(phase)
+                    upper = Quaternion(X, -0.06 + swing * 0.42) @ Quaternion(Z, s * (0.11 + 0.03 * abs(swing)))
+                    lower = Quaternion(X, -0.22 - max(0.0, -swing) * 0.26 - 0.06 * abs(swing))
                     thigh, shin, foot = (
                         Quaternion(X, -swing * 0.78),
                         Quaternion(),
                         Quaternion(X, swing * 0.78 * 0.42),
                     )
+                else:
+                    upper = Quaternion(X, -0.08) @ Quaternion(Z, s * 0.08)
+                    lower = Quaternion(X, -0.14)
+                    thigh, shin, foot = Quaternion(), Quaternion(), Quaternion()
                 for prefix, q in [
                     ("UpperArm_", upper),
                     ("Forearm_", lower),

@@ -183,11 +183,17 @@ assert.ok(worstGrip<.001,'both front paws remain on their markers');
 for (const root of [rider.root,scooter.root]) {root.position.set(0,0,0);root.rotation.y=0;}
 scooter.steer(0);scooter.root.updateMatrixWorld(true);
 const floor = scooter.root.localToWorld(scooter.cargo.floor.clone());
-assert.ok(surface(scooter.lid,floor)>floor.y+.34,'closed lid covers the loading bay');
-scooter.lid.rotation.z=-1.85;scooter.root.updateMatrixWorld(true);
-assert.equal(surface(scooter.lid,floor),undefined,'lid opens away from the loading bay');
-assert.ok(Math.abs(surface(box,floor)-floor.y)<.001,'cargo target rests on the hollow floor');
-scooter.lid.rotation.z=0;
+const rearBay = floor.clone().add(new THREE.Vector3(0, 0.15 * scooter.root.scale.y, 0));
+const rearDir = new THREE.Vector3(0, 0, 1);
+ray.set(rearBay.clone().addScaledVector(rearDir, -2), rearDir);
+assert.ok(ray.intersectObject(scooter.lid, true).length > 0, 'closed rear hatch blocks rear entry');
+scooter.lid.rotation.x = scooter.cargo.openAngle ?? 1.75;
+scooter.root.updateMatrixWorld(true);
+ray.set(rearBay.clone().addScaledVector(rearDir, -2), rearDir);
+assert.equal(ray.intersectObject(scooter.lid, true).length, 0, 'open rear hatch clears rear entry');
+ray.set(rearBay, down);
+assert.ok(Math.abs(ray.intersectObject(box, true)[0].point.y - floor.y) < .001, 'cargo target rests on the hollow floor');
+scooter.lid.rotation.x = 0;
 // Use conservative bounds for each visible mesh. This also covers the protruding ears, mirrors and box.
 const corners = [];
 for (const angle of [-0.31, 0, 0.31]) {
@@ -241,7 +247,7 @@ scene.add(rider.root, scooter.root);
 const looseBag = parcel(scene, 0, 0, 0);
 looseBag.scale.copy(rider.root.scale);
 for (const kind of ['pack', 'unpack']) {
-  const state = { x: 2, z: 2, bikeYaw: .73, yaw: .73 + Math.PI / 2, mode: 'walk',
+  const state = { x: 2, z: 2, bikeYaw: .73, yaw: .73, mode: 'walk',
     cargo: kind === 'pack' ? 'hand' : 'box' };
   scooter.setStand(1);
   scooter.root.position.set(3, 0, 3);
@@ -261,24 +267,26 @@ for (const kind of ['pack', 'unpack']) {
     positionParcel(state, rider, scooter, looseBag);
     scene.updateMatrixWorld(true);
     if (state.lift > 0 && liftFrame++ % 12 === 0) checkSleeves();
-    if (state.tiptoe > .1) {
+    if (!state.sequence?.approaching) {
       for (const side of hips) assert.ok(Math.abs(bounds(dog('Shoe_' + side)).min.y) < .002,
-        'loading keeps the toes on the street');
+        'loading keeps both soles planted on the street');
     }
     const u = state.sequence?.u;
-    if (u === undefined || u < .45 || u > .83) continue;
+    if (u === undefined || u < .45 || u > .85) continue;
     envelope.makeEmpty();
     vertices(rider.bag.visible ? rider.bag : looseBag, p => envelope.expandByPoint(scooter.root.worldToLocal(p)));
-    if (envelope.min.x < -.222 && envelope.max.x > -.238) {
+    if (envelope.min.z < scooter.cargo.floor.z - .185 && envelope.max.z > scooter.cargo.floor.z - .215) {
       crossingFrames++;
-      assert.ok(envelope.min.y > scooter.cargo.rim + .002, kind + ' clears the near wall');
+      assert.ok(envelope.max.y < scooter.cargo.rim - .015, kind + ' clears the box roof');
+      assert.ok(envelope.min.y >= scooter.cargo.floor.y - .005, kind + ' clears the box floor');
     }
-    if (u >= .81) {
-      assert.ok(envelope.min.z > scooter.cargo.floor.z - .179 && envelope.max.z < scooter.cargo.floor.z + .179);
-      assert.ok(envelope.max.y < scooter.cargo.rim - .006 && envelope.min.y >= scooter.cargo.floor.y - .001, 'bag fits under the closed lid');
+    if (u >= .74) {
+      assert.ok(envelope.min.x > -.28 && envelope.max.x < .28, kind + ' fits inside box width');
+      assert.ok(envelope.min.z > scooter.cargo.floor.z - .185 && envelope.max.z < scooter.cargo.floor.z + .185, kind + ' fits inside box depth');
+      assert.ok(envelope.max.y < scooter.cargo.rim - .015 && envelope.min.y >= scooter.cargo.floor.y - .005, 'bag rests cleanly inside the rear-door box');
     }
   }
-  assert.ok(crossingFrames > 0);
+  assert.ok(crossingFrames > 0, kind + ' enters cleanly through the rear opening');
 }
 scooter.setStand(0);
 // Slowing to a stop kicks the side stand down so the bike rests at a modest lean
@@ -327,14 +335,15 @@ for (const yaw of [0, 1.73, -2.1]) {
   for (const kind of ['park', 'mount']) {
     if (kind === 'park') state.steer = .31 * Math.sign(yaw);
     if (kind === 'mount') {
-      // Loading from the dismount spot takes the rider all the way to the other side.
+      // Loading from the dismount spot skirts the tail to stand behind the rear hatch.
       state.cargo = 'hand';
       beginSequence(state, 'pack');
       while (state.sequence) {
         boxFrame(state, .016, scooter);
         assert.ok(outsideChassis(), 'approach to the box skirts the chassis');
       }
-      assert.ok(leftOfBike(new THREE.Vector3(state.x, 0, state.z)) < -.35, 'loading ends on the other side from the stand');
+      const behindBike = new THREE.Vector3(state.x, 0, state.z).sub(scooter.root.position).dot(forward) / scooter.root.scale.x;
+      assert.ok(behindBike < -1.35, 'loading ends behind the rear hatch');
     }
     beginSequence(state, kind);
     let crossed = false, stoodOnPeg = false, highestBoot = 0;

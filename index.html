@@ -23,7 +23,7 @@
         <button id="look" type="button" aria-pressed="false"><kbd>V</kbd><span>近看阿柴</span></button></div>
         <span id="directions" hidden></span>
         <span class="photo-hint">左右拖动看车身</span>
-        <div id="joystick" role="group" aria-label="移动摇杆" aria-disabled="true">
+        <div id="joystick" role="group" aria-label="移动摇杆" aria-disabled="false">
           <span class="stick-guides" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
           <span class="stick-thumb" aria-hidden="true"></span>
         </div>
@@ -58,7 +58,6 @@
             <section id="ride-info" hidden>
               <h2>榕湾村道</h2><p>沿老街往东，在城市十字路口转进横街，或直行经稻田和石桥到村口。</p>
               <p id="ride-distance"></p>
-              <button id="ride-sound" type="button" aria-pressed="true">声音已开启</button>
             </section>
             <section id="receipt" aria-label="本单账单" hidden>
               <h2>本单账单</h2>
@@ -67,9 +66,9 @@
               <p id="receipt-note" class="note">“开张了，一毛也是热乎的。”</p>
               <p id="shift-summary" class="shift-summary" hidden></p>
             </section>
+            <button id="ride-sound" type="button" aria-pressed="true" style="width:100%;margin:8px 0 4px;padding:6px 12px;font-size:13px">声音已开启</button>
           </div>
           <footer class="phone-footer">
-            <button id="free-ride" type="button">自由骑行</button>
             <button id="phone-main" type="button">接下第一单</button>
             <button id="next-order" type="button" hidden>继续接下一单</button>
             <button id="replay" type="button" hidden>再跑一趟 ↻</button>

@@ -4,13 +4,16 @@ import { constrainToRoad } from './country-route.js';
 import { avoidTreePits, rideMinZ } from './street-layout.js';
 import { beginSequence, isStandSequence, standFrame, isBoxSequence, boxFrame, doorFrame } from './sequence.js';
 
+const DEFAULT_WALK_BASIS = { rightX: 1, rightZ: 0, backX: 0, backZ: 1 };
+
 export function createMovement(state, { street, scooter }, input) {
   let walking = 0, stride = 0;
   const courierScale = scooter.root.scale.y;
-  const openRoad = () => state.phase === 'free' || Boolean(state.order?.cityRoute);
+  const isOldStreetOrder = () => !state.order?.cityRoute && (state.phase === 'pickup' || state.phase === 'delivery');
+  const useFreeRide = () => !isOldStreetOrder() || state.x > 36;
 
   function ride(dx, dz, dt) {
-    if (openRoad()) {
+    if (useFreeRide()) {
       const travel = stepFreeRide(state, dx, dz, scooter.wheelbase*courierScale, dt);
       scooter.roll(Math.sign(state.speed)*travel);
       stride += travel*3.4;
@@ -29,9 +32,10 @@ export function createMovement(state, { street, scooter }, input) {
     const deceleration = state.braking || throttle * state.speed < 0 ? 12 : (throttle ? 6.7 : 4.4);
     state.speed = approach(state.speed, targetSpeed, deceleration * dt);
     state.steer = damp(state.steer, state.braking ? 0 : -dx * 0.31, 12, dt);
+    state.bank = damp(state.bank, 0, 10, dt);
     state.bikeYaw += Math.tan(state.steer) * state.speed / (scooter.wheelbase * courierScale) * dt;
     const sx = state.x, sz = state.z;
-    state.x = clamp(sx + Math.sin(state.bikeYaw) * state.speed * dt, -7.2, 36.6);
+    state.x = Math.max(-7.2, sx + Math.sin(state.bikeYaw) * state.speed * dt);
     state.z = clamp(sz + Math.cos(state.bikeYaw) * state.speed * dt, rideMinZ, 6.45);
     const travel = Math.hypot(state.x - sx, state.z - sz);
     if (travel < 0.00001) state.speed = 0;
@@ -47,23 +51,28 @@ export function createMovement(state, { street, scooter }, input) {
     }
   }
 
-  function walk(dx, dz, dt) {
-    const length = Math.hypot(dx, dz), step = 2.45 * dt / Math.max(1, length);
+  function walk(dx, dz, dt, basis = DEFAULT_WALK_BASIS) {
+    const wx = dx * basis.rightX + dz * basis.backX;
+    const wz = dx * basis.rightZ + dz * basis.backZ;
+    const length = Math.hypot(wx, wz);
+    if (length < 1e-6) return;
+    const step = 2.45 * dt / Math.max(1, length);
     const inside = state.mode === 'shop';
     const oldX = state.x, oldZ = state.z;
-    if (openRoad() && !inside) Object.assign(state, constrainToRoad(oldX+dx*step, oldZ+dz*step, true));
-    else {
-      state.x = clamp(oldX + dx * step, inside ? -2.75 : -8.3, inside ? 2.75 : 37.7);
-      state.z = clamp(oldZ + dz * step, inside ? -0.18 : -0.72, inside ? 2.66 : 7.1);
+    if (!inside) {
+      Object.assign(state, constrainToRoad(oldX + wx * step, oldZ + wz * step, true));
+      avoidTreePits(state);
+    } else {
+      state.x = clamp(oldX + wx * step, -2.75, 2.75);
+      state.z = clamp(oldZ + wz * step, -0.18, 2.66);
     }
-    if (!inside) avoidTreePits(state);
-    state.yaw = Math.atan2(dx, dz);
+    state.yaw = Math.atan2(wx, wz);
     const travel = Math.hypot(state.x - oldX, state.z - oldZ);
     walking = Math.min(1, travel / (2.45 * dt || 1));
     stride += travel * 5.4;
   }
 
-  function move(dt, blocked, clearInspection) {
+  function move(dt, blocked, clearInspection, walkBasis = DEFAULT_WALK_BASIS) {
     walking = 0;
     if (dt <= 0) return;
     if (state.sequence) {
@@ -82,14 +91,14 @@ export function createMovement(state, { street, scooter }, input) {
       stride += travel * 5.4;
       return;
     }
-    if (blocked && openRoad()) {
+    if (blocked) {
       state.reverseHold = state.throttle = state.brakePressure = state.steerInput = 0;
     }
-    if (state.phase === 'offer' || state.phase === 'done' || state.dialog || blocked) return;
+    if (state.dialog || blocked) return;
     const dx = input.axis('left', 'right'), dz = input.axis('up', 'down');
     if (dx || dz) clearInspection();
     if (state.mode === 'ride') ride(dx, dz, dt);
-    else if (dx || dz) walk(dx, dz, dt);
+    else if (dx || dz) walk(dx, dz, dt, walkBasis);
   }
   return {
     move, reset() { walking = stride = 0; },

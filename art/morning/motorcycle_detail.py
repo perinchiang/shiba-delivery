@@ -90,41 +90,45 @@ def spring(parts, a, b, mat):
 
 def exhaust(collection, frame, m):
     p = Parts()
-    # Follow the cylinder down and then outside the swingarm, below the rider's boot.
+    # Bold brushed-steel scrambler header sweeping from the cylinder head out to the right side (-X),
+    # dipping cleanly beneath the rider's boot and rising into the upswept muffler canister.
     p.tube(
         [
-            (-0.071, 0.587, 0.185),
-            (-0.112, 0.549, 0.226),
-            (-0.136, 0.441, 0.239),
-            (-0.143, 0.365, 0.156),
-            (-0.147, 0.353, -0.050),
-            (-0.156, 0.392, -0.213),
-            (-0.169, 0.473, -0.356),
+            (-0.082, 0.602, 0.204),
+            (-0.128, 0.556, 0.246),
+            (-0.150, 0.442, 0.244),
+            (-0.154, 0.364, 0.154),
+            (-0.155, 0.354, -0.050),
+            (-0.162, 0.396, -0.214),
+            (-0.174, 0.474, -0.352),
         ],
-        0.027,
-        m["Pewter"],
-        16,
+        0.032,
+        m["Steel"],
+        18,
         6,
     )
-    a, b = V((-0.166, 0.466, -0.329)), V((-0.221, 0.559, -0.965))
+    # Bolted header flange collar at the cylinder exhaust port.
+    p.tube([(-0.068, 0.614, 0.194), (-0.092, 0.594, 0.214)], 0.042, m["Frame"], 16)
+    a, b = V((-0.170, 0.466, -0.326)), V((-0.230, 0.548, -0.968))
     axis = (b - a).normalized()
     outward = (-X + axis * X.dot(axis)).normalized()
     top = axis.cross(outward).normalized()
-    # Turn the rolled metal lip back into a recessed, genuinely open outlet.
+    # Fuller upswept scrambler canister in bright Steel with dark Frame collar rings & recessed outlet.
     profile = [
-        (0, 0.028, 0.028, m["Pewter"]),
-        (0.080, 0.043, 0.047, m["Steel"]),
-        (0.145, 0.054, 0.060, m["Steel"]),
-        (0.195, 0.056, 0.062, m["Pewter"]),
-        (0.78, 0.056, 0.063, m["Pewter"]),
-        (0.84, 0.056, 0.063, m["Steel"]),
-        (0.90, 0.054, 0.059, m["Steel"]),
-        (0.97, 0.048, 0.051, m["Pewter"]),
-        (0.995, 0.048, 0.050, m["Steel"]),
-        (1.0, 0.043, 0.046, m["Steel"]),
-        (1.0, 0.034, 0.036, m["Frame"]),
-        (0.980, 0.030, 0.032, m["Frame"]),
-        (0.894, 0.028, 0.030, m["Rubber"]),
+        (0.0, 0.033, 0.033, m["Steel"]),
+        (0.075, 0.052, 0.057, m["Steel"]),
+        (0.135, 0.066, 0.072, m["Steel"]),
+        (0.165, 0.070, 0.077, m["Frame"]),
+        (0.200, 0.068, 0.075, m["Steel"]),
+        (0.790, 0.068, 0.075, m["Steel"]),
+        (0.835, 0.070, 0.077, m["Frame"]),
+        (0.875, 0.066, 0.072, m["Steel"]),
+        (0.955, 0.057, 0.061, m["Steel"]),
+        (0.992, 0.056, 0.059, m["Steel"]),
+        (1.000, 0.049, 0.052, m["Steel"]),
+        (1.000, 0.038, 0.041, m["Frame"]),
+        (0.978, 0.034, 0.036, m["Frame"]),
+        (0.880, 0.031, 0.033, m["Rubber"]),
     ]
     rings = []
     for i, (t, w, h, mat) in enumerate(profile):
@@ -132,9 +136,9 @@ def exhaust(collection, frame, m):
         for j in range(36):
             phase = TAU * j / 36
             normal = outward * math.cos(phase) + top * math.sin(phase)
-            if i >= 10:
+            if i >= 11:
                 normal = -normal
-            if 8 <= i <= 10:
+            if 9 <= i <= 11:
                 normal = (axis + normal * 0.35).normalized()
             row.append(
                 p.vertex(a.lerp(b, t) + outward * (w * math.cos(phase)) + top * (h * math.sin(phase)), normal)
@@ -146,29 +150,41 @@ def exhaust(collection, frame, m):
         rings.append(row)
     p.face(tuple(p.vertex(p.p[k], axis) for k in rings[-1]), m["Rubber"])
 
-    def guard(t, angle):
-        return a.lerp(b, t) + outward * (0.062 * math.cos(angle)) + top * (0.071 * math.sin(angle))
+    def guard(t, angle, lift=0.0):
+        return (
+            a.lerp(b, t)
+            + outward * ((0.076 + lift) * math.cos(angle))
+            + top * ((0.083 + lift) * math.sin(angle))
+        )
 
     rows = []
     for i in range(21):
         t = i / 20
-        # Narrow softly at both ends; leave the silver outlet in full view.
-        extent = 0.90 - 0.26 * abs(2 * t - 1) ** 4
+        # Sculpted retro heat shield narrowing smoothly at both ends; silver outlet stays in full view.
+        extent = 0.92 - 0.28 * abs(2 * t - 1) ** 4
         row = []
         for j in range(11):
-            angle = 0.22 + (j / 5 - 1) * extent
+            angle = 0.18 + (j / 5 - 1) * extent
             row.append(
-                p.vertex(guard(0.17 + 0.63 * t, angle), outward * math.cos(angle) + top * math.sin(angle))
+                p.vertex(guard(0.18 + 0.62 * t, angle), outward * math.cos(angle) + top * math.sin(angle))
             )
         rows.append(row)
     for i in range(len(rows) - 1):
         for j in range(len(rows[i]) - 1):
             p.face((rows[i][j], rows[i + 1][j], rows[i + 1][j + 1], rows[i][j + 1]), m["Steel"])
-    for t in (0.32, 0.41, 0.50, 0.59):
-        p.tube([guard(t + 0.024, -0.38), guard(t, 0.10), guard(t - 0.020, 0.53)], 0.006, m["Pewter"], 8, 3)
-    for t in (0.22, 0.744):
-        p.oval(guard(t, 0.10), (0.009, 0.010, 0.010), m["Frame"], 12, 8)
-    p.tube([(-0.117, 0.627, -0.667), (-0.168, 0.588, -0.680), (-0.203, 0.551, -0.682)], 0.013, m["Frame"], 10)
+    # 5 crisp dark ventilation slots + 2 mounting bolts along the outer heat shield.
+    for t in (0.28, 0.37, 0.46, 0.55, 0.64):
+        p.tube(
+            [guard(t + 0.022, -0.38, 0.002), guard(t, 0.08, 0.002), guard(t - 0.020, 0.52, 0.002)],
+            0.0075,
+            m["Frame"],
+            8,
+            3,
+        )
+    for t in (0.21, 0.745):
+        p.oval(guard(t, 0.08, 0.003), (0.011, 0.012, 0.012), m["Frame"], 12, 8)
+        p.oval(guard(t, 0.08, 0.005), (0.006, 0.006, 0.006), m["Steel"], 10, 6)
+    p.tube([(-0.125, 0.618, -0.667), (-0.176, 0.582, -0.680), (-0.212, 0.548, -0.682)], 0.014, m["Frame"], 10)
     p.finish("High_Side_Exhaust", collection, frame)
 
 
@@ -307,25 +323,64 @@ def build(collection, assembly, m):
     )
     p.finish("Side_Covers", collection, frame)
     p = Parts()
-    # Motor and crankcase tucked into the cradle, clear of the boots on the two side pegs.
-    p.oval((0, 0.475, 0.035), (0.113, 0.128, 0.142), m["Pewter"])
-    p.box((0, 0.612, 0.132), (0.161, 0.166, 0.185), 0.036, m["Frame"])
-    for h in (0.565, 0.594, 0.624, 0.652):
-        p.box((0, h, 0.135), (0.179, 0.017, 0.193), 0.008, m["Pewter"])
+    # Bolder air-cooled single-cylinder engine with 6 wide cooling fins, multi-tiered crankcase covers,
+    # metallic cylinder head + spark plug boot, and retro carburetor + chrome cone air-filter.
+    # Kept cleanly within ±0.165 at boot height so Footrest_L/R and boots remain 100% clear.
+    p.oval((0, 0.472, 0.032), (0.124, 0.136, 0.150), m["Frame"])
+    # Dark cylinder block core contrasting against 6 crisp bright metallic air-cooling fins.
+    p.box((0, 0.614, 0.140), (0.166, 0.172, 0.188), 0.028, m["Frame"])
+    for h in (0.548, 0.573, 0.598, 0.623, 0.648, 0.673):
+        p.box((0, h, 0.144), (0.246, 0.011, 0.214), 0.0045, m["Steel"])
+    # Sculpted metallic cylinder head cover with dark fin grooves, cam side caps & Rust spark plug boot.
+    p.box((0, 0.712, 0.176), (0.212, 0.068, 0.180), 0.024, m["Steel"])
+    for dz in (-0.042, 0.0, 0.042):
+        p.box((0, 0.745, 0.176 + dz), (0.176, 0.008, 0.012), 0.003, m["Frame"])
     for s in (-1, 1):
-        p.oval((s * 0.099, 0.478, 0.027), (0.039, 0.096, 0.103), m["Steel"], 25, 16)
-        p.oval((s * 0.131, 0.480, 0.032), (0.011, 0.069, 0.077), m["Pewter"], 24, 14)
-        p.oval((s * 0.139, 0.481, 0.032), (0.005, 0.051, 0.058), m["Steel"], 22, 14)
-        for i in range(4):
-            a = 0.48 + TAU * i / 4
+        p.oval((s * 0.108, 0.712, 0.178), (0.016, 0.030, 0.034), m["Pewter"], 18, 10)
+        p.oval((s * 0.120, 0.712, 0.178), (0.006, 0.018, 0.020), m["Steel"], 14, 8)
+    # Spark plug insulator & Rust rubber boot on the right (-X) side of the head.
+    p.tube([(-0.102, 0.696, 0.205), (-0.126, 0.710, 0.220)], 0.010, m["Ivory"], 10)
+    p.tube([(-0.122, 0.708, 0.218), (-0.150, 0.726, 0.232), (-0.136, 0.754, 0.222)], 0.013, m["Rust"], 12, 3)
+    p.tube([(-0.136, 0.754, 0.222), (-0.095, 0.790, 0.185)], 0.006, m["Frame"], 8, 2)
+    # Chunkier multi-tiered circular side crankcase covers (clutch & stator) with 6 bolts & center badge.
+    for s in (-1, 1):
+        p.oval((s * 0.112, 0.474, 0.028), (0.042, 0.106, 0.112), m["Steel"], 28, 16)
+        p.oval((s * 0.140, 0.476, 0.030), (0.016, 0.086, 0.092), m["Frame"], 26, 14)
+        p.oval((s * 0.148, 0.477, 0.030), (0.014, 0.072, 0.078), m["Pewter"], 24, 14)
+        p.oval((s * 0.158, 0.478, 0.030), (0.007, 0.044, 0.048), m["Steel"], 22, 12)
+        p.oval((s * 0.163, 0.478, 0.030), (0.004, 0.022, 0.024), m["DeepTeal"], 18, 10)
+        for i in range(6):
+            a = 0.26 + TAU * i / 6
             p.oval(
-                (s * 0.128, 0.478 + 0.081 * math.cos(a), 0.027 + 0.085 * math.sin(a)),
-                (0.008, 0.009, 0.009),
+                (s * 0.144, 0.475 + 0.087 * math.cos(a), 0.028 + 0.092 * math.sin(a)),
+                (0.009, 0.009, 0.009),
                 m["Frame"],
                 10,
                 6,
             )
-    p.box((0, 0.693, 0.182), (0.173, 0.102, 0.163), 0.035, m["DeepTeal"])
+        # Forward circular oil-filter / starter-clutch housing bump.
+        p.oval((s * 0.112, 0.492, 0.132), (0.024, 0.044, 0.046), m["Pewter"], 18, 10)
+        p.oval((s * 0.132, 0.492, 0.132), (0.008, 0.028, 0.030), m["Steel"], 16, 8)
+    # Retro carburetor barrel & chrome cone air-filter tucked neatly behind the cylinder head,
+    # peeking cleanly out on the left (+X) side below the side cover.
+    p.tube([(0.024, 0.658, 0.068), (0.082, 0.638, 0.018), (0.096, 0.626, -0.012)], 0.022, m["Steel"], 14, 3)
+    p.tube([(0.096, 0.588, -0.014), (0.096, 0.668, -0.014)], 0.028, m["Pewter"], 16)
+    p.oval((0.096, 0.586, -0.014), (0.026, 0.014, 0.026), m["Gold"], 14, 8)
+    p.oval((0.096, 0.672, -0.014), (0.024, 0.010, 0.024), m["Steel"], 14, 8)
+    # Pleated chrome cone air-filter extending rearward behind the carburetor.
+    p.tube(
+        [(0.100, 0.624, -0.034), (0.118, 0.618, -0.104)],
+        lambda t: 0.026 + 0.015 * t,
+        m["Steel"],
+        18,
+        3,
+    )
+    for f in (0.22, 0.46, 0.70):
+        z_ring = -0.034 - 0.070 * f
+        x_ring = 0.100 + 0.018 * f
+        y_ring = 0.624 - 0.006 * f
+        p.tube([(x_ring, y_ring, z_ring + 0.004), (x_ring, y_ring, z_ring - 0.004)], 0.027 + 0.015 * f, m["Frame"], 16)
+    p.oval((0.120, 0.617, -0.108), (0.039, 0.039, 0.012), m["Steel"], 18, 10)
     p.finish("Motor", collection, frame)
     exhaust(collection, frame, m)
 

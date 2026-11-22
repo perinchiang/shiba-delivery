@@ -40,10 +40,10 @@ export function ear(g, x, y, z, size, outer, inner, tilt) {
 
 export function parcel(parent, x, y, z) {
   const bag = group(parent, x, y, z);
-  box(bag, 0, 0.16, 0, 0.33, 0.32, 0.18, 0xcc9155, 0.018);
-  curve(bag, [[-0.081, 0.30, 0], [-0.075, 0.392, 0], [0.06, 0.394, 0], [0.08, 0.30, 0]], 0.013, 0x91633f);
-  box(bag, 0, 0.17, 0.099, 0.17, 0.10, 0.01, cream);
-  box(bag, 0, 0.17, 0.106, 0.09, 0.022, 0.005, jacket);
+  box(bag, 0, 0.125, 0, 0.28, 0.25, 0.17, 0xcc9155, 0.016);
+  curve(bag, [[-0.068, 0.235, 0], [-0.062, 0.295, 0], [0.055, 0.297, 0], [0.068, 0.235, 0]], 0.011, 0x91633f);
+  box(bag, 0, 0.135, 0.093, 0.15, 0.09, 0.01, cream);
+  box(bag, 0, 0.135, 0.100, 0.08, 0.020, 0.005, jacket);
   bake(bag);
   return bag;
 }
@@ -341,12 +341,14 @@ export function createShiba(asset) {
         turn(pelvis, xAxis, .17 * reach);
         for (const { leg } of parts) turn(leg.a, xAxis, -.17 * reach);
       }
-      if (lift) turn(chest, xAxis, -lift * .02);
-      if (carrying) turn(parts[1].arm.a, xAxis, -.46 - lift * 2.46, true);
+      if (carrying) {
+        turn(parts[1].arm.a, xAxis, -0.42 - lift * 0.78, true);
+        turn(parts[1].arm.b, xAxis, -0.25 + lift * 0.18);
+      }
       if (lift) {
-        turn(parts[1].arm.a, zAxis, -.32 * lift);
-        turn(parts[0].arm.a, xAxis, -lift * .55);
-        turn(head, zAxis, .10 * lift);
+        turn(parts[0].arm.a, xAxis, -lift * 0.65);
+        turn(parts[0].arm.b, xAxis, -0.22 * lift);
+        turn(chest, xAxis, 0.08 * lift);
       }
     }
     if (mount && clothEnds) {
@@ -386,10 +388,10 @@ export function createShiba(asset) {
     bag.visible = carrying && !mount;
     if (carrying) {
       root.worldToLocal(grip.getWorldPosition(bag.position));
-      // Draw the bag against the raised mitten as the rider reaches over the rim.
-      bag.position.y -= .39 - .49 * lift;
-      bag.position.x += .13 * lift;
-      bag.position.z += .11 * lift;
+      // Cradle the bag neatly in front of Shiba's right paw and glide it to floor height for rear-hatch handoff.
+      bag.position.y -= 0.30 - 0.140 * lift;
+      bag.position.x -= 0.16 * lift;
+      bag.position.z += 0.06 + 0.14 * lift;
       bag.rotation.z = walking * Math.sin(stride) * .06;
     }
   }
@@ -421,9 +423,16 @@ export function createScooter(asset) {
     palms: ['L', 'R'].map(t => node('PalmTarget_' + t)), frame: root, besideWorld,
     standToe: node('Stand_Toe'), standFoot: node('Stand_Foot'), feet: ['L', 'R'].map(t => node('Footrest_' + t)) };
   root.rotation.order = 'YXZ';
-  const cargo = { floor: inRoot(node('Cargo_Floor')), approach: inRoot(node('Cargo_Approach')), rim: inRoot(node('Cargo_Lid')).y };
+  const lidNode = node('Cargo_Lid');
+  const cargo = {
+    floor: inRoot(node('Cargo_Floor')),
+    approach: inRoot(node('Cargo_Approach')),
+    rim: inRoot(lidNode).y,
+    openAngle: lidNode.userData.openAngle ?? 1.75,
+    slots: [0, -0.18, 0.18],
+  };
   root.scale.setScalar(courierScale);
-  return { root, mount, cargo, lid: node('Cargo_Lid'), wheelbase: frontAxle.z - rearAxle.z,
+  return { root, mount, cargo, lid: lidNode, wheelbase: frontAxle.z - rearAxle.z,
     frontZ: frontAxle.z * courierScale, rearZ: rearAxle.z * courierScale,
     rearContact(out) {
       rear.getWorldPosition(out);

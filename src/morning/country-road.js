@@ -53,6 +53,7 @@ function getRoadMaterial() {
           float nFine = rNoise(vec2(lat * 0.45, s * 0.14) + 2.1);
 
           // Smoothly blend from town pavement near the city crossing into rich slate country asphalt.
+          float inCity = 1.0 - smoothstep(116.0, 126.0, wp.x);
           float countryBlend = smoothstep(115.0, 148.0, wp.x);
           float bridgeBlend = smoothstep(892.5, 895.0, wp.x) * (1.0 - smoothstep(949.0, 951.5, wp.x));
 
@@ -125,12 +126,14 @@ function getRoadMaterial() {
 
           float sideSign = sign(lat);
           float wob = (nMed - 0.5) * 0.34 + 0.11 * sin(s * 0.43 + sideSign * 1.9);
-          // Dust creeping slightly onto the outer asphalt edge
+          // Dust creeping slightly onto the outer asphalt edge (suppressed inside Old Street & City Crossing)
           float dust = smoothstep(hw - 0.34, hw + 0.04, d + wob * 0.7) * (1.0 - bridgeBlend) * countryBlend;
+          dust *= (1.0 - inCity);
           road = mix(road, earth * 0.92, dust * 0.32);
 
-          // Crumbling border into warm earth shoulder
+          // Crumbling border into warm earth shoulder (suppressed inside city so charcoal asphalt stays clean across N/S mouths)
           float shEdge = smoothstep(hw - 0.04, hw + 0.06, d + wob * (1.0 - bridgeBlend));
+          shEdge *= (1.0 - inCity);
           vec3 bridgeCurb = vec3(0.55, 0.50, 0.40);
           vec3 shoulder = mix(earth, bridgeCurb, bridgeBlend);
           // Earth shoulder softly transitions into lush green verge further out
@@ -192,13 +195,14 @@ export function buildCountryRoad(start, end) {
     const h = roadHeight(x);
     const river = x >= 894 && x <= 950;
     const nearCross = Math.abs(x - crossing.x) < 28;
+    const inJunction = Math.abs(x - crossing.x) <= crossing.half + 1.5;
     const tallZone = x >= 575 && x <= 892;
 
     // Outside the bridge, grade shoulders gently down toward soil so there is zero floating edge.
     const skirtWidth = river ? 0.75 : nearCross ? 0.85 : 1.75;
     const midShoulder = river ? 0.45 : 0.68;
     const skirtDrop = river ? 0 : nearCross ? -0.18 : tallZone ? -0.07 : -0.22;
-    const shDrop = river ? 0 : nearCross ? -0.04 : -0.025;
+    const shDrop = (river || inJunction) ? 0 : nearCross ? -0.04 : -0.025;
     const sample = paddyShoulderWeight(x);
     const sampleSkirt = paddyShoulderCrossSection.roadOuter;
     const outer = THREE.MathUtils.lerp(skirtWidth, sampleSkirt, sample);

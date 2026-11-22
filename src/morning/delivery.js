@@ -20,13 +20,24 @@ export function createDelivery(state) {
     : distance(bike(), state.order.customer.point) < 7.2;
   function availableAction() {
     if (state.sequence || state.braking) return '';
-    if (state.phase === 'free' && state.mode === 'walk') {
-      return distance(state, bike()) < 1.82 ? 'mount' : '';
-    }
-    if (state.phase === 'done') return 'statement';
     if (state.dialog === 'shopkeeper') return 'collect';
     if (state.dialog === 'customer') return 'sign';
-    if (state.phase === 'offer') return 'phone';
+    if (state.phase === 'free') {
+      if (state.mode === 'ride') return Math.abs(state.speed) > 0.85 ? 'brake' : 'park';
+      return distance(state, bike()) < 1.82 ? 'mount' : '';
+    }
+    if (state.phase === 'done') {
+      if (state.mode === 'ride') return Math.abs(state.speed) > 0.85 ? 'brake' : 'park';
+      if (distance(state, bike()) < 1.82 && distance(state, state.order.customer.point) > 1.8) return 'mount';
+      return 'statement';
+    }
+    if (state.phase === 'offer') {
+      if (state.mode === 'ride') {
+        if (Math.abs(state.speed) > 0.85) return 'brake';
+        return distance(state, start) > 0.5 ? 'park' : 'phone';
+      }
+      return distance(state, bike()) < 1.82 ? 'mount' : 'phone';
+    }
     if (state.mode === 'ride') return Math.abs(state.speed) > 0.85 ? 'brake' : 'park';
     if (state.mode === 'shop') {
       if (state.phase === 'pickup' && distance(state, state.order.room.counter) < 1.03) return 'talk';

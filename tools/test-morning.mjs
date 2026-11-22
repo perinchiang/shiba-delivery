@@ -157,7 +157,7 @@ try {
   await page.locator('#look').waitFor();
   await walkTo('把药袋放进箱子');
   await interact('把药袋放进箱子');
-  await sequenceShot(1760, '07-pack');
+  await sequenceShot(2050, '07-pack');
   await interact('骑上小摩托');
   await rideToStop();
   await walkTo('从箱里取药袋');

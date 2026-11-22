@@ -205,6 +205,7 @@ export function checkAccessories(rider, scooter) {
   const yaw = 0.92;
   scooter.root.position.set(4, 0, 2.1);
   scooter.root.rotation.y = yaw;
+  scooter.lid.rotation.x = 0;
   scooter.lid.rotation.z = 0;
   scooter.root.updateMatrixWorld(true);
   const bikeInverse = scooter.root.matrixWorld.clone().invert(),
@@ -250,7 +251,7 @@ export function checkAccessories(rider, scooter) {
       note('plume beyond rear box silhouette', exposed * scale - .01);
     }
     chassis.forEach((obj, i) => {
-      const bounds = i === 1 && scooter.lid.rotation.z !== 0 ? vehicleBounds(obj, bikeInverse) : fixedBoxes[i];
+      const bounds = i === 1 && (scooter.lid.rotation.x !== 0 || scooter.lid.rotation.z !== 0) ? vehicleBounds(obj, bikeInverse) : fixedBoxes[i];
       note(obj.name, vehicleGap(tail, bounds) * scale);
     });
     frames++;

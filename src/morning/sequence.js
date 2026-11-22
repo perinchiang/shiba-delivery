@@ -8,7 +8,6 @@ const target = new THREE.Vector3();
 const tangent = new THREE.Vector3();
 const boxOrientation = new THREE.Quaternion();
 const up = new THREE.Vector3(0, 1, 0);
-const acrossBox = new THREE.Quaternion().setFromAxisAngle(up, Math.PI / 2);
 
 export function beginSequence(state, kind) {
   state.sequence = { kind, elapsed: 0, x: state.x, z: state.z, yaw: state.yaw };
@@ -52,6 +51,15 @@ export function isStandSequence(seq) {
   return seq?.kind === 'mount' || seq?.kind === 'park';
 }
 
+function segmentHitsChassis(a, b) {
+  for (let i = 1; i < 20; i++) {
+    const t = i / 20;
+    const x = lerp(a.x, b.x, t), z = lerp(a.z, b.z, t);
+    if (Math.abs(x) < .46 && z > -1.44 && z < 1.32) return true;
+  }
+  return false;
+}
+
 function approachBike(state, scooter, destination, facing) {
   const seq = state.sequence;
   if (!seq.approach) {
@@ -62,13 +70,23 @@ function approachBike(state, scooter, destination, facing) {
     const start = toLocal(new THREE.Vector3(seq.x, 0, seq.z));
     const end = toLocal(destination.clone());
     let path = new THREE.LineCurve3(start, end);
+    const nose = 1.46, tail = -1.65;
     if (start.x * end.x < 0) {
       const crossingZ = lerp(start.z, end.z, start.x / (start.x - end.x));
-      const nose = 1.46, tail = -1.65;
       if (crossingZ > tail && crossingZ < nose) {
         const z = start.z + end.z > nose + tail ? nose : tail;
         const side = .93 * Math.sign(start.x);
         path = new THREE.CatmullRomCurve3([start, new THREE.Vector3(side, 0, z), new THREE.Vector3(-side, 0, z), end]);
+      }
+    } else if (segmentHitsChassis(start, end)) {
+      const side = .90 * (Math.sign(start.x || end.x) || 1);
+      if (Math.min(start.z, end.z) < -1.35 && Math.max(start.z, end.z) > 1.24) {
+        const firstZ = start.z > 0 ? nose : tail;
+        const secondZ = start.z > 0 ? tail : nose;
+        path = new THREE.CatmullRomCurve3([start, new THREE.Vector3(side, 0, firstZ), new THREE.Vector3(side, 0, secondZ), end]);
+      } else {
+        const z = start.z + end.z > nose + tail ? nose : tail;
+        path = new THREE.CatmullRomCurve3([start, new THREE.Vector3(side, 0, z), end]);
       }
     }
     const distance = path.getLength() * scale;
@@ -142,43 +160,50 @@ export function boxFrame(state, dt, scooter) {
   const oldX = state.x, oldZ = state.z;
   seq.elapsed += dt;
   target.copy(scooter.cargo.approach);
-  target.y = scooter.cargo.rim;
+  target.y = 0;
   scooter.root.localToWorld(target);
-  const elapsed = approachBike(state, scooter, target, state.bikeYaw + Math.PI / 2);
-  const progress = clamp01(elapsed / 2.36);
+  const elapsed = approachBike(state, scooter, target, state.bikeYaw - 0.55);
+  const progress = clamp01(elapsed / 2.15);
   const u = seq.kind === 'pack' ? progress : 1 - progress;
-  const lift = smoothstep(0.21, 0.52, u) * (1 - smoothstep(0.77, 0.95, u));
-  const tiptoe = smoothstep(0.16, 0.38, u) * (1 - smoothstep(0.78, 0.97, u));
-  // Move sideways over the box only after the bottom of the bag clears its lip.
-  state.reach = smoothstep(0.47, 0.56, u) * (1 - smoothstep(0.76, 0.94, u));
-  state.lift = lift;
+  const openAngle = scooter.cargo.openAngle ?? 1.75;
+  state.reach = smoothstep(0.24, 0.50, u) * (1 - smoothstep(0.68, 0.90, u));
+  state.lift = smoothstep(0.20, 0.48, u) * (1 - smoothstep(0.70, 0.92, u));
+  state.tiptoe = 0;
   seq.u = u;
-  state.tiptoe = tiptoe;
-  scooter.lid.rotation.z = -1.85 * smoothstep(0.06, 0.35, u) * (1 - smoothstep(0.81, 0.99, u));
+  scooter.lid.rotation.z = 0;
+  scooter.lid.rotation.x = openAngle * smoothstep(0.05, 0.28, u) * (1 - smoothstep(0.76, 0.96, u));
   if (progress === 1) {
     state.cargo = seq.kind === 'pack' ? 'box' : 'hand';
     state.returnToBike = false;
     state.sequence = null;
-    state.lift = state.tiptoe = 0;
+    state.reach = state.lift = state.tiptoe = 0;
+    scooter.lid.rotation.x = 0;
     scooter.lid.rotation.z = 0;
   }
   return Math.hypot(state.x - oldX, state.z - oldZ);
 }
 
-// Show one bag at a time. It stays in the paw until it clears the rim, then drops into the hollow box.
+// Show one bag at a time. Keep the meal bag visible inside the rear-door box whenever stored,
+// and slide it smoothly straight through the open rear hatch during pack/unpack.
 export function positionParcel(state, shiba, scooter, looseBag) {
   const seq = state.sequence;
   const packing = isBoxSequence(seq);
   const u = packing ? seq.u ?? (seq.kind === 'pack' ? 0 : 1) : 0;
-  shiba.bag.visible = packing ? u < 0.56 : state.cargo === 'hand';
-  looseBag.visible = packing && u >= 0.56;
+  const inBoxStatic = !packing && state.cargo === 'box' && scooter.root.visible;
+  shiba.bag.visible = packing ? u < 0.50 : state.cargo === 'hand';
+  looseBag.visible = inBoxStatic || (packing && u >= 0.50);
   if (!looseBag.visible) return;
+  if (inBoxStatic) {
+    scooter.root.localToWorld(looseBag.position.copy(scooter.cargo.floor));
+    scooter.root.getWorldQuaternion(looseBag.quaternion);
+    return;
+  }
   shiba.bag.getWorldPosition(point);
   scooter.root.localToWorld(target.copy(scooter.cargo.floor));
-  const across = smoothstep(0.56, 0.69, u);
+  const across = smoothstep(0.50, 0.72, u);
   looseBag.position.copy(point).lerp(target, across);
-  looseBag.position.y = lerp(point.y, target.y, smoothstep(0.69, 0.81, u)) + 0.07 * scooter.root.scale.y * Math.sin(Math.PI * across);
+  looseBag.position.y += 0.015 * scooter.root.scale.y * Math.sin(Math.PI * across);
   looseBag.rotation.set(0, state.yaw, 0);
-  scooter.root.getWorldQuaternion(boxOrientation).multiply(acrossBox);
+  scooter.root.getWorldQuaternion(boxOrientation);
   looseBag.quaternion.slerp(boxOrientation, across);
 }

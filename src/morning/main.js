@@ -39,7 +39,7 @@ async function run(renderer) {
     const dt = Math.min((now - (previous ?? now)) / 1000, .05);
     previous = now;
     time += dt;
-    movement.move(dt, hud.modalOpen, view.clearInspection);
+    movement.move(dt, hud.modalOpen, view.clearInspection, view.walkBasis());
     hud.sync();
     rideAudio.update(state, hud.modalOpen);
     view.draw(dt, time, movement);

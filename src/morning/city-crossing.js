@@ -522,8 +522,11 @@ function sidewalkDetails(root, half, arm) {
   // 1. North & South side-street asphalt roads + flanking raised sidewalks + end garden wall
   for (const side of [-1, 1]) {
     const midZ = side * (half + sideLen / 2);
-    // Flush top at y = 0.006 (-0.04 + 0.092 / 2) so there is no step seam against the main road.
-    box(root, 0, -0.04, midZ, half * 2 + 0.3, 0.092, sideLen, P.asphalt);
+    const roadLen = sideLen - 0.05;
+    const roadMidZ = side * (half + 0.05 + roadLen / 2);
+    // Start cleanly at side * (half + 0.05) with top at y = -0.003 (-0.049 + 0.092 / 2),
+    // tucked 3mm below the y = 0 main road across the overlap so there is zero z-fighting or seam line.
+    box(root, 0, -0.049, roadMidZ, half * 2 + 0.3, 0.092, roadLen, P.asphalt);
     for (const flank of [-1, 1]) {
       const curbX = flank * half;
       const walkW = 4.6; // Tucks well under the side-street buildings so ZERO grass bleeds out!
