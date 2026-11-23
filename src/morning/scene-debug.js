@@ -93,6 +93,10 @@ export const sceneJumps = {
     title: '草地小样·草叶近景', state: onCountryRoad(1132),
     camera: { fov: 44, focus: [1138, 0.35, centerZ(1138) + 7.2], offset: [-5.5, 0.95, -2.8] },
   },
+  meadowTree: {
+    title: '树木小样·村口乔木', state: onCountryRoad(1124),
+    camera: { fov: 42, focus: [1131.5, 2.75, 5.91], offset: [-8.5, 0.85, -5.2] },
+  },
   pharmacy: { title: '药店门口', state: { order: pharmacy, mode: 'walk', phase: 'pickup',
     x: pharmacy.door.x, z: -.32, ...parked(pharmacy.door.x) } },
   counter: { title: '药店柜台', state: atCounter(pharmacy) },

@@ -13,7 +13,7 @@ export function updateMeadowEnv(time) {
   meadowUniforms.uMeadowTime.value = time;
 }
 
-const MEADOW_COMMON_GLSL = /* glsl */ `
+export const MEADOW_COMMON_GLSL = /* glsl */ `
 uniform float uMeadowTime;
 
 float mHash(vec2 p) {

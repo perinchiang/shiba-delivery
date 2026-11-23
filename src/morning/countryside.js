@@ -11,6 +11,7 @@ import { createCityCrossing } from './city-crossing.js';
 import { sign } from './shapes.js';
 import { addPaddies, fieldEnd, fieldStart, eastFieldStart, eastFieldEnd, updatePaddyEnv } from './paddy.js';
 import { addStylizedMeadow, updateMeadowEnv } from './stylized-meadow.js';
+import { placeStylizedTrees } from './stylized-trees.js';
 import { buildCountryRoad } from './country-road.js';
 import { createRiverWater } from './country-water.js';
 
@@ -478,8 +479,24 @@ function buildChunk(start, end, kit) {
     group.add(mesh);
   }
 
-  placeInstances(group, kit?.Tree_Round, roundTrees, true, true);
-  placeInstances(group, kit?.Tree_Bank, bankTrees, true, true);
+  const keepRoundTrees = [];
+  const keepBankTrees = [];
+  const meadowTreeEntries = [];
+  const toEntry = (t, kind) => ({
+    x: t[0], y: t[1], z: t[2], rotY: t[3], sx: t[4], sy: t[5], sz: t[6], colorHex: t[7], kind,
+  });
+  for (const t of roundTrees) {
+    if (inStylizedMeadow(t[0])) meadowTreeEntries.push(toEntry(t, 'round'));
+    else keepRoundTrees.push(t);
+  }
+  for (const t of bankTrees) {
+    if (inStylizedMeadow(t[0])) meadowTreeEntries.push(toEntry(t, 'bank'));
+    else keepBankTrees.push(t);
+  }
+
+  placeStylizedTrees(group, meadowTreeEntries);
+  placeInstances(group, kit?.Tree_Round, keepRoundTrees, true, true);
+  placeInstances(group, kit?.Tree_Bank, keepBankTrees, true, true);
   placeInstances(group, kit?.UtilityPole, plainPoles, true, true);
   placeInstances(group, kit?.UtilityPole_Lamp, lampPoles, true, true);
   placeInstances(group, kit?.RoadMirror, mirrors, true, true);
