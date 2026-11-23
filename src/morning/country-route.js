@@ -2,6 +2,7 @@ import { rideMinZ } from './street-layout.js';
 // Eastbound centreline in world metres. X always increases, so projection also works
 // immediately after a teleport or when the rider travels west back to town.
 import { clamp, lerp, smoothstep } from '../core/mathx.js';
+import { inCoastalSample, constrainCoastalSample } from './coastal-sample.js';
 
 const knots = [
   [-8, 4.17], [60, 4.17], [120, 4.17], [210, 22], [320, 62],
@@ -87,6 +88,7 @@ export function routeDistances(x, z) {
 // Use the existing pedestrian pavement in town. Outside town the gravel shoulder
 // is walkable. Leave boot clearance inside the rail when parking on the bridge.
 export function constrainToRoad(x, z, walking) {
+  if (inCoastalSample(x, z)) return constrainCoastalSample(x, z, walking);
   x = clamp(x, walking ? -8.3 : -7.2, roadEnd);
   const half = halfWidth(x);
   const edge = x > 890 && x < 952 ? (walking ? .2 : .92) : (walking ? -1.3 : .45);

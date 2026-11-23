@@ -5,6 +5,7 @@ import { createShiba, createScooter, parcel } from './rider.js';
 import { createStreet, createPharmacy, createBunRoom } from './town.js';
 import { centerZ, roadHeight, halfWidth, roadYaw } from './country-route.js';
 import { createCountryside } from './countryside.js';
+import { createCoastalSample } from './coastal-sample.js';
 import { createTimeOfDay } from './time-of-day.js';
 import { createRenderStyle, registerRendererControls } from './render-style.js';
 import { $ } from './dom.js';
@@ -21,12 +22,13 @@ export async function createWorld(renderer) {
   $('stage').appendChild(renderer.domElement);
 
   const loader = new GLTFLoader();
-  const [courier, motorcycle, display, bridgeBuffalo, countryKitGltf] = await Promise.all([
+  const [courier, motorcycle, display, bridgeBuffalo, countryKitGltf, coastalHousesGltf] = await Promise.all([
     loader.loadAsync(new URL('../../art/morning/shiba-courier.glb', import.meta.url).href),
     loader.loadAsync(new URL('../../art/morning/monkey-delivery.glb', import.meta.url).href),
     loader.loadAsync(new URL('../../art/bun-shop/steamers.glb', import.meta.url).href),
     loader.loadAsync(new URL('../../art/countryside/bridge-buffalo.glb', import.meta.url).href),
     loader.loadAsync(new URL('../../art/countryside/countryside-kit.glb', import.meta.url).href),
+    loader.loadAsync(new URL('../../art/town/coastal-houses.glb', import.meta.url).href),
   ]);
   const countryKit = {};
   countryKitGltf.scene.traverse(o => {
@@ -46,6 +48,8 @@ export async function createWorld(renderer) {
   const rooms = { pharmacy: createPharmacy(), bakery: createBunRoom(display.scene.clone(true)) };
   const street = createStreet(display.scene, countryKit.Tree_Round);
   const country = createCountryside(countryKit);
+  const coastalSample = createCoastalSample(coastalHousesGltf, countryKit.Tree_Round);
+  country.root.add(coastalSample.root);
   bridgeBuffalo.scene.traverse(node => {
     if (node.isMesh) node.castShadow = node.receiveShadow = true;
   });

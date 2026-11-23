@@ -1,5 +1,6 @@
 import { rideTuning, trialLimitsKmh } from './free-ride.js';
 import { centerZ, roadYaw, landmarks } from './country-route.js';
+import { COASTAL_SAMPLE } from './coastal-sample.js';
 import { streetTreeXs, treePitZ } from './street-layout.js';
 import { orders, start, bunFacade } from './orders.js';
 import { TOD_ORDER, TOD_PRESETS } from './time-of-day.js';
@@ -97,6 +98,43 @@ export const sceneJumps = {
   bunCounter: { title: '包子铺柜台', state: atCounter(buns) },
   steamers: { title: '包子铺蒸笼', state: bakeryFront,
     camera: { height: 2.1, width: 3.65, focus: [bunFacade.x - 1.07, 1.54, -1.74], offset: [1.8, 4.8, 10] } },
+  coastalCorner: {
+    title: '滨海住宅样角·骑行',
+    state: {
+      phase: 'free', mode: 'ride',
+      x: COASTAL_SAMPLE.x - 13.2, z: COASTAL_SAMPLE.z + 14.2,
+      bikeX: COASTAL_SAMPLE.x - 13.2, bikeZ: COASTAL_SAMPLE.z + 14.2,
+      yaw: Math.PI * 0.68, bikeYaw: Math.PI * 0.68,
+    },
+  },
+  coastalGate: {
+    title: '滨海样角·院墙门牌',
+    state: {
+      phase: 'free', mode: 'walk',
+      x: COASTAL_SAMPLE.x - 5.9, z: COASTAL_SAMPLE.z + 9.45, yaw: 0.25,
+      bikeX: COASTAL_SAMPLE.x - 8.2, bikeZ: COASTAL_SAMPLE.z + 11.6, bikeYaw: Math.PI * 0.5,
+      stand: 1,
+    },
+    camera: {
+      fov: 40,
+      focus: [COASTAL_SAMPLE.x - 5.1, 1.55, COASTAL_SAMPLE.z + 7.4],
+      offset: [-1.45, 0.85, 6.2],
+    },
+  },
+  coastalOverview: {
+    title: '滨海样角·俯瞰布局',
+    state: {
+      phase: 'free', mode: 'ride',
+      x: COASTAL_SAMPLE.x - 13.2, z: COASTAL_SAMPLE.z + 14.2,
+      bikeX: COASTAL_SAMPLE.x - 13.2, bikeZ: COASTAL_SAMPLE.z + 14.2,
+      yaw: Math.PI * 0.68, bikeYaw: Math.PI * 0.68,
+    },
+    camera: {
+      fov: 44,
+      focus: [COASTAL_SAMPLE.x, 1.4, COASTAL_SAMPLE.z],
+      offset: [-21, 18.5, 24],
+    },
+  },
 };
 
 for (const { id, name, x } of landmarks.slice(1)) {

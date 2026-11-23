@@ -8,6 +8,7 @@ import { $ } from './dom.js';
 import { clamp, damp, dampAngle } from '../core/mathx.js';
 import { isBoxSequence, isStandSequence, positionParcel } from './sequence.js';
 import { CURB_H, CURB_Z } from './street-layout.js';
+import { coastalSidewalk } from './coastal-sample.js';
 import { start } from './orders.js';
 
 const OLD_STREET_LIMIT_X = 46;
@@ -30,7 +31,7 @@ function onCitySidewalk(x, z) {
 function surfaceHeight(x, z, inside) {
   if (inside) return 0;
   const base = roadHeight(x);
-  if (onCitySidewalk(x, z)) return base + CURB_H;
+  if (onCitySidewalk(x, z) || coastalSidewalk(x, z)) return base + CURB_H;
   if (x <= OLD_STREET_LIMIT_X && z < CURB_Z) return base + CURB_H;
   return base;
 }
