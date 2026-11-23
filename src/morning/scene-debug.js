@@ -2,6 +2,8 @@ import { rideTuning, trialLimitsKmh } from './free-ride.js';
 import { centerZ, roadYaw, landmarks } from './country-route.js';
 import { streetTreeXs, treePitZ } from './street-layout.js';
 import { orders, start, bunFacade } from './orders.js';
+import { TOD_ORDER, TOD_PRESETS } from './time-of-day.js';
+import { STYLE_ORDER, STYLE_LABELS, getRendererControls } from './render-style.js';
 
 const pharmacy = orders.find(order => order.id === 'pharmacy');
 const buns = orders.find(order => order.id === 'buns');
@@ -101,7 +103,106 @@ export function setupSceneDebug(reset, renderer, state) {
   const params = new URLSearchParams(location.search);
   const enabled = import.meta.env.DEV || import.meta.env.VITE_SCENE_DEBUG === '1' || params.get('debug') === '1';
   panel.hidden = !enabled;
+  const controls = getRendererControls(renderer);
+  const timeOfDay = controls?.timeOfDay;
+  const renderStyle = controls?.renderStyle;
+
   if (enabled) {
+    // Inject minimal scoped styles for style/TOD controls inside #scene-debug.
+    if (!document.getElementById('scene-debug-render-css')) {
+      const styleEl = document.createElement('style');
+      styleEl.id = 'scene-debug-render-css';
+      styleEl.textContent = `
+        #scene-debug .dbg-heading { display:block; padding:4px 10px 3px; font-size:11px; opacity:.82; letter-spacing:.04em; }
+        #scene-debug .dbg-row { display:grid; grid-template-columns:repeat(2,1fr); gap:5px; padding:0 8px 6px; }
+        #scene-debug .dbg-row.cols-4 { grid-template-columns:repeat(4,1fr); }
+        #scene-debug .dbg-row button { min-height:32px; padding:4px 6px; font-size:12px; font-weight:600; }
+        #scene-debug .dbg-row button[aria-pressed="true"] { background:#f7c52a; color:#2b2116; box-shadow:inset 0 0 0 2px #473a30; }
+        #scene-debug .dbg-slider { display:flex; align-items:center; gap:6px; padding:0 10px 8px; font-size:11px; font-variant-numeric:tabular-nums; }
+        #scene-debug .dbg-slider input { flex:1; accent-color:#f7c52a; }
+      `;
+      document.head.append(styleEl);
+    }
+
+    const groupEl = panel.querySelector('[role=group]');
+    if (renderStyle && timeOfDay) {
+      const styleHeading = document.createElement('span');
+      styleHeading.className = 'dbg-heading';
+      styleHeading.textContent = '渲染风格 (S1)';
+      const styleRow = document.createElement('div');
+      styleRow.className = 'dbg-row';
+      styleRow.setAttribute('aria-label', '选择渲染风格');
+      const styleButtons = new Map();
+      for (const id of STYLE_ORDER) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.styleId = id;
+        btn.textContent = STYLE_LABELS[id];
+        btn.addEventListener('click', () => renderStyle.setStyle(id));
+        styleRow.append(btn);
+        styleButtons.set(id, btn);
+      }
+
+      const todHeading = document.createElement('span');
+      todHeading.className = 'dbg-heading';
+      todHeading.textContent = '时段光照 (0–1 可插值)';
+      const todRow = document.createElement('div');
+      todRow.className = 'dbg-row cols-4';
+      todRow.setAttribute('aria-label', '选择时段');
+      const todButtons = new Map();
+      for (const id of TOD_ORDER) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.todId = id;
+        btn.textContent = TOD_PRESETS[id].label;
+        btn.addEventListener('click', () => timeOfDay.setPreset(id));
+        todRow.append(btn);
+        todButtons.set(id, btn);
+      }
+
+      const sliderRow = document.createElement('label');
+      sliderRow.className = 'dbg-slider';
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = '0';
+      slider.max = '1';
+      slider.step = '0.005';
+      slider.value = String(timeOfDay.getValue());
+      slider.setAttribute('aria-label', '时段连续插值');
+      const sliderVal = document.createElement('span');
+      sliderVal.textContent = '0.00';
+      slider.addEventListener('input', () => timeOfDay.setValue(Number(slider.value)));
+      sliderRow.append(slider, sliderVal);
+
+      const syncStyleButtons = active => {
+        for (const [id, btn] of styleButtons) btn.setAttribute('aria-pressed', String(id === active));
+      };
+      const syncTodControls = cur => {
+        for (const [id, btn] of todButtons) btn.setAttribute('aria-pressed', String(id === cur.presetId));
+        slider.value = String(cur.t.toFixed(3));
+        sliderVal.textContent = cur.t.toFixed(2);
+      };
+      renderStyle.onChange(syncStyleButtons);
+      timeOfDay.onChange(syncTodControls);
+
+      const sceneHeading = document.createElement('span');
+      sceneHeading.className = 'dbg-heading';
+      sceneHeading.textContent = '场景瞬移';
+
+      groupEl.before(styleHeading, styleRow, todHeading, todRow, sliderRow, sceneHeading);
+
+      // Apply URL query overrides when debug is enabled (?style=a|b|c|off&tod=morning|noon|dusk|night|0..1)
+      const qStyle = params.get('style')?.toLowerCase();
+      if (qStyle && STYLE_ORDER.includes(qStyle)) renderStyle.setStyle(qStyle);
+      const qTod = params.get('tod')?.toLowerCase();
+      if (qTod) {
+        if (Object.hasOwn(TOD_PRESETS, qTod)) timeOfDay.setPreset(qTod);
+        else if (Number.isFinite(Number(qTod))) timeOfDay.setValue(Number(qTod));
+      }
+      syncStyleButtons(renderStyle.getStyle());
+      syncTodControls(timeOfDay.current);
+    }
+
     for (const scene of Object.values(sceneJumps)) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -111,7 +212,7 @@ export function setupSceneDebug(reset, renderer, state) {
         panel.open = false;
         panel.querySelector('summary').focus({ preventScroll: true });
       });
-      panel.querySelector('[role=group]').append(button);
+      groupEl.append(button);
     }
   }
   const id = params.get('scene');

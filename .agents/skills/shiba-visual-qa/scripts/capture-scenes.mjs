@@ -21,6 +21,7 @@
  *   --out <dir>             Output directory (default: output/qa/<timestamp>).
  *   --wait <ms>             Settle wait in ms after #hud appears (default: 700).
  *   --hold-ms <ms>          Freeze RAF clock after N ms (matches test-morning.mjs).
+ *   --query "<k=v&k=v>"     Extra URL query parameters appended to each capture URL.
  *   --no-perf               Skip opening #scene-debug to sample FPS & draw calls.
  *   --stamp <f1,f2,...>     Comma-separated repo file paths to content-hash into stamp.txt.
  *   --list-presets          Print built-in scene presets and exit.
@@ -50,6 +51,7 @@ function parseArgs(argv) {
     out: '',
     wait: 700,
     holdMs: null,
+    query: [],
     perf: true,
     stamp: [],
   };
@@ -60,7 +62,7 @@ function parseArgs(argv) {
       return argv[++i];
     };
     if (a === '-h' || a === '--help') {
-      console.log('Run with --scenes street,crossing [--viewport desktop|mobile|both|WxH] [--out output/qa/run] [--url <url>] [--stamp f1,f2]');
+      console.log('Run with --scenes street,crossing [--viewport desktop|mobile|both|WxH] [--query "style=a&tod=dusk"] [--out output/qa/run] [--url <url>] [--stamp f1,f2]');
       process.exit(0);
     } else if (a === '--list-presets') {
       for (const [k, v] of Object.entries(PRESETS)) console.log(`${k}: ${v.join(',')}`);
@@ -72,6 +74,7 @@ function parseArgs(argv) {
     else if (a === '--out') opts.out = next();
     else if (a === '--wait') opts.wait = Number(next());
     else if (a === '--hold-ms') opts.holdMs = Number(next());
+    else if (a === '--query') opts.query.push(next());
     else if (a === '--no-perf') opts.perf = false;
     else if (a === '--stamp') opts.stamp.push(...next().split(',').map(s => s.trim()).filter(Boolean));
     else throw new Error(`Unknown argument: ${a}`);
@@ -227,6 +230,10 @@ try {
       const target = new URL(baseUrl);
       target.searchParams.set('debug', '1');
       target.searchParams.set('scene', scene);
+      for (const raw of opts.query) {
+        const extra = new URLSearchParams(raw.replace(/^\?/, ''));
+        for (const [k, v] of extra.entries()) target.searchParams.set(k, v);
+      }
 
       await page.goto(target.href, { waitUntil: 'domcontentloaded' });
       await page.locator('#hud').waitFor({ state: 'visible', timeout: 25000 });

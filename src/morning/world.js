@@ -5,6 +5,8 @@ import { createShiba, createScooter, parcel } from './rider.js';
 import { createStreet, createPharmacy, createBunRoom } from './town.js';
 import { centerZ, roadHeight, halfWidth, roadYaw } from './country-route.js';
 import { createCountryside } from './countryside.js';
+import { createTimeOfDay } from './time-of-day.js';
+import { createRenderStyle, registerRendererControls } from './render-style.js';
 import { $ } from './dom.js';
 
 export async function createWorld(renderer) {
@@ -17,16 +19,6 @@ export async function createWorld(renderer) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   $('stage').appendChild(renderer.domElement);
-  scene.add(new THREE.HemisphereLight(0xdff3ff, 0x79a48c, 1.48));
-  const sun = new THREE.DirectionalLight(0xffefd0, 2.65);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 12, bottom: -10, near: 0.5, far: 48 });
-  sun.shadow.camera.updateProjectionMatrix();
-  sun.shadow.normalBias = 0.018;
-  sun.shadow.bias = -0.00015;
-  sun.shadow.radius = 2;
-  scene.add(sun, sun.target);
 
   const loader = new GLTFLoader();
   const [courier, motorcycle, display, bridgeBuffalo, countryKitGltf] = await Promise.all([
@@ -88,5 +80,12 @@ export async function createWorld(renderer) {
     glowMaterial({ map: shadowTexture, intensity: 1, transparent: true, depthWrite: false }));
   contact.rotation.x = -Math.PI / 2;
   scene.add(contact);
-  return { scene, country, camera, chase, sun, rooms, street, shiba, scooter, looseBag, marker, contact };
+  const timeOfDay = createTimeOfDay({ scene, renderer, country, street, scooter, rooms });
+  const renderStyle = createRenderStyle({ renderer, scene, shiba, scooter, street, country, rooms, timeOfDay });
+  registerRendererControls(renderer, { timeOfDay, renderStyle });
+  return {
+    scene, country, camera, chase,
+    sun: timeOfDay.sun, hemi: timeOfDay.hemi, timeOfDay, renderStyle,
+    rooms, street, shiba, scooter, looseBag, marker, contact,
+  };
 }

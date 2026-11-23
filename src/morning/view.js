@@ -86,7 +86,7 @@ function clearCrossingObstacles(pos, target) {
 }
 
 export function createView(renderer, state, world) {
-  const { scene, country, camera, chase, sun, rooms, street, shiba, scooter, looseBag, marker, contact } = world;
+  const { scene, country, camera, chase, sun, timeOfDay, renderStyle, rooms, street, shiba, scooter, looseBag, marker, contact } = world;
   const roomList = Object.values(rooms);
   const courierScale = scooter.root.scale.y;
   const suspension = createRideMotion(scooter.frontZ, scooter.rearZ);
@@ -354,9 +354,6 @@ export function createView(renderer, state, world) {
     contact.rotation.z = riding ? state.bikeYaw - Math.PI / 2 : 0;
     marker.scale.setScalar(1 + 0.065 * Math.sin(time * 3.4));
     if (snap) {
-      const skyBg = inside ? 0xe2cfaa : (perspectiveView ? 0x9cd3e9 : 0xcfe0dc);
-      scene.background = new THREE.Color(skyBg);
-      scene.fog = new THREE.FogExp2(inside ? 0xe2cfaa : 0xdaf0f5, inside ? 0.014 : 0.016);
       if (nextView === 'walk') {
         if (view === 'street') walkCamYaw = Math.PI / 2;
       } else if (nextView === 'chase') {
@@ -385,10 +382,19 @@ export function createView(renderer, state, world) {
         camera.updateProjectionMatrix();
       }
     }
+    const baseFogDensity = inside ? 0.014 : 0.016 - 0.0122 * THREE.MathUtils.smoothstep(state.x, 28, 120);
+    timeOfDay.applyAtmosphere({
+      inside,
+      perspectiveView,
+      baseFogDensity,
+      styleFogFactor: renderStyle.fogDensityFactor(),
+      useStyledFog: renderStyle.usesStyledFog(),
+    });
     if (!inside) {
-      scene.fog.density = 0.016 - 0.0122 * THREE.MathUtils.smoothstep(state.x, 28, 120);
       country.update(state, time, scene.fog?.color, scene.fog?.density);
     }
+    timeOfDay.syncScene();
+    renderStyle.syncScene();
     if (nextView === 'chase') {
       followYaw = dampAngle(followYaw, state.bikeYaw, 5.4, dt);
       if (dragPointer === null && !orbitKeys.left && !orbitKeys.right) {
@@ -593,12 +599,11 @@ export function createView(renderer, state, world) {
     street.opposite.visible = (perspectiveView && !(activeCamera.position.z > 8.2 && !outsideTown)) || fromShopSide;
     const lightX = Math.round(focus.x * 2) / 2;
     const lightZ = inside ? 0 : Math.round(focus.z * 2) / 2;
-    sun.target.position.set(lightX, ground + .3, lightZ);
     const openCountry = inside ? 0 : THREE.MathUtils.smoothstep(state.x, 52, 170);
-    sun.position.set(lightX - 6 + 20 * openCountry, ground + 11.5 - 4 * openCountry, lightZ + 7.5 - 13 * openCountry);
+    timeOfDay.updateLightTransform({ inside, openCountry, lightX, ground, lightZ, scooterRoot: scooter.root });
     view = nextView;
     if (!inside) country.sky.position.copy(activeCamera.position);
-    renderer.render(scene, activeCamera);
+    renderStyle.render(scene, activeCamera);
   }
 
   function resize() {
@@ -606,6 +611,7 @@ export function createView(renderer, state, world) {
     aspect = w / h;
     resizeRideCamera(chase, aspect);
     renderer.setSize(w, h, false);
+    renderStyle.resize(w, h);
     view = '';
   }
   return { draw, resize, reset, clearInspection, walkBasis, toggleCloseUp() {
