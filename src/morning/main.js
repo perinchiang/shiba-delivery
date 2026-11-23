@@ -10,8 +10,20 @@ import { createHUD } from './hud.js';
 import { setupSceneDebug } from './scene-debug.js';
 import './style.css';
 
+function setLoading(pct, text, isError = false) {
+  const root = $('loading');
+  if (!root) return;
+  if (isError) root.dataset.error = '1';
+  const fill = $('loading-fill');
+  if (fill) fill.style.width = `${Math.round(Math.max(0, Math.min(1, pct)) * 100)}%`;
+  const label = $('loading-text');
+  if (label && text) label.textContent = text;
+}
+
 async function run(renderer) {
-  const world = await createWorld(renderer);
+  setLoading(0.05, '正在准备街区…');
+  const world = await createWorld(renderer, setLoading);
+  setLoading(0.96, '正在启动画面…');
   const state = initialState();
   const view = createView(renderer, state, world);
   const controls = createControls();
@@ -57,9 +69,9 @@ let renderer;
 try {
   renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 } catch {
-  $('loading').textContent = '这个 3D 小样需要 WebGL 2。请开启浏览器硬件加速，再刷新页面。';
+  setLoading(0, '这个 3D 小样需要 WebGL 2。请开启浏览器硬件加速，再刷新页面。', true);
 }
 if (renderer) run(renderer).catch(error => {
   console.error(error);
-  $('loading').textContent = '游戏资源加载失败，请刷新重试。';
+  setLoading(0, '游戏资源加载失败，请刷新重试。', true);
 });

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { glowMaterial, litMaterial } from '../core/materials.js';
+import { setMaxAnisotropy } from '../core/textures.js';
 import { createShiba, createScooter, parcel } from './rider.js';
 import { createStreet, createPharmacy, createBunRoom } from './town.js';
 import { centerZ, roadHeight, halfWidth, roadYaw } from './country-route.js';
@@ -10,7 +11,7 @@ import { createTimeOfDay } from './time-of-day.js';
 import { createRenderStyle, registerRendererControls } from './render-style.js';
 import { $ } from './dom.js';
 
-export async function createWorld(renderer) {
+export async function createWorld(renderer, onProgress) {
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-6, 6, 3.5, -3.5, 0.1, 82);
   const chase = new THREE.PerspectiveCamera(52, 1, 0.12, 100);
@@ -19,17 +20,39 @@ export async function createWorld(renderer) {
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
+  setMaxAnisotropy(renderer.capabilities.getMaxAnisotropy());
   $('stage').appendChild(renderer.domElement);
 
   const loader = new GLTFLoader();
-  const [courier, motorcycle, display, bridgeBuffalo, countryKitGltf, coastalHousesGltf] = await Promise.all([
-    loader.loadAsync(new URL('../../art/morning/shiba-courier.glb', import.meta.url).href),
-    loader.loadAsync(new URL('../../art/morning/monkey-delivery.glb', import.meta.url).href),
-    loader.loadAsync(new URL('../../art/bun-shop/steamers.glb', import.meta.url).href),
-    loader.loadAsync(new URL('../../art/countryside/bridge-buffalo.glb', import.meta.url).href),
-    loader.loadAsync(new URL('../../art/countryside/countryside-kit.glb', import.meta.url).href),
-    loader.loadAsync(new URL('../../art/town/coastal-houses.glb', import.meta.url).href),
-  ]);
+  const assetUrls = [
+    new URL('../../art/morning/shiba-courier.glb', import.meta.url).href,
+    new URL('../../art/morning/monkey-delivery.glb', import.meta.url).href,
+    new URL('../../art/bun-shop/steamers.glb', import.meta.url).href,
+    new URL('../../art/countryside/bridge-buffalo.glb', import.meta.url).href,
+    new URL('../../art/countryside/countryside-kit.glb', import.meta.url).href,
+    new URL('../../art/town/coastal-houses.glb', import.meta.url).href,
+  ];
+  const progress = new Array(assetUrls.length).fill(0);
+  const reportDownload = () => {
+    const avg = progress.reduce((sum, p) => sum + p, 0) / progress.length;
+    onProgress?.(0.08 + avg * 0.77, `正在下载 3D 资源 (${Math.round(avg * 100)}%)…`);
+  };
+  reportDownload();
+  const [courier, motorcycle, display, bridgeBuffalo, countryKitGltf, coastalHousesGltf] = await Promise.all(
+    assetUrls.map((url, idx) =>
+      loader.loadAsync(url, event => {
+        if (event.lengthComputable && event.total > 0) {
+          progress[idx] = Math.min(1, event.loaded / event.total);
+          reportDownload();
+        }
+      }).then(gltf => {
+        progress[idx] = 1;
+        reportDownload();
+        return gltf;
+      }),
+    ),
+  );
+  onProgress?.(0.90, '正在拼装街区与光影…');
   const countryKit = {};
   countryKitGltf.scene.traverse(o => {
     if (!o.isMesh || !o.name) return;

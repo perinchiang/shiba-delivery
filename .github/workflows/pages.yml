@@ -22,7 +22,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm run build
+      - run: npm run build:pages
         env:
           VITE_SCENE_DEBUG: "1"
       - name: Preserve the published comparison URLs
@@ -34,6 +34,7 @@ jobs:
         run: |
           cp -R previous-site/monkey dist/monkey
           cp dist/index.html dist/monkey/index.html
+          cp -R dist/assets dist/monkey/assets
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
