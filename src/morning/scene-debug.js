@@ -191,7 +191,7 @@ export function setupSceneDebug(reset, renderer, state) {
 
       groupEl.before(styleHeading, styleRow, todHeading, todRow, sliderRow, sceneHeading);
 
-      // Apply URL query overrides when debug is enabled (?style=a|b|c|off&tod=morning|noon|dusk|night|0..1)
+      // Apply URL query overrides when debug is enabled (?style=a|off&tod=morning|noon|dusk|night|0..1)
       const qStyle = params.get('style')?.toLowerCase();
       if (qStyle && STYLE_ORDER.includes(qStyle)) renderStyle.setStyle(qStyle);
       const qTod = params.get('tod')?.toLowerCase();
