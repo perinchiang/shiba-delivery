@@ -89,6 +89,11 @@ export const sceneJumps = {
     x: pharmacy.customer.point.x, z: -.25, ...parked(pharmacy.customer.point.x) } },
   buns: { title: '包子铺门面', state: bakeryFront,
     camera: { height: 4.9, width: 7.05, focus: [bunFacade.x, 2.26, -1.74], offset: [1.3, 2, 10] } },
+  signKit: {
+    title: '老街招牌·图集近景',
+    state: { phase: 'free', mode: 'walk', x: 5.5, z: 0.6, yaw: Math.PI, bikeX: -2.2, bikeZ: start.z, bikeYaw: Math.PI / 2, stand: 1 },
+    camera: { fov: 44, focus: [4.8, 3.25, -2.0], offset: [-2.4, 0.45, 9.8] },
+  },
   bunCounter: { title: '包子铺柜台', state: atCounter(buns) },
   steamers: { title: '包子铺蒸笼', state: bakeryFront,
     camera: { height: 2.1, width: 3.65, focus: [bunFacade.x - 1.07, 1.54, -1.74], offset: [1.8, 4.8, 10] } },

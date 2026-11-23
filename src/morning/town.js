@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { placeInstances } from './kit-instances.js';
 import { RNG } from '../core/rng.js';
 import { bake, box, curve, cylinder, group, oval, piece, rod, sign } from './shapes.js';
+import { SignKit } from './sign-kit.js';
 import { buildBunShop, bunSteam } from './bun-shop.js';
 import { ear, parcel } from './rider.js';
 
@@ -76,7 +77,7 @@ function porch(g, residential) {
   }
 }
 
-function streetShop(g, spec, i, steamers) {
+function streetShop(g, spec, i, steamers, signKit, signPlacement = { x: spec.x, z: -2.12, rotY: 0, dir: 1 }) {
   const { x, name, sub, wall, stripe, ink } = spec;
   const p = group(g, x, CURB_H, 0);
   const top = 7.35 + (i % 3) * 0.55;
@@ -122,8 +123,26 @@ function streetShop(g, spec, i, steamers) {
     bake(p);
     return door;
   }
-  box(p, 0, 3.92, -2.01, 6.39, 0.82, 0.22, spec.base, 0.047);
-  sign(p, 0, 3.92, -1.887, 6.25, 0.70, name, { bg: spec.sign, ink, sub });
+  if (signKit && signPlacement.dir === 1) {
+    signKit.add({
+      kind: 'lightbox',
+      text: name,
+      sub,
+      w: 6.28,
+      h: 0.78,
+      depth: 0.22,
+      bg: parseInt(spec.sign.slice(1), 16),
+      fg: parseInt(ink.slice(1), 16),
+      accent: spec.accent ?? spec.base,
+      casing: spec.base,
+      trimColor: 0xf6e7c6,
+      effect: 'none',
+      ...spec.kit,
+    }, { x: signPlacement.x, y: CURB_H + 3.92, z: signPlacement.z, rotY: signPlacement.rotY });
+  } else {
+    box(p, 0, 3.92, -2.01, 6.39, 0.82, 0.22, spec.base, 0.047);
+    sign(p, 0, 3.92, -1.887, 6.25, 0.70, name, { bg: spec.sign, ink, sub });
+  }
   if (name === '便民药店' || name === '榕树里') porch(p, name === '榕树里');
   else awning(p, stripe);
   windowFrame(p, -1.23, 1.72, -2.06, 2.87, 1.62, spec.base);
@@ -160,7 +179,18 @@ function streetShop(g, spec, i, steamers) {
     sign(p, -0.80, 0.60, -0.944, 0.59, 0.38, '现蒸', { ink: '#994c35' });
     sign(p, -1.21, 1.78, -1.924, 0.79, 0.35, '早市', { bg: '#edcc88', ink: '#714934' });
     sign(p, -2.27, 1.72, -1.924, 0.53, 0.72, '鲜虾肠', { bg: '#f9dab2', ink: '#934c39', vertical: true });
-    sign(p, 2.68, 1.98, -2.009, 0.37, 0.49, '12', { bg: '#688c7d', ink: '#fff2c8', font: 'hei' });
+    if (signKit && signPlacement.dir === 1) {
+      signKit.add({
+        kind: 'plaque',
+        style: 'door',
+        text: '榕湾老街',
+        sub: '12',
+        w: 0.44,
+        h: 0.30,
+      }, { x: signPlacement.x + 2.68, y: CURB_H + 2.02, z: -2.11, rotY: 0 });
+    } else {
+      sign(p, 2.68, 1.98, -2.009, 0.37, 0.49, '12', { bg: '#688c7d', ink: '#fff2c8', font: 'hei' });
+    }
     box(p, 0.28, 2.08, -1.92, 0.26, 0.48, 0.06, 0xc08569);
   } else if (name === '便民药店') {
     box(p, -2.94, 3.22, -1.51, 0.10, 0.10, 1.21, teal);
@@ -175,15 +205,80 @@ function streetShop(g, spec, i, steamers) {
       cylinder(p, px, 1.346 + j * 0.018, -1.91, 0.071, 0.071, 0.045, cream);
     }
   } else if (name === '榕树里') {
-    sign(p, 2.68, 2.15, -1.991, 0.47, 0.55, '3', { bg: '#327b70', ink: '#ffebbd', font: 'hei' });
+    if (signKit && signPlacement.dir === 1) {
+      signKit.add({
+        kind: 'plaque',
+        style: 'door',
+        text: '榕湾老街',
+        sub: '3',
+        w: 0.44,
+        h: 0.30,
+      }, { x: signPlacement.x + 2.68, y: CURB_H + 2.15, z: -2.11, rotY: 0 });
+    } else {
+      sign(p, 2.68, 2.15, -1.991, 0.47, 0.55, '3', { bg: '#327b70', ink: '#ffebbd', font: 'hei' });
+    }
     box(p, -0.89, 0.63, -1.56, 1.50, 0.09, 0.48, wood);
     for (const px of [-1.51, -0.27]) box(p, px, 0.33, -1.56, 0.10, 0.60, 0.31, charcoal);
   } else if (i % 2 === 0) {
     for (const px of [-2.10, -1.43, -0.76]) plant(p, px, 0, -1.25, 0.56, true);
   }
+  if (signKit && signPlacement.dir === 1 && spec.blade) {
+    signKit.add({
+      kind: 'vertical',
+      text: name,
+      w: 0.50,
+      h: 1.75,
+      depth: 0.15,
+      standoff: 0.24,
+      bg: parseInt(spec.sign.slice(1), 16),
+      fg: parseInt(ink.slice(1), 16),
+      accent: spec.accent ?? spec.base,
+      casing: spec.base,
+      trimColor: 0xf6e7c6,
+      effect: 'none',
+      ...spec.blade,
+    }, { x: signPlacement.x + 2.90, y: CURB_H + 5.25, z: -2.12, rotY: 0 });
+  }
   bake(p);
   return door;
 }
+
+const SHOP_KIT_STYLE = {
+  石湾茶楼: {
+    kit: { badge: 'logo', pictogram: 'cup', layout: 'stack', font: 'wei' },
+    accent: 0xc2d2bc,
+    blade: { pictogram: 'cup', font: 'wei', bg: 0x397d73, fg: 0xffebbe, accent: 0xe6cfa8 },
+  },
+  陈记肠粉: {
+    kit: { badge: 'photo', photo: 'changfen', photoRight: true, layout: 'stack', font: 'wei', effect: 'shadow', w: 6.28, h: 0.78 },
+    accent: 0xce7653,
+    blade: { pictogram: 'bowl', font: 'wei', bg: 0xb75741, fg: 0xfff0c9, accent: 0xf4dfbc },
+  },
+  便民药店: {
+    kit: { badge: 'logo', pictogram: 'cross', layout: 'side', font: 'hei', bg: 0x306e66, fg: 0xffebbe, accent: 0xf6e7c6, sideNote: '便民老店' },
+  },
+  榕湾邮局: {
+    kit: { badge: 'logo', pictogram: 'parcel', layout: 'stack', font: 'hei' },
+    accent: 0xc2d2bc,
+  },
+  阿娟花档: {
+    kit: { layout: 'band', font: 'kai' },
+    accent: 0xe4a29a,
+  },
+  榕树里: {
+    kit: { layout: 'plain', font: 'kai' },
+    accent: 0xc2d2bc,
+  },
+  南记糖水: {
+    kit: { badge: 'logo', pictogram: 'bowl', layout: 'stack', font: 'wei' },
+    accent: 0xc2d2bc,
+    blade: { pictogram: 'bowl', font: 'wei', bg: 0x397d73, fg: 0xffecc5, accent: 0xe6cfa8 },
+  },
+  永安冰室: {
+    kit: { badge: 'logo', pictogram: 'cup', layout: 'stack', font: 'heavy' },
+    accent: 0xd9a87a,
+  },
+};
 
 const shops = [
   [-12, '石湾茶楼', '一盅两件', 0xe1c897, 0x8ea382, 0x6e9584, '#f4e2b5', '#436753'],
@@ -196,7 +291,7 @@ const shops = [
   [37, '南记糖水', '陈皮绿豆沙', 0xc6d3bd, 0x6d9183, 0x95ac84, '#eddfbd', '#507263'],
   [44, '永安冰室', '冻柠茶　·　菠萝油', 0xb9ccc0, 0x7daba3, 0xc07b61, '#f4dfbc', '#934f43'],
 ].map(([x, name, sub, wall, base, stripe, signColor, ink]) =>
-  ({ x, name, sub, wall, base, stripe, sign: signColor, ink }));
+  ({ x, name, sub, wall, base, stripe, sign: signColor, ink, ...(SHOP_KIT_STYLE[name] || {}) }));
 
 function neighbor(g, x, y, z, rabbit) {
   const n = group(g, x, y, z);
@@ -289,11 +384,13 @@ export function createStreet(steamers, banyan) {
   }
   bake(road);
   const shopSide = group(root);
+  const signKit = new SignKit({ rng: new RNG(2026), mode: 'lit', storybook: true, density: 1 });
   const doors = new Map();
   shops.forEach((shop, i) => {
-    const door = streetShop(shopSide, shop, i, shop.name === '榕记包子铺' ? steamers : null);
+    const door = streetShop(shopSide, shop, i, shop.name === '榕记包子铺' ? steamers : null, signKit, { x: shop.x, z: -2.12, rotY: 0, dir: 1 });
     doors.set(shop.name, door);
   });
+  shopSide.add(signKit.build());
   // The chase camera sees both sides of the road and the bend at its far end.
   const opposite = group(root, 27, 0, 7.05);
   opposite.rotation.y = Math.PI;
