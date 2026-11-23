@@ -150,6 +150,20 @@ export const sceneJumps = {
       offset: [-21, 18.5, 24],
     },
   },
+  coastalHill: {
+    title: '滨海样角·山坡远眺',
+    state: {
+      phase: 'free', mode: 'ride',
+      x: COASTAL_SAMPLE.x - 13.2, z: COASTAL_SAMPLE.z + 14.2,
+      bikeX: COASTAL_SAMPLE.x - 13.2, bikeZ: COASTAL_SAMPLE.z + 14.2,
+      yaw: Math.PI * 0.68, bikeYaw: Math.PI * 0.68,
+    },
+    camera: {
+      fov: 44,
+      focus: [COASTAL_SAMPLE.x + 1.0, 2.2, COASTAL_SAMPLE.z - 2.0],
+      offset: [-19.0, 8.8, 34.0],
+    },
+  },
 };
 
 for (const { id, name, x } of landmarks.slice(1)) {

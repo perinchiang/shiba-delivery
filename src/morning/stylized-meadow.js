@@ -40,9 +40,9 @@ vec3 meadowTint(vec2 xz) {
   float blend  = clamp(nBroad * 0.62 + nMed * 0.38, 0.0, 1.0);
 
   // Linear-sRGB meadow tones harmonized with morning lighting & country road verge
-  vec3 coolLush = vec3(0.068, 0.275, 0.056);
-  vec3 midLush  = vec3(0.145, 0.398, 0.064);
-  vec3 warmSun  = vec3(0.248, 0.495, 0.072);
+  vec3 coolLush = vec3(0.082, 0.305, 0.062);
+  vec3 midLush  = vec3(0.165, 0.430, 0.068);
+  vec3 warmSun  = vec3(0.268, 0.520, 0.075);
 
   vec3 col = mix(coolLush, midLush, smoothstep(0.18, 0.58, blend));
   col = mix(col, warmSun, smoothstep(0.54, 0.88, blend));
@@ -125,7 +125,7 @@ let flowerMat;
 let sharedGrassGeo;
 let sharedFlowerGeo;
 
-function getTerrainMaterial() {
+export function getTerrainMaterial() {
   if (terrainMat) return terrainMat;
   terrainMat = litMaterial({ grid: false, roughness: 0.95 });
   const prev = terrainMat.onBeforeCompile;
@@ -145,7 +145,7 @@ function getTerrainMaterial() {
   return terrainMat;
 }
 
-function getGrassMaterial() {
+export function getGrassMaterial() {
   if (grassMat) return grassMat;
   grassMat = litMaterial({ grid: false, roughness: 0.86, side: THREE.DoubleSide });
   const prev = grassMat.onBeforeCompile;
@@ -204,7 +204,7 @@ function getGrassMaterial() {
   return grassMat;
 }
 
-function getFlowerMaterial() {
+export function getFlowerMaterial() {
   if (flowerMat) return flowerMat;
   flowerMat = litMaterial({ grid: false, roughness: 0.78, side: THREE.DoubleSide });
   const prev = flowerMat.onBeforeCompile;
@@ -262,7 +262,7 @@ function getFlowerMaterial() {
   return flowerMat;
 }
 
-function getGrassGeometry() {
+export function getGrassGeometry() {
   if (sharedGrassGeo) return sharedGrassGeo;
 
   const pos = [];
@@ -331,7 +331,7 @@ function getGrassGeometry() {
   return geo;
 }
 
-function getFlowerGeometry() {
+export function getFlowerGeometry() {
   if (sharedFlowerGeo) return sharedFlowerGeo;
 
   const pos = [];
@@ -528,7 +528,7 @@ function isExcluded(x, z, excludeRects) {
 }
 
 // Smooth deterministic organic clumping factor (0..1) in world XZ
-function patchNoise(x, z) {
+export function patchNoise(x, z) {
   return 0.5 + 0.5 * Math.sin(x * 0.14 + Math.cos(z * 0.17) * 1.6) * Math.cos(z * 0.13 - Math.sin(x * 0.11) * 1.3);
 }
 

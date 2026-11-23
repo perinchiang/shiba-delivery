@@ -523,6 +523,21 @@ const TREE_SPECS = {
       { x: -0.35, y: 2.65, z: 0.96, rx: 0.85, ry: 0.68, rz: 0.84, cardSize: 0.92, outerCards: 36, innerCards: 7 },
     ],
   },
+  citrus: {
+    seed: 421,
+    rootSpin: 0.45,
+    trunkPts: [[0, -0.06, 0], [-0.03, 0.45, 0.02], [0.03, 0.95, -0.02], [0.0, 1.42, 0.0]],
+    trunkRadii: [0.11, 0.085, 0.065, 0.045],
+    branches: [
+      { pts: [[0.02, 0.95, 0.0], [0.34, 1.32, 0.24]], radii: [0.045, 0.025] },
+      { pts: [[0.0, 1.05, 0.0], [-0.32, 1.38, -0.20]], radii: [0.042, 0.024] },
+    ],
+    lobes: [
+      { x: 0.0, y: 2.02, z: 0.0, rx: 0.72, ry: 0.58, rz: 0.70, cardSize: 0.66, outerCards: 38, innerCards: 8 },
+      { x: 0.48, y: 1.56, z: 0.30, rx: 0.54, ry: 0.44, rz: 0.52, cardSize: 0.58, outerCards: 30, innerCards: 6 },
+      { x: -0.46, y: 1.62, z: -0.26, rx: 0.52, ry: 0.42, rz: 0.50, cardSize: 0.56, outerCards: 28, innerCards: 6 },
+    ],
+  },
 };
 
 function getVariantMeshes(name) {
@@ -539,15 +554,18 @@ function getVariantMeshes(name) {
 const FOLIAGE_TINTS = [0xffffff, 0xf3fae6, 0xe8f5dc, 0xfff8e2];
 
 function pickVariant(entry) {
+  if (entry.variant && TREE_SPECS[entry.variant]) return entry.variant;
   if (entry.kind === 'bank') return 'wide';
   const h = Math.abs(Math.round(entry.x * 13 + entry.z * 7)) % 3;
   return h === 0 ? 'tall' : h === 1 ? 'compact' : 'wide';
 }
 
+export { getCanopyMaterial, getTrunkMaterial };
+
 export function placeStylizedTrees(group, entries) {
   if (!entries || !entries.length) return;
 
-  const buckets = { tall: [], wide: [], compact: [] };
+  const buckets = { tall: [], wide: [], compact: [], citrus: [] };
   for (const e of entries) buckets[pickVariant(e)].push(e);
 
   const dummy = new THREE.Object3D();
@@ -594,7 +612,8 @@ export function placeStylizedTrees(group, entries) {
   const shadowMesh = new THREE.InstancedMesh(shadowGeo, getShadowMaterial(), entries.length);
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
-    const rScale = ((e.sx + e.sz) * 0.5) * (pickVariant(e) === 'wide' ? 1.18 : 1.0);
+    const vName = pickVariant(e);
+    const rScale = ((e.sx + e.sz) * 0.5) * (vName === 'wide' ? 1.18 : vName === 'citrus' ? 0.42 : 1.0);
     dummy.position.set(e.x, e.y + 0.025, e.z);
     dummy.rotation.set(0, e.rotY, 0);
     dummy.scale.set(rScale, 1, rScale);

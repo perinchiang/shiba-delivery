@@ -609,7 +609,8 @@ function createSkyAndClouds() {
           worldMat = modelMatrix * instanceMatrix;
         #endif
         vNormalW = normalize(mat3(worldMat) * normal);
-        gl_Position = projectionMatrix * viewMatrix * worldMat * vec4(position, 1.0);
+        vec4 clip = projectionMatrix * viewMatrix * worldMat * vec4(position, 1.0);
+        gl_Position = clip.xyww;
       }`,
     fragmentShader: /* glsl */ `
       uniform float harvestLight;
