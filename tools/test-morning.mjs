@@ -109,6 +109,23 @@ try {
   await page.keyboard.press('v');
   await page.locator('#look[aria-pressed="true"]').waitFor();
   await shot('02-shiba');
+  // Exercise the shipped free-camera entry points. The screenshot comparison
+  // catches a drag handler that silently fails while the keyboard controls
+  // verify both micro-adjustment and recentering remain wired.
+  const stage = page.locator('#stage');
+  const beforeOrbit = await stage.screenshot();
+  const stageBox = await stage.boundingBox();
+  await page.mouse.move(stageBox.x + stageBox.width * 0.50, stageBox.y + stageBox.height * 0.50);
+  await page.mouse.down();
+  await page.mouse.move(stageBox.x + stageBox.width * 0.68, stageBox.y + stageBox.height * 0.43, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForTimeout(120);
+  const afterOrbit = await stage.screenshot();
+  assert.notDeepEqual(afterOrbit, beforeOrbit, 'dragging the stage changes the camera view');
+  await page.keyboard.press('[');
+  await page.keyboard.press(']');
+  await page.keyboard.press('r');
+  await page.mouse.dblclick(stageBox.x + stageBox.width * 0.50, stageBox.y + stageBox.height * 0.50);
   await page.keyboard.press('q');
   const phone = page.getByRole('dialog', { name: '骑手手机' });
   const task = page.locator('#phone-toggle');

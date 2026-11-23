@@ -909,6 +909,13 @@ export function createCityCrossing(parent, banyan) {
   bake(root);
   placeInstances(root, banyan, trees);
 
+  // Static crossing architecture is already flattened into a small number of
+  // meshes. Keep it as a receiver and reserve the shadow-map pass for the
+  // compact old-street view where directional shadows are most noticeable.
+  root.traverse(object => {
+    if (object.isMesh) object.castShadow = false;
+  });
+
   const lamps = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial(), signalHeads.length);
   const disk = new THREE.Object3D(), color = new THREE.Color();
   signalHeads.forEach(({ at, rotY, scale }, i) => {

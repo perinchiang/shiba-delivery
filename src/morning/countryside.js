@@ -461,6 +461,13 @@ function buildChunk(start, end, kit) {
   placeInstances(group, kit?.RoadFlowers, flowers, false, true);
   placeInstances(group, kit?.ReedClump, reeds, false, true);
 
+  // The countryside contains long runs of static geometry and repeated props.
+  // They still receive the warm directional shadow, while only dynamic or
+  // close contact objects need to enter the shadow-map pass.
+  group.traverse(object => {
+    if (object.isMesh) object.castShadow = false;
+  });
+
   return group;
 }
 

@@ -279,6 +279,11 @@ export function createView(renderer, state, world) {
   function draw(dt, time, { stride, walking }) {
     const inside = state.mode === 'shop', riding = state.mode === 'ride';
     const outsideTown = !inside && state.x > OLD_STREET_LIMIT_X;
+    // Long-range countryside and crossing views use the baked contact shadow
+    // under the rider. Keeping the directional shadow map for the compact old
+    // street preserves its close-up grounding while removing a full extra
+    // render pass from the open route.
+    sun.castShadow = !outsideTown;
     if (inside) {
       streetOrbit = false;
       rideYawOffset = 0;
