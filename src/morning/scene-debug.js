@@ -1,6 +1,6 @@
 import { rideTuning, trialLimitsKmh } from './free-ride.js';
 import { centerZ, roadYaw, landmarks } from './country-route.js';
-import { COASTAL_SAMPLE } from './coastal-sample.js';
+import { COASTAL_SAMPLE, hillRoadPoint } from './coastal-sample.js';
 import { streetTreeXs, treePitZ } from './street-layout.js';
 import { orders, start, bunFacade } from './orders.js';
 import { TOD_ORDER, TOD_PRESETS } from './time-of-day.js';
@@ -20,6 +20,14 @@ function onCountryRoad(x, laneOffset = 0) {
   const z = centerZ(x) + laneOffset, yaw = roadYaw(x);
   return { phase: 'free', mode: 'ride', x, z, bikeX: x, bikeZ: z, yaw, bikeYaw: yaw };
 }
+
+function onHillRoad(s) {
+  const pt = hillRoadPoint(s);
+  return { phase: 'free', mode: 'ride', x: pt.x, z: pt.z, bikeX: pt.x, bikeZ: pt.z, yaw: pt.yaw, bikeYaw: pt.yaw };
+}
+
+const coastalStart = onHillRoad(10);
+const coastalPlaza = onHillRoad(170);
 
 // State overrides are applied to a fresh delivery. Optional camera presets are cleared on movement.
 export const sceneJumps = {
@@ -114,54 +122,34 @@ export const sceneJumps = {
   steamers: { title: '包子铺蒸笼', state: bakeryFront,
     camera: { height: 2.1, width: 3.65, focus: [bunFacade.x - 1.07, 1.54, -1.74], offset: [1.8, 4.8, 10] } },
   coastalCorner: {
-    title: '滨海住宅样角·骑行',
-    state: {
-      phase: 'free', mode: 'ride',
-      x: COASTAL_SAMPLE.x - 13.2, z: COASTAL_SAMPLE.z + 14.2,
-      bikeX: COASTAL_SAMPLE.x - 13.2, bikeZ: COASTAL_SAMPLE.z + 14.2,
-      yaw: Math.PI * 0.68, bikeYaw: Math.PI * 0.68,
-    },
+    title: '海风坡道·谷底起骑',
+    state: coastalStart,
   },
   coastalGate: {
-    title: '滨海样角·院墙门牌',
-    state: {
-      phase: 'free', mode: 'walk',
-      x: COASTAL_SAMPLE.x - 5.9, z: COASTAL_SAMPLE.z + 9.45, yaw: 0.25,
-      bikeX: COASTAL_SAMPLE.x - 8.2, bikeZ: COASTAL_SAMPLE.z + 11.6, bikeYaw: Math.PI * 0.5,
-      stand: 1,
-    },
+    title: '海风坡道·民居近景',
+    state: { ...coastalPlaza, mode: 'walk', stand: 1 },
     camera: {
       fov: 40,
-      focus: [COASTAL_SAMPLE.x - 5.1, 1.55, COASTAL_SAMPLE.z + 7.4],
-      offset: [-1.45, 0.85, 6.2],
+      focus: [COASTAL_SAMPLE.x - 28, 14.3, COASTAL_SAMPLE.z - 42],
+      offset: [8.8, 1.9, 11.4],
     },
   },
   coastalOverview: {
-    title: '滨海样角·俯瞰布局',
-    state: {
-      phase: 'free', mode: 'ride',
-      x: COASTAL_SAMPLE.x - 13.2, z: COASTAL_SAMPLE.z + 14.2,
-      bikeX: COASTAL_SAMPLE.x - 13.2, bikeZ: COASTAL_SAMPLE.z + 14.2,
-      yaw: Math.PI * 0.68, bikeYaw: Math.PI * 0.68,
-    },
+    title: '海风坡道·全景鸟瞰',
+    state: coastalStart,
     camera: {
-      fov: 44,
-      focus: [COASTAL_SAMPLE.x, 1.4, COASTAL_SAMPLE.z],
-      offset: [-21, 18.5, 24],
+      fov: 46,
+      focus: [COASTAL_SAMPLE.x + 2, 7.5, COASTAL_SAMPLE.z - 12],
+      offset: [-48, 38, 92],
     },
   },
   coastalHill: {
-    title: '滨海样角·山坡远眺',
-    state: {
-      phase: 'free', mode: 'ride',
-      x: COASTAL_SAMPLE.x - 13.2, z: COASTAL_SAMPLE.z + 14.2,
-      bikeX: COASTAL_SAMPLE.x - 13.2, bikeZ: COASTAL_SAMPLE.z + 14.2,
-      yaw: Math.PI * 0.68, bikeYaw: Math.PI * 0.68,
-    },
+    title: '海风坡道·坡顶风车村',
+    state: coastalPlaza,
     camera: {
-      fov: 44,
-      focus: [COASTAL_SAMPLE.x + 1.0, 2.2, COASTAL_SAMPLE.z - 2.0],
-      offset: [-19.0, 8.8, 34.0],
+      fov: 46,
+      focus: [COASTAL_SAMPLE.x - 16, 15.8, COASTAL_SAMPLE.z - 50],
+      offset: [26, 7.2, 34],
     },
   },
 };

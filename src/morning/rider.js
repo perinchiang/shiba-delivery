@@ -54,13 +54,27 @@ function named(root, name) {
   return object;
 }
 
+const SKIP_SHADOW_NODES = new Set([
+  'Eye_L_Mesh', 'Eye_R_Mesh', 'Muzzle_Smile', 'Helmet_Chinstrap', 'Helmet_Goggles',
+  'Box_Envelope_and_Clasp', 'Stand_Hinge', 'Rack_Deck', 'Passenger_Frame_Platform',
+  'Rider_Footpegs', 'Mudguards', 'Mudguards.001', 'High_Side_Exhaust', 'Side_Covers',
+  'Stand_Leg_and_Tang', 'Solo_Saddle',
+]);
+
 function prepare(asset) {
   const root = asset.scene;
   root.traverse(o => {
     if (!o.isMesh) return;
     o.receiveShadow = true;
-    // Tinted optical glass transmits the sunlight to the eyes beneath it.
-    o.castShadow = !o.material.transparent;
+    const nodeName = o.parent?.isGroup && o.parent !== root ? o.parent.name : o.name;
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    const radius = o.geometry.boundingSphere?.radius ?? 1;
+    const vertCount = o.geometry.attributes?.position?.count ?? 0;
+    const keepSmallEar = nodeName === 'Ear_L_Mesh' || nodeName === 'Ear_R_Mesh';
+    // Tinted optical glass and tiny trim/decal sub-primitives skip the directional shadow map pass
+    // while keeping every main body, helmet, ear, wheel, and delivery-box shadow crisp.
+    o.castShadow = !o.material.transparent && !SKIP_SHADOW_NODES.has(nodeName)
+      && radius >= 0.13 && (keepSmallEar || vertCount >= 520);
     // All skinned parts travel together with a single small courier. A cached
     // bind-pose sphere would otherwise cull an arm after mounting or lifting.
     if (o.isSkinnedMesh) o.frustumCulled = false;

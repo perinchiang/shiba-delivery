@@ -1,6 +1,6 @@
 import { approach, clamp, damp, dampAngle, lerp, smoothstep } from '../core/mathx.js';
 import { centerZ, crossing, constrainToRoad, roadHeight, roadYaw } from './country-route.js';
-import { inCoastalSample } from './coastal-sample.js';
+import { inCoastalSample, coastalSurfaceHeight } from './coastal-sample.js';
 
 export const trialLimitsKmh = [50, 32.4, 25, 35];
 export const maxTrialSpeed = trialLimitsKmh[0] / 3.6;
@@ -75,13 +75,15 @@ export function countryCamera(camera, state, yaw, focus) {
   const radius = 6.6+1.35*speed;
   const x = state.x - Math.sin(yaw)*radius, z = state.z - Math.cos(yaw)*radius;
   const inSample = inCoastalSample(state.x, state.z);
-  const elevation = inSample ? 0 : roadHeight(state.x);
+  const elevation = inSample ? coastalSurfaceHeight(state.x, state.z) : roadHeight(state.x);
+  const boomGround = inSample ? coastalSurfaceHeight(x, z) : roadHeight(x);
   // Keep the boom on the road side of the village houses and above bridge approaches.
   const offset = clamp(z - centerZ(x), -5.5, 5.5);
   const boom = inSample ? { x, z }
+    : state.x <= 46 ? { x, z: clamp(z, -0.4, 7.2) }
     : Math.abs(state.x - crossing.x) < 29
       ? constrainToRoad(x, z, true) : { x, z: centerZ(x)+offset };
-  camera.position.set(boom.x, inSample ? 3.15 : Math.max(roadHeight(x)+1.45, elevation+3.05), boom.z);
+  camera.position.set(boom.x, Math.max(boomGround + (inSample ? 1.55 : 1.45), elevation + 3.05), boom.z);
   const lead = 1.6+2.5*speed;
   focus.set(state.x+Math.sin(yaw)*lead, elevation+1.28, state.z+Math.cos(yaw)*lead);
   camera.lookAt(focus);

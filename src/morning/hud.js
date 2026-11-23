@@ -8,6 +8,7 @@ import { formatPay, nextOrder, orders } from './orders.js';
 import { mountBunHandoff } from './bun-handoff.jsx';
 import { drawRouteMap } from './route-map.js';
 import { crossing, distanceAlong, roadEnd, roadPlace, routeDistances } from './country-route.js';
+import { inCoastalSample } from './coastal-sample.js';
 import { drawStreetMap } from './street-map.js';
 
 export function createHUD(state, delivery, view, { shiba, marker }, { input, stick, releaseStick }, reset, rideAudio) {
@@ -56,9 +57,9 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     const free = state.phase === 'free';
     const route = free || state.x > 130;
     const city = !route && (!!state.order?.cityRoute || state.x > 45);
-    const where = state.mode === 'shop' ? state.order.room.name : state.x > 45 ? roadPlace(state.x) : '榕湾老街';
+    const where = state.mode === 'shop' ? state.order.room.name : state.x > 45 ? roadPlace(state.x, state.z) : '榕湾老街';
     write('map-location', route
-      ? '当前位置 · ' + roadPlace(state.x) + '　全长 ' + (distanceAlong(roadEnd) / 1000).toFixed(2) + ' km'
+      ? '当前位置 · ' + roadPlace(state.x, state.z) + '　全长 ' + (distanceAlong(roadEnd) / 1000).toFixed(2) + ' km'
       : '当前位置 · ' + where + '　　目标 · ' + navigate().name);
     write('map-title', route ? '榕湾村道' : city ? '榕湾城区' : '榕湾老街');
     $('map-stops').hidden = free || ((state.phase === 'offer' || state.phase === 'done') && route);
@@ -296,7 +297,7 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
       rideAudio.setActive(wantAudio);
     }
     write('phase', { free: '骑行', offer: '待接单', pickup: state.order.pickupPhase, delivery: '去送达', done: '已签收' }[state.phase]);
-    write('goal', free ? roadPlace(state.x) : done ? state.order.customer.name + '已签收' : task.name);
+    write('goal', free ? roadPlace(state.x, state.z) : done ? state.order.customer.name + '已签收' : task.name);
     const hint = offer || done || free ? '' : guidance(task, action);
     write('directions', hint);
     $('directions').hidden = !riding || !hint || (!state.order?.cityRoute && hint.startsWith('↑')) || !!state.sequence || state.braking || phoneExpanded;
@@ -313,7 +314,7 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     $('shift-summary').hidden = !hasShift;
     if (hasShift) write('shift-summary', '今日已完成 ' + state.completedCount + ' 单　·　累计到手 ' + formatPay(state.totalEarnedCents || 0));
     write('order-summary', free ? Math.round(Math.abs(state.speed)*3.6) + (state.speed < 0 ? ' km/h · 倒车' : ' km/h · 自由骑行') : done ? '实际到账 ' + net : '送往' + state.order.customer.address);
-    write('place', free ? '榕湾村道' : state.mode === 'shop' ? state.order.room.name : state.x > 45 ? roadPlace(state.x) : '榕湾老街');
+    write('place', free ? (inCoastalSample(state.x, state.z) ? '海风坡道镇' : '榕湾村道') : state.mode === 'shop' ? state.order.room.name : state.x > 45 ? roadPlace(state.x, state.z) : '榕湾老街');
     write('clock', free ? '清晨' : state.order.clock[state.phase]);
     actionButton.hidden = !action || action === 'phone' || action === 'statement' || phoneExpanded;
     const bunHandoff = state.order.id === 'buns' && state.dialog === 'shopkeeper';

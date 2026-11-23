@@ -1,17 +1,16 @@
-// Coastal detached-house 3D vertical-slice sample (Ghibli Painterly Style A):
-// A 2x2 grid of 4 walled Japanese/East-Asian style detached homes around a corner
-// intersection + 2.4m cut-through lane, upgraded with procedural gouache plaster/tile/brick
-// shading, deep cool eave shadows, rolling cloud-shadowed hillsides, wind-swept grass,
-// wildflowers, and Ghibli leaf-card trees.
+// Rolling Ghibli hillside village vertical slice (Style A: Soft Storybook):
+// Low sunlit wildflower meadow valley -> winding S-curve dirt lane climb with
+// timber guardrails & hanging-lantern signpost -> unified terracotta-red-roof
+// Ghibli cottages (recessed windows, stone plinths) & rotating coastal windmill
+// landmark overlooking a serene coastal bay.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GeoBuilder } from '../core/geo.js';
 import { litMaterial } from '../core/materials.js';
 import { RNG } from '../core/rng.js';
 import { makeCanvas, canvasTexture, fbm2D } from '../core/textures.js';
-import { clamp, smoothstep } from '../core/mathx.js';
-import { SignKit } from './sign-kit.js';
+import { clamp, lerp, smoothstep } from '../core/mathx.js';
 import { CURB_H } from './street-layout.js';
-import { CITY_PALETTE } from './city-palette.js';
 import {
   MEADOW_COMMON_GLSL,
   meadowUniforms,
@@ -28,146 +27,298 @@ export const COASTAL_SAMPLE = { x: 260, z: -320 };
 const CX = COASTAL_SAMPLE.x;
 const CZ = COASTAL_SAMPLE.z;
 
-// Block geometry constants (world metres)
-const LOT_W = 8.8;
-const LOT_D = 8.2;
-const LANE_HALF = 1.2;    // 2.4m walkable/rideable cut-through alley between W and E pairs
-const ROW_GAP_HALF = 0.5; // 1.0m planted hedge gap between N and S pairs
-const SW_WIDTH = 2.0;
-const ROAD_W = 6.4;
+const HALF_EXTENT = 122;
+const ROAD_HALF = 2.90;
+const BAY_WATER_Y = -1.35;
 
-const LOT_X_OFF = LANE_HALF + LOT_W * 0.5;     // 5.6m
-const LOT_Z_OFF = ROW_GAP_HALF + LOT_D * 0.5;  // 4.6m
-const INNER_SW_X = LANE_HALF + LOT_W + SW_WIDTH; // 12.0m
-const INNER_SW_Z = ROW_GAP_HALF + LOT_D + SW_WIDTH; // 10.7m
-const ROAD_OUT_X = INNER_SW_X + ROAD_W;        // 18.4m
-const ROAD_OUT_Z = INNER_SW_Z + ROAD_W;        // 17.1m
+// ==============================================================================
+// Parametric winding valley-to-hilltop road spline (relative to CX, CZ)
+// ==============================================================================
+const ROAD_KNOTS = [
+  [-6, 88, 0.00],    // K0: Valley meadow start
+  [8, 62, 0.28],     // K1: Gentle valley sweep
+  [28, 36, 1.35],    // K2: Bend toward hill foot (signpost)
+  [32, 6, 4.10],     // K3: Begin steady climb
+  [14, -22, 8.15],   // K4: Mid-slope climb past lower cottages
+  [-8, -42, 11.40],  // K5: Entering hilltop village terrace
+  [-26, -54, 12.60], // K6: Windmill plaza terrace
+  [-16, -74, 12.90], // K7: Northern overlook loop
+];
 
-export function inCoastalSample(x, z) {
-  return Math.abs(x - CX) <= 38 && Math.abs(z - CZ) <= 36;
+function catmullRom(p0, p1, p2, p3, t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return 0.5 * (
+    (2 * p1)
+    + (-p0 + p2) * t
+    + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
+    + (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+  );
 }
 
-export function coastalSidewalk(x, z) {
-  if (!inCoastalSample(x, z)) return false;
-  const dx = Math.abs(x - CX);
-  const dz = Math.abs(z - CZ);
-  if (dx >= LANE_HALF && dx <= INNER_SW_X && dz <= INNER_SW_Z) return true;
-  if (dx >= ROAD_OUT_X && dx <= ROAD_OUT_X + 4.4 && dz >= ROAD_OUT_Z && dz <= ROAD_OUT_Z + 4.4) return true;
-  if (dx >= ROAD_OUT_X && dx <= ROAD_OUT_X + 2.4 && dz <= INNER_SW_Z) return true;
-  if (dz >= ROAD_OUT_Z && dz <= ROAD_OUT_Z + 2.4 && dx <= INNER_SW_X) return true;
-  return false;
+function buildRoadSamples() {
+  const raw = [];
+  const segsPerSpan = 28;
+  const n = ROAD_KNOTS.length;
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = ROAD_KNOTS[Math.max(0, i - 1)];
+    const p1 = ROAD_KNOTS[i];
+    const p2 = ROAD_KNOTS[i + 1];
+    const p3 = ROAD_KNOTS[Math.min(n - 1, i + 2)];
+    const steps = i === n - 2 ? segsPerSpan + 1 : segsPerSpan;
+    for (let k = 0; k < steps; k++) {
+      const t = k / segsPerSpan;
+      raw.push({
+        x: CX + catmullRom(p0[0], p1[0], p2[0], p3[0], t),
+        z: CZ + catmullRom(p0[1], p1[1], p2[1], p3[1], t),
+        y: catmullRom(p0[2], p1[2], p2[2], p3[2], t),
+      });
+    }
+  }
+  let s = 0;
+  for (let i = 0; i < raw.length; i++) {
+    const prev = raw[Math.max(0, i - 1)];
+    const next = raw[Math.min(raw.length - 1, i + 1)];
+    if (i > 0) {
+      s += Math.hypot(raw[i].x - raw[i - 1].x, raw[i].z - raw[i - 1].z);
+    }
+    const dx = next.x - prev.x;
+    const dz = next.z - prev.z;
+    const dy = next.y - prev.y;
+    const hLen = Math.hypot(dx, dz) || 1;
+    raw[i].s = s;
+    raw[i].tx = dx / hLen;
+    raw[i].tz = dz / hLen;
+    raw[i].nx = -raw[i].tz; // Left perpendicular in XZ
+    raw[i].nz = raw[i].tx;
+    raw[i].slope = dy / Math.hypot(next.x - prev.x, next.z - prev.z || 1);
+  }
+  return raw;
 }
 
-function pushOutBox(pos, minX, maxX, minZ, maxZ, margin) {
-  const x0 = minX - margin, x1 = maxX + margin;
-  const z0 = minZ - margin, z1 = maxZ + margin;
-  if (pos.x <= x0 || pos.x >= x1 || pos.z <= z0 || pos.z >= z1) return;
-  const dl = pos.x - x0, dr = x1 - pos.x;
-  const dt = pos.z - z0, db = z1 - pos.z;
-  const m = Math.min(dl, dr, dt, db);
-  if (m === dl) pos.x = x0;
-  else if (m === dr) pos.x = x1;
-  else if (m === dt) pos.z = z0;
-  else pos.z = z1;
+const ROAD_SAMPLES = buildRoadSamples();
+const ROAD_TOTAL_S = ROAD_SAMPLES[ROAD_SAMPLES.length - 1].s;
+
+export function hillRoadPoint(sTarget) {
+  const s = clamp(sTarget, 0, ROAD_TOTAL_S);
+  for (let i = 1; i < ROAD_SAMPLES.length; i++) {
+    const a = ROAD_SAMPLES[i - 1];
+    const b = ROAD_SAMPLES[i];
+    if (s <= b.s || i === ROAD_SAMPLES.length - 1) {
+      const u = b.s > a.s ? (s - a.s) / (b.s - a.s) : 0;
+      return {
+        x: lerp(a.x, b.x, u),
+        z: lerp(a.z, b.z, u),
+        y: lerp(a.y, b.y, u),
+        tx: lerp(a.tx, b.tx, u),
+        tz: lerp(a.tz, b.tz, u),
+        nx: lerp(a.nx, b.nx, u),
+        nz: lerp(a.nz, b.nz, u),
+        slope: lerp(a.slope, b.slope, u),
+        yaw: Math.atan2(lerp(a.tx, b.tx, u), lerp(a.tz, b.tz, u)),
+        s,
+      };
+    }
+  }
+  return { ...ROAD_SAMPLES[0], yaw: Math.atan2(ROAD_SAMPLES[0].tx, ROAD_SAMPLES[0].tz) };
 }
 
-export function constrainCoastalSample(x, z, walking) {
-  const pos = {
-    x: clamp(x, CX - 24.5, CX + 24.5),
-    z: clamp(z, CZ - 22.5, CZ + 22.5),
+function nearestRoadInfo(x, z) {
+  let bestDistSq = Infinity;
+  let bestY = 0;
+  let bestS = 0;
+  let bestX = x;
+  let bestZ = z;
+  for (let i = 0; i < ROAD_SAMPLES.length - 1; i++) {
+    const a = ROAD_SAMPLES[i];
+    const b = ROAD_SAMPLES[i + 1];
+    const abx = b.x - a.x;
+    const abz = b.z - a.z;
+    const abSq = abx * abx + abz * abz;
+    const t = abSq > 1e-6 ? clamp(((x - a.x) * abx + (z - a.z) * abz) / abSq, 0, 1) : 0;
+    const px = a.x + abx * t;
+    const pz = a.z + abz * t;
+    const dSq = (x - px) * (x - px) + (z - pz) * (z - pz);
+    if (dSq < bestDistSq) {
+      bestDistSq = dSq;
+      bestY = lerp(a.y, b.y, t);
+      bestS = lerp(a.s, b.s, t);
+      bestX = px;
+      bestZ = pz;
+    }
+  }
+  return {
+    dist: Math.sqrt(bestDistSq),
+    roadY: bestY,
+    s: bestS,
+    px: bestX,
+    pz: bestZ,
   };
-  const margin = walking ? 0.38 : 0.68;
-  pushOutBox(pos, CX - LANE_HALF - LOT_W, CX - LANE_HALF, CZ - LOT_Z_OFF - LOT_D * 0.5, CZ + LOT_Z_OFF + LOT_D * 0.5, margin);
-  pushOutBox(pos, CX + LANE_HALF, CX + LANE_HALF + LOT_W, CZ - LOT_Z_OFF - LOT_D * 0.5, CZ + LOT_Z_OFF + LOT_D * 0.5, margin);
-  pushOutBox(pos, CX - 11.15, CX - 10.15, CZ + 5.80, CZ + 7.00, walking ? 0.25 : 0.45);
-  return pos;
 }
 
-// Deterministic rolling Ghibli hillside surrounding the flat town terrace & road corridors.
+// ==============================================================================
+// Unified red-terracotta village layout & hilltop rotating windmill
+// ==============================================================================
+// House coordinates (world offset from CX, CZ), radius for grass/pad grading, padY computed after terrain def
+const BUILDING_SPECS = [
+  // Hero Windmill on highest hilltop ridge crest facing SSE down the valley
+  { kind: 'windmill', mesh: 'Ghibli_Windmill_Tower', dx: -16, dz: -58, rotY: 0.28, halfW: 3.4, halfD: 3.4, padR: 5.5, baseY: 13.0 },
+  // Hilltop Windmill Plaza Cottages (Cluster A)
+  { kind: 'cottage', mesh: 'Ghibli_Cottage_B', dx: -28, dz: -42, rotY: 0.65, halfW: 4.5, halfD: 3.3, padR: 5.2, baseY: 12.1 },
+  { kind: 'cottage', mesh: 'Ghibli_Cottage_A', dx: -39, dz: -54, rotY: 1.05, halfW: 3.9, halfD: 3.0, padR: 4.8, baseY: 12.6 },
+  { kind: 'cottage', mesh: 'Ghibli_Cottage_C', dx: -2, dz: -52, rotY: -0.35, halfW: 3.1, halfD: 2.9, padR: 4.6, baseY: 12.2 },
+  { kind: 'cottage', mesh: 'Ghibli_Cottage_A', dx: 2, dz: -30, rotY: -0.75, halfW: 3.9, halfD: 3.0, padR: 4.8, baseY: 9.8 },
+  { kind: 'cottage', mesh: 'Ghibli_Cottage_B', dx: 20, dz: -38, rotY: -0.45, halfW: 4.5, halfD: 3.3, padR: 5.2, baseY: 9.4 },
+  { kind: 'cottage', mesh: 'Ghibli_Cottage_C', dx: -2, dz: -74, rotY: 0.15, halfW: 3.1, halfD: 2.9, padR: 4.6, baseY: 12.9 },
+  // Mid-slope climbing cluster flanking the uphill bend (Cluster B)
+  { kind: 'cottage', mesh: 'Ghibli_Cottage_A', dx: 38, dz: -14, rotY: -1.25, halfW: 3.9, halfD: 3.0, padR: 4.8, baseY: 7.2 },
+  { kind: 'cottage', mesh: 'Ghibli_Cottage_C', dx: 48, dz: 10, rotY: -1.45, halfW: 3.1, halfD: 2.9, padR: 4.6, baseY: 4.8 },
+  { kind: 'cottage', mesh: 'Ghibli_Cottage_A', dx: 44, dz: 32, rotY: -2.15, halfW: 3.9, halfD: 3.0, padR: 4.8, baseY: 2.6 },
+];
+
+// Natural continuous hillside topography before road/terrace grading
+function naturalHillHeight(dx, dz) {
+  // Smooth south valley rise toward northern windmill ridge
+  const hillMask = smoothstep(55.0, -32.0, dz);
+  const eastRise = smoothstep(-28.0, 95.0, dx) * 4.6;
+  const swell = 0.55 + 0.45 * Math.sin(dx * 0.030 + Math.cos(dz * 0.024) * 1.25);
+  const undul = 0.50 + 0.50 * Math.cos(dz * 0.028 - dx * 0.018 + 0.6);
+
+  // Broad windmill ridge crest centered around (-12, -58)
+  const ridgeDist = Math.hypot((dx + 12) * 0.72, (dz + 58) * 1.05);
+  const windmillCrest = (1.0 - smoothstep(10.0, 72.0, ridgeDist)) * 12.6;
+
+  // Far northern & eastern backdrop hills for scenic horizon depth
+  const backBackdrop = smoothstep(-58.0, -118.0, dz) * (5.2 + 3.0 * swell);
+  const valleyRoll = 0.5 + 2.4 * swell + 2.0 * undul;
+  let h = valleyRoll * (0.35 + 0.65 * hillMask) + windmillCrest * 0.85 + eastRise * 0.65 + backBackdrop;
+
+  // Keep valley entrance around K0 [-6, 88] low & flat
+  const entranceFlat = 1.0 - smoothstep(18.0, 56.0, Math.hypot(dx + 4, dz - 78));
+  h = lerp(h, 0.25 * swell, entranceFlat * 0.85);
+
+  // Coastal bay basin carved gently into the west/northwest flank (dx < -28, dz in [-48..52])
+  const bayMaskX = 1.0 - smoothstep(-95.0, -28.0, Math.abs(dx + 72) > 46 ? -10 : dx);
+  const bayShape = (1.0 - smoothstep(16.0, 52.0, Math.hypot((dx + 74) * 0.85, (dz - 4) * 0.72)));
+  const bayDip = Math.max(bayShape, bayMaskX * 0.45 * (1.0 - smoothstep(15.0, 64.0, Math.abs(dz - 5))));
+  h -= bayDip * 5.2;
+
+  return h;
+}
+
 export function coastalHillHeight(x, z) {
   const dx = x - CX;
   const dz = z - CZ;
-  const adx = Math.abs(dx);
-  const adz = Math.abs(dz);
+  let y = naturalHillHeight(dx, dz);
 
-  // Keep the 4-house terrace and corner aprons flat at -0.025, rising gently past 24m
-  const padMask = Math.max(smoothstep(24.0, 72.0, adx), smoothstep(23.0, 70.0, adz));
+  // Grade cottage & windmill terrace pads smoothly into the slope
+  for (const b of BUILDING_SPECS) {
+    const d = Math.hypot(dx - b.dx, dz - b.dz);
+    if (d < b.padR + 7.5) {
+      const w = 1.0 - smoothstep(b.padR, b.padR + 7.5, d);
+      y = lerp(y, b.baseY - 0.12, w * 0.85);
+    }
+  }
 
-  // Smooth 2D corridor blending around the 4 extending asphalt roads (zero cliff seams)
-  const ewKeep = (1.0 - smoothstep(38.0, 58.0, adx)) * (1.0 - smoothstep(3.8, 14.0, Math.abs(adz - 13.9)));
-  const nsKeep = (1.0 - smoothstep(34.0, 54.0, adz)) * (1.0 - smoothstep(3.8, 14.0, Math.abs(adx - 15.2)));
-  const roadSafe = 1.0 - Math.max(ewKeep, nsKeep);
+  // Grade winding road corridor cleanly slightly below road ribbon (-0.045m) so ribbon never Z-fights
+  const info = nearestRoadInfo(x, z);
+  const roadLock = 1.0 - smoothstep(ROAD_HALF + 0.35, ROAD_HALF + 11.5, info.dist);
+  y = lerp(y, info.roadY - 0.045, roadLock);
 
-  // Gentle 10-15° Ghibli rolling hills surrounding the town valley
-  const northBoost = smoothstep(5.0, 95.0, -dz) * 5.0;
-  const swSlope = smoothstep(28.0, 105.0, Math.hypot(dx + 16, dz - 16)) * 3.0;
-  const swell = 0.55 + 0.45 * Math.sin(dx * 0.032 + Math.cos(dz * 0.025) * 1.3);
-  const undul = 0.50 + 0.50 * Math.cos(dz * 0.028 - dx * 0.020 + 0.8);
-  const hillBase = 1.8 + 4.4 * swell + 3.4 * undul + northBoost + swSlope;
-
-  return -0.025 + hillBase * padMask * roadSafe;
+  return y;
 }
 
-function makeAsphaltTexture() {
+export function coastalSurfaceHeight(x, z) {
+  const info = nearestRoadInfo(x, z);
+  const hillY = coastalHillHeight(x, z);
+  if (info.dist <= ROAD_HALF + 0.25) return info.roadY + 0.025;
+  const t = smoothstep(ROAD_HALF + 0.25, ROAD_HALF + 1.4, info.dist);
+  return lerp(info.roadY + 0.025, hillY, t);
+}
+
+export function inCoastalSample(x, z) {
+  return Math.abs(x - CX) <= HALF_EXTENT && Math.abs(z - CZ) <= HALF_EXTENT;
+}
+
+export function coastalSidewalk(_x, _z) {
+  return false;
+}
+
+function pushOutRotatedRect(pos, cx, cz, rotY, halfW, halfD, margin) {
+  const dx = pos.x - cx;
+  const dz = pos.z - cz;
+  const c = Math.cos(rotY);
+  const s = Math.sin(rotY);
+  // World offset -> local frame
+  const lx = dx * c - dz * s;
+  const lz = dx * s + dz * c;
+  const wx = halfW + margin;
+  const wz = halfD + margin;
+  if (Math.abs(lx) >= wx || Math.abs(lz) >= wz) return;
+  const pushX = wx - Math.abs(lx);
+  const pushZ = wz - Math.abs(lz);
+  let nx = lx;
+  let nz = lz;
+  if (pushX < pushZ) nx = lx >= 0 ? wx : -wx;
+  else nz = lz >= 0 ? wz : -wz;
+  // Local -> world
+  pos.x = cx + nx * c + nz * s;
+  pos.z = cz - nx * s + nz * c;
+}
+
+export function constrainCoastalSample(x, z, walking) {
+  const margin = walking ? 0.42 : 0.78;
+  const pos = {
+    x: clamp(x, CX - 112, CX + 112),
+    z: clamp(z, CZ - 108, CZ + 108),
+  };
+
+  // Push out of all hillside cottages & windmill tower
+  for (const b of BUILDING_SPECS) {
+    pushOutRotatedRect(pos, CX + b.dx, CZ + b.dz, b.rotY, b.halfW, b.halfD, margin);
+  }
+
+  // Prevent riding straight into deep bay water
+  if (coastalHillHeight(pos.x, pos.z) < BAY_WATER_Y + 0.22) {
+    const info = nearestRoadInfo(pos.x, pos.z);
+    const dirX = info.px - pos.x;
+    const dirZ = info.pz - pos.z;
+    const len = Math.hypot(dirX, dirZ) || 1;
+    pos.x += (dirX / len) * 1.4;
+    pos.z += (dirZ / len) * 1.4;
+  }
+  return pos;
+}
+
+// ==============================================================================
+// Textures & Painterly Shaders
+// ==============================================================================
+function makeDirtRoadTexture() {
   const { canvas, ctx, w, h } = makeCanvas(256, 256);
   const img = ctx.createImageData(w, h);
   const d = img.data;
   let i = 0;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const u = x / w, v = y / h;
-      const macro = fbm2D(u * 4, v * 4, 3, 17, 4);
-      const grain = fbm2D(u * 24, v * 24, 2, 53, 24);
-      const shade = 0.90 + macro * 0.10 + grain * 0.07;
-      d[i++] = Math.round(92 * shade);
-      d[i++] = Math.round(98 * shade);
-      d[i++] = Math.round(104 * shade);
+      const u = x / w;
+      const v = y / h;
+      const macro = fbm2D(u * 4, v * 4, 3, 29, 4);
+      const grain = fbm2D(u * 22, v * 22, 2, 71, 22);
+      // Warm sunlit Ghibli sand-ochre country lane
+      const shade = 0.89 + macro * 0.12 + grain * 0.07;
+      d[i++] = Math.min(255, Math.round(218 * shade));
+      d[i++] = Math.min(255, Math.round(189 * shade));
+      d[i++] = Math.min(255, Math.round(145 * shade));
       d[i++] = 255;
     }
   }
   ctx.putImageData(img, 0, 0);
   const tex = canvasTexture(canvas, { repeat: true, aniso: 4 });
-  tex.repeat.set(16, 16);
+  tex.repeat.set(1, 1);
   return tex;
 }
 
-function makeSidewalkTexture() {
-  const { canvas, ctx, w, h } = makeCanvas(256, 256);
-  ctx.fillStyle = '#e7dcc4';
-  ctx.fillRect(0, 0, w, h);
-  const tile = 64;
-  for (let ty = 0; ty < 4; ty++) {
-    for (let tx = 0; tx < 4; tx++) {
-      const n = fbm2D(tx * 1.7, ty * 2.3, 2, 91, 4);
-      const v = Math.round((n - 0.5) * 12);
-      ctx.fillStyle = `rgb(${232 + v},${219 + v},${194 + v})`;
-      ctx.fillRect(tx * tile + 2, ty * tile + 2, tile - 4, tile - 4);
-    }
-  }
-  ctx.strokeStyle = 'rgba(155, 140, 114, 0.30)';
-  ctx.lineWidth = 2;
-  for (let k = 0; k <= 256; k += tile) {
-    ctx.beginPath(); ctx.moveTo(k, 0); ctx.lineTo(k, 256); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, k); ctx.lineTo(256, k); ctx.stroke();
-  }
-  const tex = canvasTexture(canvas, { repeat: true, aniso: 4 });
-  tex.repeat.set(14, 14);
-  return tex;
-}
-
-function makeContactTex() {
-  const { canvas, ctx } = makeCanvas(64, 64);
-  const grad = ctx.createRadialGradient(32, 32, 8, 32, 32, 31);
-  grad.addColorStop(0, 'rgba(62, 54, 46, 0.24)');
-  grad.addColorStop(0.7, 'rgba(62, 54, 46, 0.12)');
-  grad.addColorStop(1, 'rgba(62, 54, 46, 0.0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 64, 64);
-  return canvasTexture(canvas, { mipmaps: false });
-}
-
-// Patch sidewalks & asphalt with gentle drifting cloud shadows matching the hills.
-function patchCloudShadowOnly(material, strength = 0.34, key = 'coastal-cloud-ground-v1') {
+function patchCloudShadowOnly(material, strength = 0.34, key = 'hillside-cloud-v1') {
   const prev = material.onBeforeCompile;
   const prevKey = material.customProgramCacheKey ? material.customProgramCacheKey.bind(material) : () => '';
   material.onBeforeCompile = (shader, renderer) => {
@@ -187,12 +338,11 @@ function patchCloudShadowOnly(material, strength = 0.34, key = 'coastal-cloud-gr
   return material;
 }
 
-// Ghibli painterly architecture shader for houses & walled yards:
-// - Sloped roofs: procedural Japanese corrugated tile ribs + staggered courses + per-tile gouache tone
-// - Brick fences & chimney: staggered running-bond bricks with soft warm variation
-// - Plaster walls: soft gouache wash + deep cool blue-lavender eave & cornice shadows + base grounding
-// - Window glass (0x527a78): crisp sky reflection gradient (preserves exact vertex colors for TOD night glow)
-function createGhibliArchMaterial() {
+// Painterly Ghibli gouache shader for hillside cottages, windmill & props:
+// - Warm terracotta roof ribs + course laps + subtle gouache tone per tile
+// - Soft brushed plaster variation (relying cleanly on Blender baked deep reveal AO)
+// - Crisp daytime glass gradient on 0x527a78 windows while keeping night emissive tags intact
+function createGhibliVillageMaterial() {
   const mat = litMaterial({ vertexColors: true, grid: false, roughness: 0.90 });
   const prev = mat.onBeforeCompile;
   const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
@@ -226,142 +376,88 @@ function createGhibliArchMaterial() {
         vec3 lN = normalize(vArchNormL);
         vec3 c = diffuseColor.rgb;
 
-        // Material classification from vertex color & normal (zero extra textures/draw calls)
         float isGlass = smoothstep(0.18, 0.08, c.r)
                       * smoothstep(1.35, 1.85, c.g / max(c.r, 0.01))
                       * smoothstep(1.25, 1.75, c.b / max(c.r, 0.01))
                       * (1.0 - smoothstep(0.25, 0.55, abs(wN.y)));
 
-        float isRoofSlope = smoothstep(0.20, 0.36, wN.y) * (1.0 - smoothstep(0.90, 0.97, wN.y))
-                          * smoothstep(2.05, 2.35, lPos.y);
+        // Sloped warm terracotta roof tiles (guarded by warm terracotta redness)
+        float isTerracotta = smoothstep(0.35, 0.52, c.r) * smoothstep(1.8, 2.8, c.r / max(c.b, 0.015));
+        float isRoofSlope = isTerracotta * smoothstep(0.18, 0.35, wN.y) * (1.0 - smoothstep(0.90, 0.97, wN.y));
 
-        float isBrick = (1.0 - smoothstep(0.25, 0.55, abs(wN.y)))
-                      * smoothstep(0.36, 0.44, c.r)
-                      * smoothstep(2.05, 2.38, c.r / max(c.g, 0.02))
-                      * (1.0 - smoothstep(3.10, 4.20, c.r / max(c.g, 0.02)))
-                      * smoothstep(2.10, 3.00, c.r / max(c.b, 0.02))
-                      * max(1.0 - smoothstep(1.25, 1.55, lPos.y), smoothstep(5.2, 5.8, lPos.y));
+        float isPlaster = (1.0 - isGlass) * (1.0 - isRoofSlope);
 
-        float isTimber = (1.0 - smoothstep(0.25, 0.55, abs(wN.y)))
-                       * (1.0 - isBrick)
-                       * smoothstep(0.34, 0.45, c.r)
-                       * smoothstep(1.48, 1.78, c.r / max(c.g, 0.02))
-                       * (1.0 - smoothstep(1.98, 2.25, c.r / max(c.g, 0.02)));
-
-        float isPlaster = (1.0 - isGlass) * (1.0 - isRoofSlope) * (1.0 - isBrick) * (1.0 - isTimber);
-
-        // 1) Painted Japanese corrugated tile roofs
         if (isRoofSlope > 0.01) {
           vec2 slopeDir = length(lN.xz) > 0.05 ? normalize(lN.xz) : vec2(0.0, 1.0);
           vec2 acrossDir = vec2(-slopeDir.y, slopeDir.x);
           float uA = dot(lPos.xz, acrossDir);
-          float vD = lPos.y * 1.48 + dot(lPos.xz, slopeDir) * 0.82;
-
-          float colIdx = floor(uA / 0.25);
-          float rowIdx = floor(vD / 0.30);
-          float rib = sin(fract(uA / 0.25) * 6.28318);
-          float rowFrac = fract(vD / 0.30);
-          float lap = smoothstep(0.0, 0.14, rowFrac);
+          float vD = lPos.y * 1.45 + dot(lPos.xz, slopeDir) * 0.78;
+          float colIdx = floor(uA / 0.28);
+          float rowIdx = floor(vD / 0.32);
+          float rib = sin(fract(uA / 0.28) * 6.28318);
+          float lap = smoothstep(0.0, 0.16, fract(vD / 0.32));
           float tileRand = mHash(vec2(colIdx, rowIdx));
-          float macroBrush = mNoise(wPos.xz * 0.55);
-
-          vec3 tileTint = mix(vec3(0.90, 0.92, 0.98), vec3(1.09, 1.04, 0.96), tileRand);
-          float shade = (0.91 + 0.09 * rib) * mix(0.84, 1.04, lap) * mix(0.95, 1.05, macroBrush);
+          float macroBrush = mNoise(wPos.xz * 0.45);
+          vec3 tileTint = mix(vec3(0.90, 0.91, 0.96), vec3(1.10, 1.04, 0.96), tileRand);
+          float shade = (0.91 + 0.09 * rib) * mix(0.84, 1.04, lap) * mix(0.94, 1.06, macroBrush);
           c = mix(c, c * tileTint * shade, isRoofSlope);
         }
 
-        // 2) Staggered warm brick fences & chimney
-        if (isBrick > 0.01) {
-          float uWall = lPos.x + lPos.z;
-          float by = floor(lPos.y / 0.135);
-          float bx = floor(uWall / 0.29 + 0.5 * mod(by, 2.0));
-          float fx = fract(uWall / 0.29 + 0.5 * mod(by, 2.0));
-          float fy = fract(lPos.y / 0.135);
-          float mortar = min(smoothstep(0.0, 0.09, fx) * smoothstep(1.0, 0.91, fx),
-                             smoothstep(0.0, 0.11, fy) * smoothstep(1.0, 0.89, fy));
-          float bRand = mHash(vec2(bx, by));
-          vec3 bCol = c * mix(vec3(0.88, 0.86, 0.88), vec3(1.12, 1.05, 0.96), bRand);
-          vec3 mortarCol = vec3(0.76, 0.70, 0.61);
-          c = mix(c, mix(mortarCol, bCol, mix(0.45, 1.0, mortar)), isBrick);
-        }
-
-        // 2b) Warm wood fence planks
-        if (isTimber > 0.01) {
-          float plankIdx = floor(lPos.y / 0.16);
-          float plankF = fract(lPos.y / 0.16);
-          float seam = smoothstep(0.0, 0.08, plankF) * smoothstep(1.0, 0.92, plankF);
-          float grain = mNoise(vec2((lPos.x + lPos.z) * 1.4, lPos.y * 12.0));
-          float pVar = mHash(vec2(plankIdx, floor((lPos.x + lPos.z) * 0.5)));
-          vec3 wCol = c * mix(0.90, 1.10, pVar) * mix(0.93, 1.06, grain) * mix(0.75, 1.0, seam);
-          c = mix(c, wCol, isTimber);
-        }
-
-        // 3) Hand-painted gouache plaster & cool Ghibli eave/cornice shadows
         if (isPlaster > 0.01) {
-          float vertWall = 1.0 - smoothstep(0.25, 0.65, abs(wN.y));
-          float pMacro = mNoise(vec2(wPos.x + wPos.z, wPos.y * 1.15) * 0.45);
-          float pFine  = mNoise(vec2(wPos.x - wPos.z, wPos.y * 1.4) * 2.4);
+          float pMacro = mNoise(vec2(wPos.x + wPos.z, wPos.y * 1.15) * 0.42);
+          float pFine  = mNoise(vec2(wPos.x - wPos.z, wPos.y * 1.4) * 2.2);
           vec3 gouache = mix(vec3(0.95, 0.96, 1.00), vec3(1.05, 1.02, 0.96), pMacro)
                        * mix(0.97, 1.03, pFine);
-
-          // Deep cool slate-blue shadows tucked cleanly under main eaves, balcony & 2F trim
-          float mainEave = vertWall * smoothstep(3.85, 4.78, lPos.y) * (1.0 - smoothstep(4.95, 5.45, lPos.y));
-          float midCornice = vertWall * smoothstep(2.25, 2.66, lPos.y) * (1.0 - smoothstep(2.74, 2.95, lPos.y));
-          float baseAO = vertWall * (1.0 - smoothstep(0.05, 0.58, lPos.y));
-          float coolMask = clamp(mainEave * 0.82 + midCornice * 0.65, 0.0, 1.0);
-
-          vec3 shadowed = c * gouache * mix(vec3(1.0), vec3(0.70, 0.77, 0.92), coolMask * 0.52);
-          shadowed *= mix(1.0, 0.84, baseAO * 0.55);
-          c = mix(c, shadowed, isPlaster);
+          c = mix(c, c * gouache, isPlaster * 0.85);
         }
 
-        // 4) Crisp window sky reflection sheen (daytime depth while preserving night glow tag)
         if (isGlass > 0.01) {
           float diag = fract((lPos.x + lPos.z) * 0.45 + lPos.y * 0.65);
           float sheen = smoothstep(0.32, 0.52, diag) * (1.0 - smoothstep(0.56, 0.76, diag));
-          float topGrad = smoothstep(0.6, 4.5, lPos.y);
+          float topGrad = smoothstep(0.6, 5.0, lPos.y);
           vec3 skyGlass = c * mix(0.92, 1.18, topGrad * 0.5 + sheen * 0.6);
           c = mix(c, skyGlass, isGlass);
         }
 
-        // Subtle drifting cloud shadow linking buildings with surrounding hillsides
-        vec3 cloud = mix(vec3(1.0), meadowCloudShadow(wPos.xz, uMeadowTime), 0.36);
+        vec3 cloud = mix(vec3(1.0), meadowCloudShadow(wPos.xz, uMeadowTime), 0.34);
         diffuseColor.rgb = c * cloud;`);
   };
-  mat.customProgramCacheKey = () => prevKey() + '|coastal-ghibli-arch-v1';
+  mat.customProgramCacheKey = () => prevKey() + '|hillside-ghibli-village-v2';
   return mat;
 }
 
-function addOverheadSpan(builder, p0, p1, sag = 0.42, radius = 0.018, segs = 7) {
-  const pts = [];
-  for (let i = 0; i <= segs; i++) {
-    const t = i / segs;
-    pts.push([
-      THREE.MathUtils.lerp(p0[0], p1[0], t),
-      THREE.MathUtils.lerp(p0[1], p1[1], t) - 4 * sag * t * (1 - t),
-      THREE.MathUtils.lerp(p0[2], p1[2], t),
-    ]);
-  }
-  for (let i = 0; i < segs; i++) {
-    const a = pts[i], b = pts[i + 1];
-    const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
-    const len = Math.hypot(dx, dy, dz) || 1;
-    const nx = -dz / len * radius, nz = dx / len * radius;
-    builder.quad(
-      [a[0] - nx, a[1], a[2] - nz],
-      [a[0] + nx, a[1], a[2] + nz],
-      [b[0] + nx, b[1], b[2] + nz],
-      [b[0] - nx, b[1], b[2] - nz],
-      { color: 0x3b4442 },
-    );
-  }
+function createBayWaterMaterial() {
+  const mat = litMaterial({ color: 0x5ca4bd, roughness: 0.35, grid: false });
+  const prev = mat.onBeforeCompile;
+  const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
+  mat.onBeforeCompile = (shader, renderer) => {
+    if (prev) prev(shader, renderer);
+    shader.uniforms.uMeadowTime = meadowUniforms.uMeadowTime;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vWaterXZ;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vWaterXZ = (modelMatrix * vec4(position, 1.0)).xz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vWaterXZ;\n' + MEADOW_COMMON_GLSL)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float r1 = sin(vWaterXZ.x * 0.38 + uMeadowTime * 1.1 + mNoise(vWaterXZ * 0.14) * 3.0);
+        float r2 = cos(vWaterXZ.y * 0.45 - uMeadowTime * 0.85);
+        float sheen = smoothstep(0.45, 0.95, 0.5 + 0.5 * r1 * r2);
+        vec3 base = mix(vec3(0.11, 0.34, 0.44), vec3(0.19, 0.48, 0.58), sheen * 0.65);
+        vec3 cs = mix(vec3(1.0), meadowCloudShadow(vWaterXZ, uMeadowTime), 0.25);
+        diffuseColor.rgb = base * cs;`);
+  };
+  mat.customProgramCacheKey = () => prevKey() + '|hillside-bay-water-v1';
+  return mat;
 }
 
-function buildCoastalHillTerrain(root) {
-  const half = 122;
+// ==============================================================================
+// Terrain, Road Ribbon & Stylized Bay Builders
+// ==============================================================================
+function buildHillsideTerrain(root) {
   const step = 3.0;
   const coords = [];
-  for (let d = -half; d <= half + 0.01; d += step) coords.push(d);
+  for (let d = -HALF_EXTENT; d <= HALF_EXTENT + 0.01; d += step) coords.push(d);
   const n = coords.length;
   const eps = 0.7;
 
@@ -412,491 +508,383 @@ function buildCoastalHillTerrain(root) {
   return geo;
 }
 
-function inPavedOrLot(x, z) {
-  const dx = Math.abs(x - CX);
-  const dz = Math.abs(z - CZ);
-  // Inner sidewalk islands + central cut-through lane + 4 walled residential lots
-  if (dx <= INNER_SW_X + 0.15 && dz <= INNER_SW_Z + 0.15) return true;
-  // Perimeter asphalt roads (EW & NS)
-  if (dx <= 42.3 && Math.abs(dz - (INNER_SW_Z + ROAD_W * 0.5)) <= ROAD_W * 0.5 + 0.18) return true;
-  if (dz <= 38.3 && Math.abs(dx - (INNER_SW_X + ROAD_W * 0.5)) <= ROAD_W * 0.5 + 0.18) return true;
-  // Outer corner sidewalks & perimeter sidewalk ribbons
-  if (dx >= ROAD_OUT_X - 0.15 && dx <= ROAD_OUT_X + 4.95 && dz >= ROAD_OUT_Z - 0.15 && dz <= ROAD_OUT_Z + 4.95) return true;
-  if (dx >= ROAD_OUT_X - 0.15 && dx <= ROAD_OUT_X + 2.55 && dz <= INNER_SW_Z + 0.15) return true;
-  if (dz >= ROAD_OUT_Z - 0.15 && dz <= ROAD_OUT_Z + 2.55 && dx <= INNER_SW_X + 0.15) return true;
+function buildDirtRoadRibbon(root, trackTex, trackMat) {
+  const tex = trackTex(makeDirtRoadTexture());
+  const mat = trackMat(patchCloudShadowOnly(
+    litMaterial({ map: tex, vertexColors: true, roughness: 0.94, grid: false }),
+    0.34,
+    'hillside-dirt-road-v1',
+  ));
+
+  const n = ROAD_SAMPLES.length;
+  // 5 cross-section vertices per sample: outer-L skirt, lane-L, center, lane-R, outer-R skirt
+  const offsets = [-ROAD_HALF - 0.95, -ROAD_HALF, 0.0, ROAD_HALF, ROAD_HALF + 0.95];
+  const yDrop = [-0.14, 0.025, 0.032, 0.025, -0.14];
+  const cols = [0xb39a6e, 0xe8d9bc, 0xf7ecd4, 0xe8d9bc, 0xb39a6e];
+  const kStride = offsets.length;
+
+  const pos = new Float32Array(n * kStride * 3);
+  const uv = new Float32Array(n * kStride * 2);
+  const col = new Float32Array(n * kStride * 3);
+  const nor = new Float32Array(n * kStride * 3);
+  const indices = [];
+  const tmpColor = new THREE.Color();
+
+  for (let i = 0; i < n; i++) {
+    const pt = ROAD_SAMPLES[i];
+    const prev = ROAD_SAMPLES[Math.max(0, i - 1)];
+    const next = ROAD_SAMPLES[Math.min(n - 1, i + 1)];
+    const ds = Math.max(0.1, next.s - prev.s);
+    const slopeY = (next.y - prev.y) / ds;
+    const ny = new THREE.Vector3(-pt.tx * slopeY, 1.0, -pt.tz * slopeY).normalize();
+
+    for (let k = 0; k < kStride; k++) {
+      const idx = i * kStride + k;
+      const off = offsets[k];
+      pos[idx * 3] = pt.x + pt.nx * off;
+      pos[idx * 3 + 1] = pt.y + yDrop[k];
+      pos[idx * 3 + 2] = pt.z + pt.nz * off;
+      nor[idx * 3] = ny.x;
+      nor[idx * 3 + 1] = ny.y;
+      nor[idx * 3 + 2] = ny.z;
+      uv[idx * 2] = k / (kStride - 1);
+      uv[idx * 2 + 1] = pt.s * 0.16;
+      tmpColor.setHex(cols[k]);
+      col[idx * 3] = tmpColor.r;
+      col[idx * 3 + 1] = tmpColor.g;
+      col[idx * 3 + 2] = tmpColor.b;
+    }
+  }
+
+  for (let i = 0; i < n - 1; i++) {
+    for (let k = 0; k < kStride - 1; k++) {
+      const a = i * kStride + k;
+      const b = a + 1;
+      const d = (i + 1) * kStride + k;
+      const e = d + 1;
+      indices.push(a, b, d, b, e, d);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setIndex(indices);
+  geo.computeBoundingSphere();
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.receiveShadow = true;
+  mesh.castShadow = false;
+  mesh.matrixAutoUpdate = false;
+  mesh.updateMatrix();
+  root.add(mesh);
+  return geo;
+}
+
+// ==============================================================================
+// Hillside Grass Blades & Wildflowers (excluded from road, water & building pads)
+// ==============================================================================
+function isBlockedForFlora(x, z, roadDist) {
+  if (roadDist < ROAD_HALF + 0.95) return true;
+  if (coastalHillHeight(x, z) < BAY_WATER_Y + 0.35) return true;
+  const dx = x - CX;
+  const dz = z - CZ;
+  for (const b of BUILDING_SPECS) {
+    const lx = (dx - b.dx) * Math.cos(b.rotY) - (dz - b.dz) * Math.sin(b.rotY);
+    const lz = (dx - b.dx) * Math.sin(b.rotY) + (dz - b.dz) * Math.cos(b.rotY);
+    if (Math.abs(lx) < b.halfW + 0.85 && Math.abs(lz) < b.halfD + 0.85) return true;
+  }
   return false;
 }
 
-function buildCoastalMeadowFlora(root) {
-  const rng = new RNG(8421);
-  const grassTransforms = [];
-  const flowerTransforms = [];
-  const flowerColors = [];
+function buildHillsideMeadowFlora(root) {
+  const rng = new RNG('ghibli-hillside-flora-v2');
   const dummy = new THREE.Object3D();
 
-  const palette = [
-    new THREE.Color(0xfff8e6), // Cream daisy
-    new THREE.Color(0x8e86e8), // Meadow periwinkle
-    new THREE.Color(0xffe169), // Warm buttercup
-    new THREE.Color(0xb6c8f8), // Sky flower
-  ];
+  const maxGrass = 28000;
+  const gMat = new Float32Array(maxGrass * 16);
+  const gCol = new Float32Array(maxGrass * 3);
+  const col = new THREE.Color();
+  let gCount = 0;
 
-  // Dense lush perimeter grass & sweeping hillside blades
-  const totalGrass = 13500;
-  for (let i = 0; i < totalGrass; i++) {
-    const nearBias = i < 9200;
-    const ang = rng.next() * Math.PI * 2;
-    const dist = nearBias
-      ? 18.0 + Math.pow(rng.next(), 1.35) * 34.0
-      : 36.0 + rng.next() * 62.0;
-    const px = CX + Math.cos(ang) * dist;
-    const pz = CZ + Math.sin(ang) * dist;
-    if (inPavedOrLot(px, pz)) continue;
+  for (let i = 0; i < 48000 && gCount < maxGrass; i++) {
+    const x = CX + rng.range(-108, 108);
+    const z = CZ + rng.range(-104, 104);
+    const roadInfo = nearestRoadInfo(x, z);
+    if (isBlockedForFlora(x, z, roadInfo.dist)) continue;
 
-    const clumping = patchNoise(px, pz);
-    if (!nearBias && clumping < 0.22 && rng.chance(0.45)) continue;
+    // Dense near foreground valley & slopes, slightly thinner only at extreme periphery
+    const periphDist = Math.hypot((x - CX) * 0.9, (z - CZ) * 0.9);
+    if (periphDist > 75 && rng.next() > 0.65) continue;
 
-    const py = coastalHillHeight(px, pz) - 0.025;
-    const isHill = py > 0.25;
-    const wMul = (isHill ? 1.45 : 1.05) * (0.88 + rng.next() * 0.34);
-    const hMul = (0.78 + 0.56 * clumping) * (isHill ? 1.35 : 0.98) * (0.84 + rng.next() * 0.32);
+    const p = patchNoise(x, z);
+    if (p < 0.24 && rng.next() > 0.65) continue;
 
-    dummy.position.set(px, py, pz);
-    dummy.rotation.set((rng.next() - 0.5) * 0.18, rng.next() * Math.PI * 2, (rng.next() - 0.5) * 0.18);
-    dummy.scale.set(wMul, hMul, wMul);
+    const y = coastalHillHeight(x, z);
+    const heightScale = lerp(0.70, 1.38, smoothstep(0.24, 0.84, p)) * rng.range(0.86, 1.18);
+    const widthScale = rng.range(0.86, 1.24);
+    const leanScale = rng.range(0.88, 1.15);
+
+    dummy.position.set(x, y - 0.03, z);
+    dummy.rotation.set(0, rng.range(0, Math.PI * 2), 0);
+    dummy.scale.set(widthScale, heightScale, leanScale);
     dummy.updateMatrix();
-    grassTransforms.push(dummy.matrix.clone());
+    dummy.matrix.toArray(gMat, gCount * 16);
+
+    col.setHex(rng.pick([0xffffff, 0xf2fade, 0xe8f6d2, 0xfff8e4]));
+    gCol[gCount * 3] = col.r;
+    gCol[gCount * 3 + 1] = col.g;
+    gCol[gCount * 3 + 2] = col.b;
+    gCount++;
   }
 
-  // Soft grass/herb tufts tucked along the central 1m hedge row gap between N & S lots
-  for (let i = 0; i < 160; i++) {
-    const sx = rng.next() < 0.5 ? -1 : 1;
-    const px = CX + sx * (LANE_HALF + 0.4 + rng.next() * (LOT_W - 0.8));
-    const pz = CZ + (rng.next() - 0.5) * 0.65;
-    dummy.position.set(px, CURB_H - 0.02, pz);
-    dummy.rotation.set(0, rng.next() * Math.PI * 2, 0);
-    const s = 0.65 + rng.next() * 0.35;
-    dummy.scale.set(s, s * 0.85, s);
-    dummy.updateMatrix();
-    grassTransforms.push(dummy.matrix.clone());
-  }
-
-  const grassMesh = new THREE.InstancedMesh(getGrassGeometry(), getGrassMaterial(), grassTransforms.length);
-  for (let i = 0; i < grassTransforms.length; i++) grassMesh.setMatrixAt(i, grassTransforms[i]);
+  const gGeo = getGrassGeometry();
+  const grassMesh = new THREE.InstancedMesh(gGeo, getGrassMaterial(), gCount);
+  grassMesh.instanceMatrix.array.set(gMat.subarray(0, gCount * 16));
   grassMesh.instanceMatrix.needsUpdate = true;
+  grassMesh.instanceColor = new THREE.InstancedBufferAttribute(gCol.subarray(0, gCount * 3), 3);
   grassMesh.castShadow = false;
   grassMesh.receiveShadow = true;
   grassMesh.computeBoundingSphere();
   root.add(grassMesh);
 
-  // Clustered wildflowers on foreground slopes, road borders & row gap
-  for (let i = 0; i < 1400; i++) {
-    const ang = rng.next() * Math.PI * 2;
-    const dist = 18.0 + Math.pow(rng.next(), 1.35) * 42.0;
-    const px = CX + Math.cos(ang) * dist;
-    const pz = CZ + Math.sin(ang) * dist;
-    if (inPavedOrLot(px, pz)) continue;
+  // Clustered white & violet roadside wildflowers (matching reference screenshots!)
+  const maxFlowers = 1600;
+  const fMat = new Float32Array(maxFlowers * 16);
+  const fCol = new Float32Array(maxFlowers * 3);
+  let fCount = 0;
 
-    const cluster = patchNoise(px * 0.85 + 17.0, pz * 0.85 - 9.0);
-    if (cluster < 0.38 && rng.chance(0.78)) continue;
+  for (let c = 0; c < 130 && fCount < maxFlowers; c++) {
+    const cx = CX + rng.range(-88, 88);
+    const cz = CZ + rng.range(-88, 92);
+    const roadInfo = nearestRoadInfo(cx, cz);
+    if (isBlockedForFlora(cx, cz, roadInfo.dist)) continue;
+    // Favor foreground meadow & sunny hillside slopes
+    if (roadInfo.dist > 14 && rng.next() > 0.55) continue;
 
-    const py = coastalHillHeight(px, pz) - 0.02;
-    const sc = 0.85 + rng.next() * 0.55;
-    dummy.position.set(px, py, pz);
-    dummy.rotation.set((rng.next() - 0.5) * 0.24, rng.next() * Math.PI * 2, (rng.next() - 0.5) * 0.24);
-    dummy.scale.set(sc, sc * (0.68 + rng.next() * 0.45), sc);
-    dummy.updateMatrix();
-    flowerTransforms.push(dummy.matrix.clone());
+    const clusterHex = rng.pick([0xfff7e2, 0xfffdf2, 0x9eb8ff, 0xf7e38c]);
+    const count = rng.int(7, 16);
+    for (let j = 0; j < count && fCount < maxFlowers; j++) {
+      const ang = rng.range(0, Math.PI * 2);
+      const rad = Math.sqrt(rng.next()) * rng.range(1.2, 3.2);
+      const fx = cx + Math.cos(ang) * rad;
+      const fz = cz + Math.sin(ang) * rad;
+      const ri = nearestRoadInfo(fx, fz);
+      if (isBlockedForFlora(fx, fz, ri.dist)) continue;
 
-    const roll = rng.next();
-    flowerColors.push(roll < 0.44 ? palette[0] : roll < 0.78 ? palette[1] : roll < 0.92 ? palette[2] : palette[3]);
+      const fy = coastalHillHeight(fx, fz);
+      const sc = rng.range(0.84, 1.32);
+      dummy.position.set(fx, fy - 0.01, fz);
+      dummy.rotation.set(0, rng.range(0, Math.PI * 2), 0);
+      dummy.scale.set(sc, sc * rng.range(0.92, 1.15), sc);
+      dummy.updateMatrix();
+      dummy.matrix.toArray(fMat, fCount * 16);
+
+      col.setHex(clusterHex);
+      fCol[fCount * 3] = col.r;
+      fCol[fCount * 3 + 1] = col.g;
+      fCol[fCount * 3 + 2] = col.b;
+      fCount++;
+    }
   }
 
-  const fGeo = getFlowerGeometry().clone();
-  const tintArray = new Float32Array(flowerTransforms.length * 3);
-  for (let i = 0; i < flowerColors.length; i++) {
-    tintArray[i * 3] = flowerColors[i].r;
-    tintArray[i * 3 + 1] = flowerColors[i].g;
-    tintArray[i * 3 + 2] = flowerColors[i].b;
-  }
-  fGeo.setAttribute('aPetalTint', new THREE.InstancedBufferAttribute(tintArray, 3));
-
-  const flowerMesh = new THREE.InstancedMesh(fGeo, getFlowerMaterial(), flowerTransforms.length);
-  for (let i = 0; i < flowerTransforms.length; i++) flowerMesh.setMatrixAt(i, flowerTransforms[i]);
+  const fGeo = getFlowerGeometry();
+  const flowerMesh = new THREE.InstancedMesh(fGeo, getFlowerMaterial(), fCount);
+  flowerMesh.instanceMatrix.array.set(fMat.subarray(0, fCount * 16));
   flowerMesh.instanceMatrix.needsUpdate = true;
+  flowerMesh.instanceColor = new THREE.InstancedBufferAttribute(fCol.subarray(0, fCount * 3), 3);
   flowerMesh.castShadow = false;
-  flowerMesh.receiveShadow = true;
+  flowerMesh.receiveShadow = false;
   flowerMesh.computeBoundingSphere();
   root.add(flowerMesh);
 
-  return [grassMesh.geometry, fGeo];
+  return [gGeo, fGeo];
 }
 
-function buildCozyNeighborhoodAccents(root, lots) {
-  const accentMat = litMaterial({ vertexColors: true, grid: false, roughness: 0.88 });
-  const geo = new GeoBuilder();
-
-  // 1) Bright ripe citrus fruits tucked cleanly inside the 4 yard trees
-  const citrusSpots = [
-    [-0.36, 1.66, 0.24], [0.34, 1.84, -0.20], [0.10, 2.18, 0.34],
-    [-0.22, 1.98, -0.32], [0.42, 1.56, 0.24], [-0.34, 1.72, -0.18],
-  ];
-  const v = new THREE.Vector3();
-  const q = new THREE.Quaternion();
-  const axisY = new THREE.Vector3(0, 1, 0);
-
-  for (const lot of lots) {
-    q.setFromAxisAngle(axisY, lot.rotY);
-    const treeX = lot.citrus[0], treeZ = lot.citrus[1];
-    for (let k = 0; k < citrusSpots.length; k++) {
-      const [ox, oy, oz] = citrusSpots[k];
-      v.set(treeX + ox, oy, treeZ + oz).applyQuaternion(q);
-      const wx = lot.x + v.x, wy = CURB_H + v.y, wz = lot.z + v.z;
-      geo.cylinder(wx, wy - 0.045, wz, 0.058, 0.052, 0.095, { color: 0xf48c28, seg: 8 });
-    }
-
-    // Terracotta flower pot + blooms beside the right gate pillar (inside yard edge)
-    v.set(1.62, 0.0, 3.38).applyQuaternion(q);
-    const px = lot.x + v.x, py = CURB_H, pz = lot.z + v.z;
-    geo.cylinder(px, py, pz, 0.14, 0.18, 0.28, { color: 0xc86d4b, seg: 10 });
-    geo.cylinder(px, py + 0.24, pz, 0.19, 0.19, 0.06, { color: 0xd97d58, seg: 10 });
-    geo.cylinder(px, py + 0.29, pz, 0.16, 0.21, 0.18, { color: 0x5c9652, seg: 8 });
-    geo.box(px + 0.06, py + 0.47, pz + 0.04, 0.08, 0.06, 0.08, { color: 0xfff5d8 });
-    geo.box(px - 0.07, py + 0.45, pz - 0.05, 0.07, 0.06, 0.07, { color: 0xffd75e });
-  }
-
-  // 2) Sloped 3D striped fabric awning & pastel laundry on House A (小林宅, SW lot rotY = 0)
-  const sw = lots[0];
-  const awX = sw.x + 1.25;
-  const awZ0 = sw.z + 1.08, awZ1 = sw.z + 1.76;
-  const awY0 = CURB_H + 2.40, awY1 = CURB_H + 2.12;
-  for (let s = 0; s < 6; s++) {
-    const x0 = awX - 0.78 + s * 0.26, x1 = x0 + 0.26;
-    const col = s % 2 === 0 ? 0xd96e4c : 0xfaf0d8;
-    // Sloped top surface
-    geo.quad([x0, awY0, awZ0], [x0, awY1, awZ1], [x1, awY1, awZ1], [x1, awY0, awZ0], { color: col });
-    // Shaded underside
-    geo.quad([x1, awY0 - 0.05, awZ0], [x1, awY1 - 0.05, awZ1], [x0, awY1 - 0.05, awZ1], [x0, awY0 - 0.05, awZ0], { color: 0xb99d88 });
-    // Crisp front scalloped valence drop
-    geo.box((x0 + x1) * 0.5, awY1 - 0.075, awZ1 - 0.015, 0.255, 0.14, 0.04, { color: col });
-  }
-  for (const bx of [awX - 0.74, awX + 0.74]) {
-    geo.box(bx, awY1 + 0.06, awZ0 + 0.28, 0.045, 0.045, 0.58, { color: 0x6f523d });
-  }
-
-  // Cute pastel laundry hanging cleanly inside House A's 2F balcony rail (local x=0.4..1.9, y=3.68, z=1.72)
-  const laY = CURB_H + 3.55, laZ = sw.z + 1.72;
-  const items = [
-    { x: sw.x + 0.55, w: 0.32, h: 0.38, col: 0xfff4d9 },
-    { x: sw.x + 1.02, w: 0.28, h: 0.34, col: 0x9ac6d9 },
-    { x: sw.x + 1.48, w: 0.30, h: 0.36, col: 0xf0a68d },
-  ];
-  geo.box(sw.x + 1.02, laY + 0.21, laZ, 1.55, 0.025, 0.025, { color: 0x6f5845 });
-  for (const it of items) {
-    geo.box(it.x, laY, laZ, it.w, it.h, 0.03, { color: it.col });
-  }
-
-  // 3) Organic rounded leaf-puffs along the 1m planted row gap between N & S lots
-  for (const sx of [-1, 1]) {
-    for (let k = -3; k <= 3; k++) {
-      const bx = CX + sx * LOT_X_OFF + k * 1.15;
-      const bz = CZ + ((k % 2 === 0) ? 0.08 : -0.08);
-      const r = 0.34 + ((Math.abs(k) % 2) * 0.08);
-      const col = k % 2 === 0 ? 0x5c9652 : 0x6fa858;
-      geo.cylinder(bx, CURB_H + 0.12, bz, r, r * 0.72, 0.38, { color: col, seg: 8 });
-      if (k % 3 === 0) geo.box(bx + 0.08, CURB_H + 0.48, bz, 0.07, 0.06, 0.07, { color: 0xffe484 });
-    }
-  }
-
-  const mesh = geo.mesh(accentMat, 'coastal-ghibli-accents');
-  mesh.castShadow = false;
-  mesh.receiveShadow = true;
-  root.add(mesh);
-  return [accentMat, mesh.geometry];
-}
-
-export function createCoastalSample(housesGltf, _roundTreeTemplate) {
+// ==============================================================================
+// Main Slice Assembly
+// ==============================================================================
+export function createCoastalSample(villageGltf) {
   const root = new THREE.Group();
   root.name = 'coastal-sample';
 
-  const archMat = createGhibliArchMaterial();
-  const propMat = litMaterial({ vertexColors: true, grid: false, roughness: 0.90 });
+  const villageMat = createGhibliVillageMaterial();
   const kitMeshes = {};
-  housesGltf.scene.traverse(obj => {
+  villageGltf.scene.traverse(obj => {
     if (!obj.isMesh || !obj.name) return;
-    const isArch = obj.name.startsWith('House_') || obj.name.startsWith('Lot_Wall_');
-    obj.material = isArch ? archMat : propMat;
+    obj.material = villageMat;
     obj.castShadow = false;
     obj.receiveShadow = true;
     kitMeshes[obj.name] = obj;
   });
 
-  const disposables = [archMat, propMat];
+  const disposables = [villageMat];
   const trackTex = t => { disposables.push(t); return t; };
   const trackMat = m => { disposables.push(m); return m; };
 
-  // 1) Rolling Ghibli hillside terrain (flat under town terrace & 4 road corridors)
-  disposables.push(buildCoastalHillTerrain(root));
+  // 1) Rolling Ghibli hillside terrain (graded cleanly to cottages & winding road)
+  disposables.push(buildHillsideTerrain(root));
 
-  // 2) Textured perimeter asphalt loop + corner intersection with drifting cloud shadows
-  const asphaltTex = trackTex(makeAsphaltTexture());
-  const asphaltMat = trackMat(patchCloudShadowOnly(
-    litMaterial({ map: asphaltTex, roughness: 0.94, grid: false }),
-    0.30,
-    'coastal-asphalt-cloud-v1',
-  ));
-  const asphaltGeo = new GeoBuilder();
-  asphaltGeo.box(CX, -0.012, CZ + INNER_SW_Z + ROAD_W * 0.5, 84, 0.024, ROAD_W, { color: 0xffffff });
-  asphaltGeo.box(CX, -0.012, CZ - INNER_SW_Z - ROAD_W * 0.5, 84, 0.024, ROAD_W, { color: 0xffffff });
-  asphaltGeo.box(CX - INNER_SW_X - ROAD_W * 0.5, -0.012, CZ, ROAD_W, 0.024, 76, { color: 0xffffff });
-  asphaltGeo.box(CX + INNER_SW_X + ROAD_W * 0.5, -0.012, CZ, ROAD_W, 0.024, 76, { color: 0xffffff });
-  const asphaltMesh = asphaltGeo.mesh(asphaltMat, 'coastal-asphalt');
-  asphaltMesh.receiveShadow = true;
-  root.add(asphaltMesh);
+  // 2) Warm sand-ochre dirt road ribbon climbing from valley up to hilltop windmill plaza
+  disposables.push(buildDirtRoadRibbon(root, trackTex, trackMat));
 
-  // 3) Tiled sidewalks + central cut-through stone lane with subtle cloud shadow
-  const sidewalkTex = trackTex(makeSidewalkTexture());
-  const sidewalkMat = trackMat(patchCloudShadowOnly(
-    litMaterial({ map: sidewalkTex, roughness: 0.92, grid: false }),
-    0.34,
-    'coastal-sidewalk-cloud-v1',
-  ));
-  const swGeo = new GeoBuilder();
-  const islandW = INNER_SW_X - LANE_HALF; // 10.8m
-  const islandCenterX = LANE_HALF + islandW * 0.5; // 6.6m
-  for (const sx of [-1, 1]) {
-    swGeo.box(CX + sx * islandCenterX, CURB_H * 0.5, CZ, islandW, CURB_H, INNER_SW_Z * 2, { color: 0xffffff });
-  }
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
-      swGeo.box(CX + sx * (ROAD_OUT_X + 2.4), CURB_H * 0.5, CZ + sz * (ROAD_OUT_Z + 2.4), 4.8, CURB_H, 4.8, { color: 0xf4ecd8 });
+  // 3) Serene stylized coastal bay water tucked into the western cove
+  const bayMat = trackMat(createBayWaterMaterial());
+  const bayGeo = new THREE.PlaneGeometry(116, 152, 1, 1);
+  bayGeo.rotateX(-Math.PI / 2);
+  disposables.push(bayGeo);
+  const bayMesh = new THREE.Mesh(bayGeo, bayMat);
+  bayMesh.position.set(CX - 66, BAY_WATER_Y, CZ + 2);
+  bayMesh.receiveShadow = true;
+  bayMesh.castShadow = false;
+  root.add(bayMesh);
+
+  // 4) Grounded contact shadow pad material under cottages/windmill
+  const contactGeo = new THREE.PlaneGeometry(10.5, 8.6);
+  contactGeo.rotateX(-Math.PI / 2);
+  disposables.push(contactGeo);
+
+  // Place unified red-roof cottages & Hero Rotating Coastal Windmill
+  let bladesMesh = null;
+  for (const b of BUILDING_SPECS) {
+    const src = kitMeshes[b.mesh];
+    if (!src) continue;
+    const holder = new THREE.Group();
+    const wx = CX + b.dx;
+    const wz = CZ + b.dz;
+    holder.position.set(wx, b.baseY - 0.12, wz);
+    holder.rotation.y = b.rotY;
+
+    const body = src.clone();
+    holder.add(body);
+
+    if (b.kind === 'windmill' && kitMeshes.Ghibli_Windmill_Blades) {
+      bladesMesh = kitMeshes.Ghibli_Windmill_Blades.clone();
+      // Exact hub coordinates printed by hillside-village.py glTF export
+      bladesMesh.position.set(0.0, 10.65, 2.52);
+      holder.add(bladesMesh);
     }
-    swGeo.box(CX + sx * (ROAD_OUT_X + 1.2), CURB_H * 0.5, CZ, 2.4, CURB_H, INNER_SW_Z * 2, { color: 0xf4ecd8 });
-  }
-  for (const sz of [-1, 1]) {
-    swGeo.box(CX, CURB_H * 0.5, CZ + sz * (ROAD_OUT_Z + 1.2), INNER_SW_X * 2, CURB_H, 2.4, { color: 0xf4ecd8 });
-  }
-  swGeo.box(CX, 0.008, CZ, LANE_HALF * 2, 0.016, INNER_SW_Z * 2 + 0.12, { color: 0xd9cdb6 });
-  const swMesh = swGeo.mesh(sidewalkMat, 'coastal-sidewalk');
-  swMesh.receiveShadow = true;
-  root.add(swMesh);
-
-  // 4) Road markings, crosswalks, curbs, soil strip & overhead utility wires
-  const detailMat = trackMat(litMaterial({ vertexColors: true, grid: false, roughness: 0.90 }));
-  const det = new GeoBuilder();
-  const roadEdgeS = CZ + INNER_SW_Z + ROAD_W * 0.5;
-  const roadEdgeN = CZ - INNER_SW_Z - ROAD_W * 0.5;
-  const roadEdgeW = CX - INNER_SW_X - ROAD_W * 0.5;
-  const roadEdgeE = CX + INNER_SW_X + ROAD_W * 0.5;
-
-  for (let k = -39; k <= 39; k += 2.6) {
-    const wx = CX + k;
-    if (Math.abs(wx - roadEdgeW) > 3.6 && Math.abs(wx - roadEdgeE) > 3.6) {
-      det.box(wx, 0.008, roadEdgeS, 1.35, 0.012, 0.11, { color: CITY_PALETTE.roadPaint });
-      det.box(wx, 0.008, roadEdgeN, 1.35, 0.012, 0.11, { color: CITY_PALETTE.roadPaint });
-    }
-  }
-  for (let k = -34; k <= 34; k += 2.6) {
-    const wz = CZ + k;
-    if (Math.abs(wz - roadEdgeS) > 3.6 && Math.abs(wz - roadEdgeN) > 3.6) {
-      det.box(roadEdgeW, 0.008, wz, 0.11, 0.012, 1.35, { color: CITY_PALETTE.roadPaint });
-      det.box(roadEdgeE, 0.008, wz, 0.11, 0.012, 1.35, { color: CITY_PALETTE.roadPaint });
-    }
-  }
-  for (let i = -3; i <= 3; i++) {
-    det.box(CX - INNER_SW_X + 0.8, 0.008, roadEdgeS + i * 0.72, 1.4, 0.012, 0.34, { color: CITY_PALETTE.roadPaint });
-    det.box(CX - ROAD_OUT_X - 0.8, 0.008, roadEdgeS + i * 0.72, 1.4, 0.012, 0.34, { color: CITY_PALETTE.roadPaint });
-    det.box(roadEdgeW + i * 0.72, 0.008, CZ + INNER_SW_Z - 0.8, 0.34, 0.012, 1.4, { color: CITY_PALETTE.roadPaint });
-    det.box(roadEdgeW + i * 0.72, 0.008, CZ + ROAD_OUT_Z + 0.8, 0.34, 0.012, 1.4, { color: CITY_PALETTE.roadPaint });
-  }
-  for (const sx of [-1, 1]) {
-    const x0 = CX + sx * (LANE_HALF + LOT_W + SW_WIDTH - 0.12);
-    det.box(x0, CURB_H * 0.55, CZ, 0.24, CURB_H * 1.06, INNER_SW_Z * 2, { color: 0xeee3cc });
-    det.box(CX + sx * islandCenterX, CURB_H * 0.55, CZ + INNER_SW_Z - 0.12, islandW, CURB_H * 1.06, 0.24, { color: 0xeee3cc });
-    det.box(CX + sx * islandCenterX, CURB_H * 0.55, CZ - INNER_SW_Z + 0.12, islandW, CURB_H * 1.06, 0.24, { color: 0xeee3cc });
-  }
-  // Low soil strip under the organic hedge puffs between North & South lots
-  for (const sx of [-1, 1]) {
-    det.box(CX + sx * LOT_X_OFF, CURB_H + 0.08, CZ, LOT_W - 0.4, 0.16, 0.78, { color: 0x74583f });
+    root.add(holder);
   }
 
-  const poleA = [CX - 11.4, CURB_H, CZ + 4.0];
-  const poleB = [CX - 11.4, CURB_H, CZ + 18.0];
-  const poleC = [CX + 11.4, CURB_H, CZ + 10.2];
-  for (const ox of [-0.66, 0.0, 0.66]) {
-    addOverheadSpan(det, [poleA[0] + ox, CURB_H + 6.38, poleA[2]], [poleB[0] + ox, CURB_H + 6.38, poleB[2]], 0.48);
-  }
-  addOverheadSpan(det, [poleA[0], CURB_H + 6.38, poleA[2] + 0.1], [poleC[0], CURB_H + 6.38, poleC[2]], 0.75);
-
-  const detailMesh = det.mesh(detailMat, 'coastal-details');
-  detailMesh.receiveShadow = true;
-  root.add(detailMesh);
-
-  // 5) Assemble the 2x2 grid of 4 walled detached houses + AC units + gate nameplates + Ghibli yard citrus trees
-  const contactTex = trackTex(makeContactTex());
-  const contactMat = trackMat(new THREE.MeshBasicMaterial({ map: contactTex, transparent: true, depthWrite: false }));
-  const signKit = new SignKit({ rng: new RNG(4021), mode: 'lit', storybook: true, density: 1 });
-
-  const lots = [
-    {
-      name: '小林宅', sub: '101',
-      x: CX - LOT_X_OFF, z: CZ + LOT_Z_OFF, rotY: 0,
-      house: 'House_A', wall: 'Lot_Wall_Cream',
-      citrus: [-2.8, 2.3], ac: [-3.14, 1.45, -1.25, -Math.PI / 2],
-    },
-    {
-      name: '陈家', sub: '102',
-      x: CX + LOT_X_OFF, z: CZ + LOT_Z_OFF, rotY: 0,
-      house: 'House_B', wall: 'Lot_Wall_Brick',
-      citrus: [2.9, 2.5], ac: [3.09, 1.35, -1.10, Math.PI / 2],
-    },
-    {
-      name: '佐藤宅', sub: '103',
-      x: CX - LOT_X_OFF, z: CZ - LOT_Z_OFF, rotY: -Math.PI / 2,
-      house: 'House_C', wall: 'Lot_Wall_Timber',
-      citrus: [-2.5, 2.5], ac: [2.49, 1.35, -1.65, Math.PI / 2],
-    },
-    {
-      name: '林家', sub: '104',
-      x: CX + LOT_X_OFF, z: CZ - LOT_Z_OFF, rotY: Math.PI / 2,
-      house: 'House_B', wall: 'Lot_Wall_Cream',
-      citrus: [2.7, 2.4], ac: [-3.04, 1.35, -1.25, -Math.PI / 2],
-    },
-  ];
-
-  const yardCitrusEntries = [];
-  const axisY = new THREE.Vector3(0, 1, 0);
-  const vTmp = new THREE.Vector3();
-  const qTmp = new THREE.Quaternion();
-
-  const placeProp = (meshName, x, y, z, rotY = 0, scale = 1) => {
-    const src = kitMeshes[meshName];
-    if (!src) return null;
-    const clone = src.clone();
-    clone.position.set(x, y, z);
-    clone.rotation.y = rotY;
-    clone.scale.setScalar(scale);
-    root.add(clone);
-    return clone;
+  // 5) Hanging-lantern Signposts at key valley & hilltop landmarks
+  const staticGeos = [];
+  const objTmp = new THREE.Object3D();
+  const collectStaticProp = (name, x, y, z, rotY = 0, pitch = 0, scale = 1) => {
+    const src = kitMeshes[name];
+    if (!src) return;
+    objTmp.position.set(x, y, z);
+    objTmp.rotation.order = 'YXZ';
+    objTmp.rotation.y = rotY;
+    objTmp.rotation.x = pitch;
+    objTmp.scale.setScalar(scale);
+    objTmp.updateMatrix();
+    const g = src.geometry.clone();
+    g.applyMatrix4(objTmp.matrix);
+    staticGeos.push(g);
   };
 
-  for (const lot of lots) {
-    const lotGroup = new THREE.Group();
-    lotGroup.position.set(lot.x, CURB_H, lot.z);
-    lotGroup.rotation.y = lot.rotY;
-
-    const houseMesh = kitMeshes[lot.house].clone();
-    const wallMesh = kitMeshes[lot.wall].clone();
-    lotGroup.add(houseMesh, wallMesh);
-
-    const housePad = new THREE.Mesh(new THREE.PlaneGeometry(7.6, 6.4), contactMat);
-    housePad.rotation.x = -Math.PI / 2;
-    housePad.position.set(0, 0.012, -1.15);
-    lotGroup.add(housePad);
-
-    const ac = kitMeshes.Prop_ACUnit.clone();
-    ac.position.set(lot.ac[0], lot.ac[1], lot.ac[2]);
-    ac.rotation.y = lot.ac[3];
-    lotGroup.add(ac);
-
-    root.add(lotGroup);
-
-    // Leaf-card citrus tree in each yard
-    qTmp.setFromAxisAngle(axisY, lot.rotY);
-    vTmp.set(lot.citrus[0], 0, lot.citrus[1]).applyQuaternion(qTmp);
-    yardCitrusEntries.push({
-      x: lot.x + vTmp.x,
-      y: CURB_H,
-      z: lot.z + vTmp.z,
-      rotY: lot.rotY + lot.x * 0.4,
-      sx: 1.0,
-      sy: 1.0,
-      sz: 1.0,
-      colorHex: 0xffffff,
-      variant: 'citrus',
-    });
-
-    const localMount = new THREE.Vector3(1.18, CURB_H + 1.12, 4.162);
-    localMount.applyAxisAngle(axisY, lot.rotY);
-    signKit.add(
-      {
-        kind: 'plaque',
-        style: 'door',
-        text: lot.name,
-        sub: lot.sub,
-        w: 0.42,
-        h: 0.28,
-        bg: 0x2c5c8f,
-        fg: 0xffffff,
-        storybook: true,
-        emit: 0,
-      },
-      { x: lot.x + localMount.x, y: localMount.y, z: lot.z + localMount.z, rotY: lot.rotY },
-    );
+  for (const [sVal, sideOff, yawOff] of [[32, 3.8, -0.4], [84, -3.7, 0.85], [166, 3.9, 1.2]]) {
+    const pt = hillRoadPoint(sVal);
+    const sx = pt.x + pt.nx * sideOff;
+    const sz = pt.z + pt.nz * sideOff;
+    const src = kitMeshes.Ghibli_Signpost;
+    if (src) {
+      const clone = src.clone();
+      clone.position.set(sx, coastalHillHeight(sx, sz) - 0.04, sz);
+      clone.rotation.y = pt.yaw + yawOff;
+      root.add(clone);
+    }
   }
 
-  root.add(signKit.build());
+  // 6) Timber post-and-rail roadside guardrails along the outer uphill curve (s = 62..136m)
+  for (let s = 62; s <= 136; s += 4.0) {
+    const pt = hillRoadPoint(s);
+    const edgeOff = -3.35; // Outer valley drop-off side
+    const fx = pt.x + pt.nx * edgeOff;
+    const fz = pt.z + pt.nz * edgeOff;
+    const fy = coastalHillHeight(fx, fz);
+    collectStaticProp('Ghibli_Fence_Seg', fx, fy - 0.05, fz, pt.yaw - Math.PI * 0.5);
+  }
 
-  // 6) Street corner props
-  placeProp('Prop_VendingMachine', CX - 10.65, CURB_H, CZ + 6.40, -Math.PI * 0.5);
-  placeProp('Prop_CornerMirror', CX - 11.62, CURB_H, CZ + 10.35, -Math.PI * 0.25);
-  placeProp('Prop_UtilityPole', poleA[0], poleA[1], poleA[2], Math.PI * 0.5);
-  placeProp('Prop_UtilityPole', poleB[0], poleB[1], poleB[2], Math.PI * 0.5);
-  placeProp('Prop_UtilityPole', poleC[0], poleC[1], poleC[2], 0);
+  // 7) Mossy boulder clusters grounding bends & ridge flanks
+  for (const [rx, rz, rYaw, rScale] of [
+    [-22, 54, 0.4, 1.05],
+    [18, 22, 1.9, 1.15],
+    [32, -16, 2.7, 0.95],
+    [-38, -28, 1.1, 1.25],
+    [-46, 12, 0.2, 1.20],
+    [-8, -28, 2.3, 0.90],
+  ]) {
+    const wx = CX + rx;
+    const wz = CZ + rz;
+    collectStaticProp('Ghibli_Rock_Cluster', wx, coastalHillHeight(wx, wz) - 0.08, wz, rYaw, 0, rScale);
+  }
 
-  // 7) Lush GPU-instanced meadow grass & wildflowers + cozy neighborhood accents
-  for (const d of buildCoastalMeadowFlora(root)) disposables.push(d);
-  for (const d of buildCozyNeighborhoodAccents(root, lots)) disposables.push(d);
+  if (staticGeos.length) {
+    const mergedPropsGeo = mergeGeometries(staticGeos, false);
+    for (const g of staticGeos) g.dispose();
+    disposables.push(mergedPropsGeo);
+    const mergedPropsMesh = new THREE.Mesh(mergedPropsGeo, villageMat);
+    mergedPropsMesh.receiveShadow = true;
+    mergedPropsMesh.castShadow = false;
+    mergedPropsMesh.matrixAutoUpdate = false;
+    mergedPropsMesh.updateMatrix();
+    root.add(mergedPropsMesh);
+  }
 
-  // 8) Ghibli leaf-card perimeter, hillside & yard citrus trees (replaces plastic broccoli spheres)
-  const treeCoords = [
-    // Perimeter neighborhood trees
-    [CX - 22.5, CZ + 21.5, 0.3, 1.05],
-    [CX - 23.0, CZ - 20.5, 1.7, 1.12],
-    [CX + 23.0, CZ + 21.0, 2.4, 1.02],
-    [CX + 23.0, CZ - 20.5, 3.8, 1.15],
-    [CX - 6.0, CZ - 23.5, 1.1, 1.08],
-    [CX + 8.0, CZ - 23.5, 2.9, 1.10],
-    [CX + 25.5, CZ - 3.0, 4.2, 1.05],
-    [CX + 30.5, CZ + 21.5, 0.9, 1.12],
-    [CX + 34.5, CZ + 7.0, 2.1, 1.06],
-    [CX + 23.5, CZ - 29.0, 3.1, 1.14],
-    [CX - 23.0, CZ - 31.0, 4.5, 1.08],
-    [CX - 34.5, CZ + 7.5, 1.4, 1.10],
-    // Sweeping hillside grove behind & flanking the town terrace
-    [CX - 38.0, CZ - 38.0, 0.7, 1.32],
-    [CX - 26.0, CZ - 48.0, 2.2, 1.40],
-    [CX - 8.0, CZ - 52.0, 3.5, 1.28],
-    [CX + 12.0, CZ - 50.0, 1.9, 1.38],
-    [CX + 32.0, CZ - 44.0, 4.1, 1.30],
-    [CX + 48.0, CZ - 28.0, 0.4, 1.26],
-    [CX + 52.0, CZ - 6.0, 2.7, 1.34],
-    [CX + 46.0, CZ + 26.0, 1.2, 1.24],
-    [CX - 46.0, CZ - 22.0, 3.9, 1.28],
-    [CX - 48.0, CZ + 22.0, 0.8, 1.22],
-    [CX + 26.0, CZ + 44.0, 2.5, 1.32],
-    [CX - 24.0, CZ + 46.0, 4.4, 1.25],
+  // 8) Disciplined Clustered Ghibli Leaf-Card Groves (leaving wide open sunlit grass slopes!)
+  const groveCenters = [
+    // Grove 1: Foreground left valley knoll
+    { x: -34, z: 54, count: 5, spread: 11, scale: [0.95, 1.22] },
+    // Grove 2: Mid-valley bend hollow
+    { x: 16, z: 16, count: 4, spread: 8.5, scale: [0.92, 1.16] },
+    // Grove 3: Eastern slope behind mid-climb cottages
+    { x: 60, z: -2, count: 6, spread: 14, scale: [1.05, 1.32] },
+    // Grove 4: Hilltop windmill ridge backdrop
+    { x: -38, z: -70, count: 7, spread: 16, scale: [1.02, 1.30] },
+    { x: 10, z: -76, count: 5, spread: 12, scale: [1.04, 1.28] },
+    // Grove 5: Coastal bay grassy point
+    { x: -50, z: -18, count: 4, spread: 10, scale: [0.98, 1.20] },
   ];
-
-  const treeEntries = [...yardCitrusEntries];
-  for (const [tx, tz, rotY, sc] of treeCoords) {
-    treeEntries.push({
-      x: tx,
-      y: coastalHillHeight(tx, tz),
-      z: tz,
-      rotY,
-      sx: sc,
-      sy: sc * 0.98,
-      sz: sc,
-      colorHex: 0xffffff,
-    });
+  const treeRng = new RNG('hillside-clustered-groves');
+  const treeEntries = [];
+  for (const grove of groveCenters) {
+    for (let k = 0; k < grove.count; k++) {
+      const ang = (k / grove.count) * Math.PI * 2 + treeRng.range(-0.35, 0.35);
+      const r = k === 0 ? treeRng.range(0, 2.2) : treeRng.range(3.6, grove.spread);
+      const tx = CX + grove.x + Math.cos(ang) * r;
+      const tz = CZ + grove.z + Math.sin(ang) * r;
+      const ri = nearestRoadInfo(tx, tz);
+      if (isBlockedForFlora(tx, tz, ri.dist) || ri.dist < ROAD_HALF + 3.2) continue;
+      const sc = treeRng.range(grove.scale[0], grove.scale[1]);
+      treeEntries.push({
+        x: tx,
+        y: coastalHillHeight(tx, tz) - 0.06,
+        z: tz,
+        rotY: treeRng.range(0, Math.PI * 2),
+        sx: sc,
+        sy: sc * treeRng.range(0.95, 1.05),
+        sz: sc,
+        colorHex: 0xffffff,
+      });
+    }
   }
   placeStylizedTrees(root, treeEntries);
 
+  // 9) Wind-swept sunlit grass blades & wildflowers across open hillside slopes
+  for (const d of buildHillsideMeadowFlora(root)) disposables.push(d);
+
   return {
     root,
+    update(time) {
+      if (bladesMesh) {
+        bladesMesh.rotation.z = -time * 0.45;
+      }
+    },
     dispose() {
-      signKit.dispose();
       for (const d of disposables) d.dispose();
     },
   };

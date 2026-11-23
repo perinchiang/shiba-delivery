@@ -30,7 +30,7 @@ export async function createWorld(renderer, onProgress) {
     new URL('../../art/bun-shop/steamers.glb', import.meta.url).href,
     new URL('../../art/countryside/bridge-buffalo.glb', import.meta.url).href,
     new URL('../../art/countryside/countryside-kit.glb', import.meta.url).href,
-    new URL('../../art/town/coastal-houses.glb', import.meta.url).href,
+    new URL('../../art/town/hillside-village.glb', import.meta.url).href,
   ];
   const progress = new Array(assetUrls.length).fill(0);
   const reportDownload = () => {
@@ -38,7 +38,7 @@ export async function createWorld(renderer, onProgress) {
     onProgress?.(0.08 + avg * 0.77, `正在下载 3D 资源 (${Math.round(avg * 100)}%)…`);
   };
   reportDownload();
-  const [courier, motorcycle, display, bridgeBuffalo, countryKitGltf, coastalHousesGltf] = await Promise.all(
+  const [courier, motorcycle, display, bridgeBuffalo, countryKitGltf, hillsideVillageGltf] = await Promise.all(
     assetUrls.map((url, idx) =>
       loader.loadAsync(url, event => {
         if (event.lengthComputable && event.total > 0) {
@@ -71,7 +71,7 @@ export async function createWorld(renderer, onProgress) {
   const rooms = { pharmacy: createPharmacy(), bakery: createBunRoom(display.scene.clone(true)) };
   const street = createStreet(display.scene, countryKit.Tree_Round);
   const country = createCountryside(countryKit);
-  const coastalSample = createCoastalSample(coastalHousesGltf, countryKit.Tree_Round);
+  const coastalSample = createCoastalSample(hillsideVillageGltf);
   country.root.add(coastalSample.root);
   bridgeBuffalo.scene.traverse(node => {
     if (node.isMesh) node.castShadow = node.receiveShadow = true;
@@ -111,7 +111,7 @@ export async function createWorld(renderer, onProgress) {
   const renderStyle = createRenderStyle({ renderer, scene, shiba, scooter, street, country, rooms, timeOfDay });
   registerRendererControls(renderer, { timeOfDay, renderStyle });
   return {
-    scene, country, camera, chase,
+    scene, country, coastalSample, camera, chase,
     sun: timeOfDay.sun, hemi: timeOfDay.hemi, timeOfDay, renderStyle,
     rooms, street, shiba, scooter, looseBag, marker, contact,
   };

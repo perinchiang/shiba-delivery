@@ -61,7 +61,8 @@ export const landmarks = [
   { id: 'bridge', name: '河边小桥', x: 914 },
   { id: 'village', name: '村口', x: 1191 },
 ];
-export function roadPlace(x) {
+export function roadPlace(x, z) {
+  if (z !== undefined && inCoastalSample(x, z)) return '海风坡道镇';
   if (x <= crossing.x-31) return '榕湾老街';
   if (Math.abs(x - crossing.x) < 31) return '城市十字路口';
   if (x < 210) return '镇口';

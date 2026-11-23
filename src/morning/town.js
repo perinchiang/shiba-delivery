@@ -1,6 +1,5 @@
 /** Build the exterior street and the pharmacy's separate walk-in room. Coordinates are in metres. */
 import * as THREE from 'three';
-import { placeInstances } from './kit-instances.js';
 import { RNG } from '../core/rng.js';
 import { bake, box, curve, cylinder, group, oval, piece, rod, sign } from './shapes.js';
 import { SignKit } from './sign-kit.js';
@@ -10,7 +9,8 @@ import { ear, parcel } from './rider.js';
 import { bunFacade, streetResident } from './orders.js';
 
 import { CURB_H, CURB_Z, treePitRadius, treePitZ, streetTreeXs } from './street-layout.js';
-import { CITY_PALETTE, OLD_STREET_TREE_SCALE } from './city-palette.js';
+import { CITY_PALETTE } from './city-palette.js';
+import { placeStylizedTrees } from './stylized-trees.js';
 const cream = 0xffecc5, wood = 0x986643, teal = 0x397d73;
 const glass = 0x547c77, glassLight = 0x86a9a0, charcoal = 0x485953;
 
@@ -77,7 +77,7 @@ function porch(g, residential) {
   }
 }
 
-function streetShop(g, spec, i, steamers, signKit, signPlacement = { x: spec.x, z: -2.12, rotY: 0, dir: 1 }) {
+function streetShop(g, spec, i, steamers, signKit, signPlacement = { x: spec.x, z: -2.12, rotY: 0, dir: 1 }, batch = true) {
   const { x, name, sub, wall, stripe, ink } = spec;
   const p = group(g, x, CURB_H, 0);
   const top = 7.35 + (i % 3) * 0.55;
@@ -120,7 +120,7 @@ function streetShop(g, spec, i, steamers, signKit, signPlacement = { x: spec.x, 
 
   if (steamers) {
     const door = buildBunShop(p, steamers);
-    bake(p);
+    if (batch) bake(p);
     return door;
   }
   if (signKit && signPlacement.dir === 1) {
@@ -159,8 +159,9 @@ function streetShop(g, spec, i, steamers, signKit, signPlacement = { x: spec.x, 
   if (name === '便民药店') {
     door.position.x = jambLeft;
     door.scale.set(1.78 / 1.21, 2.86 / 2.72, 1);
-    bake(door);
   }
+  bake(door);
+  door.traverse(o => { if (o.isMesh) o.castShadow = false; });
   box(p, 1.55, 0.018, -1.60, 1.43, 0.036, 0.48, 0xa98058);
   plant(p, -2.88, 0, -1.5, 0.85 + (i % 2) * 0.17, i % 2 === 0);
   plant(p, 2.77, 0, -1.56, 0.73, true);
@@ -239,7 +240,7 @@ function streetShop(g, spec, i, steamers, signKit, signPlacement = { x: spec.x, 
       ...spec.blade,
     }, { x: signPlacement.x + 2.90, y: CURB_H + 5.25, z: -2.12, rotY: 0 });
   }
-  bake(p);
+  if (batch) bake(p);
   return door;
 }
 
@@ -360,10 +361,11 @@ function treePits(parent) {
     }
   }
   bake(beds);
+  beds.traverse(o => { if (o.isMesh) o.castShadow = false; });
   return CURB_H + soilHeight + .01;
 }
 
-export function createStreet(steamers, banyan) {
+export function createStreet(steamers, _banyan) {
   const root = new THREE.Group();
   const road = group(root);
   box(road, 12, -0.17, 2, 80, 0.33, 23, CITY_PALETTE.asphalt);
@@ -387,26 +389,33 @@ export function createStreet(steamers, banyan) {
   const signKit = new SignKit({ rng: new RNG(2026), mode: 'lit', storybook: true, density: 1 });
   const doors = new Map();
   shops.forEach((shop, i) => {
-    const door = streetShop(shopSide, shop, i, shop.name === '榕记包子铺' ? steamers : null, signKit, { x: shop.x, z: -2.12, rotY: 0, dir: 1 });
+    const door = streetShop(shopSide, shop, i, shop.name === '榕记包子铺' ? steamers : null, signKit, { x: shop.x, z: -2.12, rotY: 0, dir: 1 }, false);
     doors.set(shop.name, door);
   });
+  const doorRefs = [];
+  for (const door of doors.values()) {
+    doorRefs.push([door, door.parent]);
+    door.removeFromParent();
+  }
+  bake(shopSide);
+  for (const [door, parent] of doorRefs) parent.add(door);
   shopSide.add(signKit.build());
   // The chase camera sees both sides of the road and the bend at its far end.
   const opposite = group(root, 27, 0, 7.05);
   opposite.rotation.y = Math.PI;
   ['海棠饼家', '榕湾照相馆', '街坊修鞋', '青禾书店', '莲记粉面', '顺风车行', '阿莲裁缝', '新桥茶庄'].forEach((name, i) => {
-    streetShop(opposite, { ...shops[i], name, sub: '' }, i);
+    streetShop(opposite, { ...shops[i], name, sub: '' }, i, null, null, { x: shops[i].x, z: -2.12, rotY: 0, dir: 1 }, false);
   });
+  bake(opposite);
   const far = group(root);
-  // Leave clearance beyond both ends of the playable street for the longer chase boom.
-  const eastTrees = group(root);
-  for (const x of [-19, 49.5]) {
-    const grove = [1.7, 5.9, 10.4].map((z, i) => [x, .12, z, i * 2.4, 1.05, 1.02, 1.05]);
-    placeInstances(x > 0 ? eastTrees : far, banyan, grove);
-  }
+  // Keep the east approach toward Crossing open, and frame the west end with a small Ghibli grove.
   box(far, 13, 0.07, 8.43, 68, 0.15, 2.78, 0xd3c2a4);
   bake(far);
-  bake(eastTrees);
+  placeStylizedTrees(far, [
+    { x: -18.8, y: 0.0, z: 2.0, rotY: 0.4, sx: 0.86, sy: 0.88, sz: 0.86, variant: 'compact' },
+    { x: -20.6, y: 0.0, z: 5.8, rotY: 1.9, sx: 0.96, sy: 0.94, sz: 0.96, variant: 'wide' },
+    { x: -18.2, y: 0.0, z: 9.8, rotY: 3.1, sx: 0.82, sy: 0.84, sz: 0.82, variant: 'compact' },
+  ]);
   const rng = new RNG('morning-roofs');
   const skyline = group(root);
   for (let i = -6; i <= 17; i++) {
@@ -415,18 +424,27 @@ export function createStreet(steamers, banyan) {
     for (let k = 0; k < 3; k++) box(skyline, x + k - 1, h - 1.1, -10.71 - i % 3, 0.45, 0.75, 0.07, 0x93afa3);
   }
   bake(skyline);
-  const soilTop = treePits(shopSide);
+  for (const g of [opposite, far, skyline, road]) {
+    g.traverse(o => { if (o.isMesh) o.castShadow = false; });
+  }
+  shopSide.traverse(o => { if (o.isMesh && o.material?.map) o.castShadow = false; });
+  treePits(shopSide);
   const streetTrees = streetTreeXs.map((x, i) => {
-    const scale = OLD_STREET_TREE_SCALE(i);
-    return [x, soilTop, treePitZ, .90 + i * 2.4, scale, scale, scale];
+    const scale = 0.62 + (i % 3) * 0.04;
+    return { x, y: CURB_H - 0.015, z: treePitZ, rotY: 0.90 + i * 2.4, sx: scale, sy: scale, sz: scale, variant: 'compact' };
   });
-  placeInstances(shopSide, banyan, streetTrees);
+  placeStylizedTrees(shopSide, streetTrees);
   const updateSteam = bunSteam(shopSide, bunFacade.x - 1.83, CURB_H + 1.67, -1.91);
   const cat = neighbor(shopSide, streetResident.point.x, CURB_H, streetResident.point.z - 0.40, false);
   cat.rotation.y = -0.23;
+  cat.traverse(o => { if (o.isMesh) o.castShadow = false; });
   const steam = [];
-  for (let i = 0; i < 4; i++) steam.push(oval(shopSide, 0, 0, 0, 0.07, 0.13, 0.07, 0xffebcb));
-  return { root, shopSide, opposite, eastTrees, doors, update(t) {
+  for (let i = 0; i < 4; i++) {
+    const puff = oval(shopSide, 0, 0, 0, 0.07, 0.13, 0.07, 0xffebcb);
+    puff.castShadow = false;
+    steam.push(puff);
+  }
+  return { root, shopSide, opposite, doors, update(t) {
     updateSteam(t);
     steam.forEach((puff, i) => {
       const life = (t * 0.53 + i * 0.25) % 1;
