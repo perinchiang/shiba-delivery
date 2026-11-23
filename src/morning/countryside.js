@@ -10,16 +10,19 @@ import { placeInstances } from './kit-instances.js';
 import { createCityCrossing } from './city-crossing.js';
 import { sign } from './shapes.js';
 import { addPaddies, fieldEnd, fieldStart, eastFieldStart, eastFieldEnd, updatePaddyEnv } from './paddy.js';
+import { addStylizedMeadow, updateMeadowEnv } from './stylized-meadow.js';
 import { buildCountryRoad } from './country-road.js';
 import { createRiverWater } from './country-water.js';
 
 import { harvestWeight, inHarvest } from './harvest-field.js';
 import skyStripUrl from '../../art/countryside/harvest-sky.jpg?url';
 
+const inStylizedMeadow = x => (x >= 136 && x < fieldStart) || x >= eastFieldEnd;
+
 const paint = litMaterial({ vertexColors: true, grid: false, roughness: 0.90 });
 // Upgraded cozy village cottage: fixes the degenerate-quad black gable bug, adds warm eaves,
 // shutters, stone plinths and low garden walls so cottages feel grounded like Old Street.
-function house(builder, x, z, side, rng) {
+function house(builder, x, z, side, rng, excludeRects) {
   const w = rng.range(5.0, 7.0), d = rng.range(4.3, 5.8), h = rng.range(2.9, 4.1);
   const wall = rng.pick([0xf3e4c2, 0xd4e2cf, 0xf0d6ad]);
   const roof = rng.pick([0x50726c, 0xb2684c, 0x6b7c74]);
@@ -98,6 +101,23 @@ function house(builder, x, z, side, rng) {
   const yardZ = front - side * 2.15;
   builder.box(x + 0.85, 0.34, yardZ, w * 0.62, 0.72, 0.24, { color: 0xeadac0 });
   builder.box(x + 0.85, 0.73, yardZ, w * 0.65, 0.11, 0.32, { color: roof });
+
+  if (excludeRects) {
+    const backZ = z + side * (d / 2 + 0.45);
+    const porchZ = z - side * (d / 2 + 1.35);
+    excludeRects.push({
+      minX: x - w / 2 - 0.45,
+      maxX: x + w / 2 + 0.45,
+      minZ: Math.min(backZ, porchZ),
+      maxZ: Math.max(backZ, porchZ),
+    });
+    excludeRects.push({
+      minX: x + 0.85 - w * 0.36,
+      maxX: x + 0.85 + w * 0.36,
+      minZ: yardZ - 0.32,
+      maxZ: yardZ + 0.32,
+    });
+  }
 }
 
 function waymark(group, builder, x, text, sub) {
@@ -109,8 +129,11 @@ function waymark(group, builder, x, text, sub) {
   plaque.rotation.y = -Math.PI / 2;
 }
 
-function villagePavilion(group, geo) {
+function villagePavilion(group, geo, excludeRects) {
   const x = roadEnd + 7, z = centerZ(roadEnd) + 2;
+  if (excludeRects) {
+    excludeRects.push({ minX: x - 3.6, maxX: x + 2.9, minZ: z - 4.4, maxZ: z + 4.4 });
+  }
   geo.box(x, -0.07, z, 5.2, 0.42, 8.2, { color: 0xb7aa8d });
   geo.box(x - 2.8, -0.03, z, 0.85, 0.22, 5.0, { color: 0xd4c4a2 });
   for (const dx of [-1.8, 1.8]) for (const dz of [-3.2, 3.2]) {
@@ -216,6 +239,7 @@ function buildChunk(start, end, kit) {
   const tufts = [];
   const flowers = [];
   const reeds = [];
+  const excludeRects = [];
 
   function ribbon(x, next, left, right, leftNext, rightNext, y0, y1, color) {
     const z = centerZ(x), z1 = centerZ(next);
@@ -246,7 +270,7 @@ function buildChunk(start, end, kit) {
         geo.quad(...fascia, { color: 0xbdb49a });
         continue;
       }
-      if (!inPaddy) {
+      if (!inPaddy && !inStylizedMeadow(x)) {
         // Warm fresh green village/town meadow outside the road skirt
         const s0 = width + 1.65, s1 = width1 + 1.65;
         const meadowCol = ((Math.floor(x / 18) + (side > 0 ? 1 : 0)) % 2 === 0) ? 0x76a856 : 0x6ca053;
@@ -297,7 +321,7 @@ function buildChunk(start, end, kit) {
 
   // Roadside organic edge-breakers: 3D grass tufts & wildflowers along both crumbling shoulders!
   for (let x = start + 1.5; x < end - 0.5; x += 2.6) {
-    if ((x >= 892 && x <= 952) || Math.abs(x - crossing.x) < 31 || x < 126) continue;
+    if (inStylizedMeadow(x) || (x >= 892 && x <= 952) || Math.abs(x - crossing.x) < 31 || x < 126) continue;
     for (const side of [-1, 1]) {
       if (!rng.chance(0.72)) continue;
       const px = x + rng.range(-0.9, 0.9);
@@ -344,16 +368,18 @@ function buildChunk(start, end, kit) {
     const z = centerZ(x), side = rng.sign();
     if (x < 194 || x > 1072) {
       const hz = z + side * rng.range(9.2, 13.8);
-      house(geo, x, hz, side, rng);
-      if (rng.chance(0.55)) house(geo, x + 2.5, z - side * rng.range(13.5, 22), -side, rng);
+      house(geo, x, hz, side, rng, excludeRects);
+      if (rng.chance(0.55)) house(geo, x + 2.5, z - side * rng.range(13.5, 22), -side, rng, excludeRects);
       // Warm cozy trees & yard wildflower tufts framing the cottages
       const ts = rng.range(0.95, 1.40);
       roundTrees.push([x - 3.5, -0.22, z - side * rng.range(7.2, 12.5), rng.range(0, Math.PI * 2), ts, ts * rng.range(0.92, 1.12), ts, 0xffffff]);
-      for (let f = 0; f < 3; f++) {
-        (f === 0 ? flowers : tufts).push([
-          x + rng.range(-3.5, 3.5), -0.22, hz - side * rng.range(3.2, 5.2),
-          rng.range(0, Math.PI * 2), 1.15, 1.15, 1.15, 0xffffff,
-        ]);
+      if (!inStylizedMeadow(x)) {
+        for (let f = 0; f < 3; f++) {
+          (f === 0 ? flowers : tufts).push([
+            x + rng.range(-3.5, 3.5), -0.22, hz - side * rng.range(3.2, 5.2),
+            rng.range(0, Math.PI * 2), 1.15, 1.15, 1.15, 0xffffff,
+          ]);
+        }
       }
     }
     // Scenic treeline dots across the open fields (keep clear of the golden corridor foreground)
@@ -431,7 +457,7 @@ function buildChunk(start, end, kit) {
 
   // Village turnaround pavilion & grand banyan cluster
   if (start < roadEnd && end === roadEnd) {
-    villagePavilion(group, geo);
+    villagePavilion(group, geo, excludeRects);
     const vz = centerZ(roadEnd);
     roundTrees.push([roadEnd + 7.5, -0.22, vz - 6.4, 0.8, 1.95, 1.75, 1.95, 0xffffff]);
     bankTrees.push([roadEnd + 11.0, -0.22, vz + 9.2, 2.1, 1.45, 1.45, 1.45, 0xffffff]);
@@ -439,8 +465,9 @@ function buildChunk(start, end, kit) {
       const ts = 1.45 + (i % 3) * 0.35;
       roundTrees.push([roadEnd + 22 + (i % 2) * 14, -0.22, vz - 36 + i * 12, i * 1.1, ts, ts * 1.05, ts, 0xf2f7eb]);
     }
-    geo.box(roadEnd + 29, -0.42, vz, 58, 0.36, 185, { color: 0x73a556 });
   }
+
+  addStylizedMeadow(group, start, end, excludeRects);
 
   if (start <= crossing.x && end > crossing.x) group.userData.updateSignals = createCityCrossing(group, kit?.Tree_Round);
   addStoneBridge(geo, start, end);
@@ -648,6 +675,7 @@ export function createCountryside(kit) {
     update(stateOrX, time, fogColor, fogDensity) {
       const x = typeof stateOrX === 'number' ? stateOrX : stateOrX.x;
       updatePaddyEnv(time, typeof stateOrX === 'number' ? null : stateOrX);
+      updateMeadowEnv(time);
       updateSky(time, x);
       river.update(time, fogColor, fogDensity);
 

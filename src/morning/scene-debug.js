@@ -82,6 +82,17 @@ export const sceneJumps = {
     state: { ...onCountryRoad(780), mode: 'walk', z: centerZ(780) + 3.05 },
     camera: { fov: 46, focus: [780, 0.48, centerZ(780) + 2.55], offset: [-4.2, 1.1, -4.8] },
   },
+  meadowRide: {
+    title: '草地小样·骑行', state: onCountryRoad(1118),
+  },
+  meadowWide: {
+    title: '草地小样·广角坡地', state: onCountryRoad(1130),
+    camera: { fov: 46, focus: [1148, 1.4, centerZ(1148) + 18], offset: [-24, 5.2, -16] },
+  },
+  meadowClose: {
+    title: '草地小样·草叶近景', state: onCountryRoad(1132),
+    camera: { fov: 44, focus: [1138, 0.35, centerZ(1138) + 7.2], offset: [-5.5, 0.95, -2.8] },
+  },
   pharmacy: { title: '药店门口', state: { order: pharmacy, mode: 'walk', phase: 'pickup',
     x: pharmacy.door.x, z: -.32, ...parked(pharmacy.door.x) } },
   counter: { title: '药店柜台', state: atCounter(pharmacy) },
