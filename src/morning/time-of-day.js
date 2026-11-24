@@ -3,6 +3,7 @@
 // scooter headlamp + fake additive ground light pools — zero extra real-time PointLights).
 import * as THREE from 'three';
 import { crossing, centerZ, roadHeight } from './country-route.js';
+import { COASTAL_TOWN, townSlopeY } from './coastal-town.js';
 import { CURB_H } from './street-layout.js';
 
 export const TOD_ORDER = Object.freeze(['morning', 'noon', 'dusk', 'night']);
@@ -302,26 +303,89 @@ function makeRadialPoolTexture() {
   return tex;
 }
 
+// Forward-projected dual-lobe scooter low-beam ground texture with smooth Gaussian angular feather
+// (zero harsh clip edges). PlaneGeometry.rotateX(-PI/2) maps canvas top (y=0, UV.y=1) to -Z (NEAR)
+// and canvas bottom (y=H, UV.y=0) to +Z (FAR ahead along the road).
 function makeHeadlightBeamTexture() {
+  const w = 128, h = 128;
   const canvas = document.createElement('canvas');
-  canvas.width = 64;
-  canvas.height = 128;
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext('2d');
-  const g = ctx.createRadialGradient(32, 112, 4, 32, 72, 68);
-  g.addColorStop(0.0, 'rgba(255, 245, 205, 0.92)');
-  g.addColorStop(0.45, 'rgba(255, 232, 175, 0.36)');
-  g.addColorStop(1.0, 'rgba(255, 220, 150, 0.0)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.moveTo(26, 122);
-  ctx.lineTo(4, 12);
-  ctx.quadraticCurveTo(32, 0, 60, 12);
-  ctx.lineTo(38, 122);
-  ctx.closePath();
-  ctx.fill();
+  const img = ctx.createImageData(w, h);
+  const d = img.data;
+  const smooth = (a, b, v) => {
+    const t = Math.max(0, Math.min(1, (v - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
+  let idx = 0;
+  for (let py = 0; py < h; py++) {
+    const fy = py / (h - 1); // 0 = near scooter, 1 = far ahead
+    // Smooth longitudinal envelope: soft entry near tyre, strong mid-throw, gentle far fade
+    const nearFade = smooth(0.01, 0.14, fy);
+    const farFade = Math.pow(1 - smooth(0.18, 1.0, fy), 1.35);
+    // Beam width widens smoothly along forward distance
+    const halfW = 0.08 + fy * 0.42;
+    const coreW = 0.05 + fy * 0.20;
+    for (let px = 0; px < w; px++) {
+      const fx = Math.abs(px / (w - 1) - 0.5); // 0 = centerline, 0.5 = edge
+      const outer = Math.pow(1 - smooth(0.0, halfW, fx), 1.85);
+      const core = Math.pow(1 - smooth(0.0, coreW, fx), 1.65) * Math.pow(1 - smooth(0.05, 0.78, fy), 1.25);
+      const intensity = Math.min(1, nearFade * farFade * (outer * 0.68 + core * 0.58));
+      // Warm tungsten white in core -> golden amber at outer feather
+      const coreMix = Math.min(1, core * 1.15);
+      d[idx++] = 255;
+      d[idx++] = Math.round(226 + 26 * coreMix);
+      d[idx++] = Math.round(166 + 66 * coreMix);
+      d[idx++] = Math.round(intensity * 255);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
+}
+
+function createVolumetricBeamMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(0xfff1c9) },
+      uIntensity: { value: 0.0 },
+    },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      varying vec3 vNormalV;
+      varying vec3 vViewPos;
+      void main() {
+        vUv = uv;
+        vNormalV = normalize(normalMatrix * normal);
+        vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+        vViewPos = -mvPos.xyz;
+        gl_Position = projectionMatrix * mvPos;
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uColor;
+      uniform float uIntensity;
+      varying vec2 vUv;
+      varying vec3 vNormalV;
+      varying vec3 vViewPos;
+      void main() {
+        // vUv.y = 1 at narrow headlamp lens, 0 at far open mouth
+        float dist = 1.0 - vUv.y;
+        float along = smoothstep(0.0, 0.06, dist) * pow(max(0.0, 1.0 - dist), 1.35);
+        vec3 n = normalize(vNormalV);
+        vec3 v = normalize(vViewPos);
+        // Grazing-angle fresnel fade eliminates hard silhouette edges from every angle
+        float fresnel = pow(abs(dot(n, v)), 1.25);
+        float alpha = along * fresnel * uIntensity;
+        if (alpha < 0.002) discard;
+        gl_FragColor = vec4(uColor * alpha, alpha);
+      }`,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+  });
 }
 
 function patchSkyAndClouds(skyRoot) {
@@ -501,7 +565,18 @@ function buildNightFixtures(scene) {
 
   // Old Street shopfront & porch spill pools
   for (const sx of [-12, -5, 2, 9, 16, 23, 30, 37, 44]) {
-    pools.push([sx, CURB_H + 0.035, -0.75, 5.4, 3.6]);
+    pools.push([sx, CURB_H + 0.035, -0.75, 5.4, 3.6, 0]);
+  }
+  // Hub #1 Coastal Hillside Town streetlamp pools (follows slope pitch cleanly, 0 extra draw calls)
+  for (const dz of [-52, -32, -12, 8, 36, 54.5]) {
+    const y0 = townSlopeY(dz);
+    const pitch = Math.atan2(townSlopeY(dz + 1) - townSlopeY(dz - 1), 2.0);
+    for (const s of [-1, 1]) {
+      pools.push([COASTAL_TOWN.x + s * 4.5, y0 + 0.055, COASTAL_TOWN.z + dz, 7.6, 7.6, -pitch]);
+    }
+  }
+  for (const [dx, dz] of [[-12, 22], [12, 22], [-12, 28], [12, 28], [-24, -58], [0, -58], [24, -58]]) {
+    pools.push([COASTAL_TOWN.x + dx, townSlopeY(dz) + 0.055, COASTAL_TOWN.z + dz, 8.2, 8.2, 0]);
   }
 
   const poolGeo = new THREE.PlaneGeometry(1, 1);
@@ -509,7 +584,7 @@ function buildNightFixtures(scene) {
   const poolTex = makeRadialPoolTexture();
   const poolMat = new THREE.MeshBasicMaterial({
     map: poolTex,
-    color: 0xffcf78,
+    color: 0xffdf9a,
     transparent: true,
     opacity: 0.0,
     blending: THREE.AdditiveBlending,
@@ -519,9 +594,9 @@ function buildNightFixtures(scene) {
     polygonOffsetUnits: -2,
   });
   const poolMesh = new THREE.InstancedMesh(poolGeo, poolMat, pools.length);
-  pools.forEach(([x, y, z, sx, sz], i) => {
+  pools.forEach(([x, y, z, sx, sz, pitch = 0], i) => {
     dummy.position.set(x, y, z);
-    dummy.rotation.set(0, 0, 0);
+    dummy.rotation.set(pitch, 0, 0);
     dummy.scale.set(sx, 1, sz);
     dummy.updateMatrix();
     poolMesh.setMatrixAt(i, dummy.matrix);
@@ -530,14 +605,30 @@ function buildNightFixtures(scene) {
   poolMesh.frustumCulled = false;
   group.add(poolMesh);
 
-  // 3) Scooter fake ground headlight beam (1 mesh, follows scooter at night).
-  const beamGeo = new THREE.PlaneGeometry(3.0, 6.0);
+  // 3) Upgraded 4-layer Scooter Lighting Rig (follows scooter position, yaw, slope pitch & bank):
+  //    (a) Real SpotLight (castShadow=false -> zero extra shadow draw calls, lights real 3D road/buildings)
+  //    (b) Properly oriented forward low-beam ground projection pool (+Z ahead of front tyre)
+  //    (c) Volumetric Fresnel-faded air headlight cone from the actual headlamp housing
+  //    (d) Warm red rear taillight halo & subtle asphalt reflection behind the rear tyre
+  const scooterRig = new THREE.Group();
+  scooterRig.name = 'scooter-light-rig';
+  scooterRig.rotation.order = 'YXZ';
+
+  // (a) Real dynamic tungsten SpotLight mounted at headlamp height (0, 0.85, 0.44) aimed forward-downward
+  const headSpot = new THREE.SpotLight(0xffe9b5, 0.0, 28, 0.50, 0.76, 1.45);
+  headSpot.castShadow = false;
+  headSpot.position.set(0, 0.85, 0.44);
+  headSpot.target.position.set(0, -0.30, 9.8);
+  scooterRig.add(headSpot, headSpot.target);
+
+  // (b) Forward ground low-beam projection (narrow origin at z=+0.50, wide smooth fan out to z=+11.3)
+  const beamGeo = new THREE.PlaneGeometry(6.2, 10.8);
   beamGeo.rotateX(-Math.PI / 2);
-  beamGeo.translate(0, 0, 3.85);
+  beamGeo.translate(0, 0.055, 5.90);
   const beamTex = makeHeadlightBeamTexture();
   const beamMat = new THREE.MeshBasicMaterial({
     map: beamTex,
-    color: 0xfff2cc,
+    color: 0xfff3d1,
     transparent: true,
     opacity: 0.0,
     blending: THREE.AdditiveBlending,
@@ -548,15 +639,70 @@ function buildNightFixtures(scene) {
   });
   const headlightBeam = new THREE.Mesh(beamGeo, beamMat);
   headlightBeam.frustumCulled = false;
-  group.add(headlightBeam);
+  scooterRig.add(headlightBeam);
+
+  // (c) Soft volumetric Fresnel air beam cone shooting forward-downward from headlamp lens
+  const coneLen = 4.6;
+  const coneGeo = new THREE.CylinderGeometry(0.085, 1.02, coneLen, 20, 1, true);
+  // Rotate so top cap (r=0.085, v=1) sits at origin and expands along +Z
+  coneGeo.translate(0, -coneLen * 0.5, 0);
+  coneGeo.rotateX(-Math.PI / 2);
+  const coneMat = createVolumetricBeamMaterial();
+  const volumetricCone = new THREE.Mesh(coneGeo, coneMat);
+  volumetricCone.position.set(0, 0.84, 0.44);
+  volumetricCone.rotation.x = 0.145; // dip slightly downward toward the asphalt
+  volumetricCone.frustumCulled = false;
+  scooterRig.add(volumetricCone);
+
+  // (d) Warm red rear taillight glow halo + soft round red asphalt spill behind rear tyre
+  const tailPoolGeo = new THREE.PlaneGeometry(1.5, 1.5);
+  tailPoolGeo.rotateX(-Math.PI / 2);
+  const tailPoolMat = new THREE.MeshBasicMaterial({
+    map: poolTex,
+    color: 0xff3b28,
+    transparent: true,
+    opacity: 0.0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  });
+  const tailPool = new THREE.Mesh(tailPoolGeo, tailPoolMat);
+  tailPool.position.set(0, 0.045, -0.88);
+  tailPool.frustumCulled = false;
+  scooterRig.add(tailPool);
+
+  const tailHaloGeo = new THREE.PlaneGeometry(0.42, 0.42);
+  const tailHaloMat = new THREE.MeshBasicMaterial({
+    map: poolTex,
+    color: 0xff4630,
+    transparent: true,
+    opacity: 0.0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const tailHalo = new THREE.Mesh(tailHaloGeo, tailHaloMat);
+  tailHalo.position.set(0, 0.45, -0.62);
+  tailHalo.frustumCulled = false;
+  scooterRig.add(tailHalo);
+
+  group.add(scooterRig);
 
   group.visible = false;
   scene.add(group);
-  return { group, globeMat, poolMat, beamMat, headlightBeam, dispose() {
-    globeGeo.dispose(); globeMat.dispose();
-    poolGeo.dispose(); poolTex.dispose(); poolMat.dispose();
-    beamGeo.dispose(); beamTex.dispose(); beamMat.dispose();
-  } };
+  return {
+    group, globeMat, poolMat, beamMat, coneMat, tailPoolMat, tailHaloMat, headSpot, scooterRig,
+    dispose() {
+      globeGeo.dispose(); globeMat.dispose();
+      poolGeo.dispose(); poolTex.dispose(); poolMat.dispose();
+      beamGeo.dispose(); beamTex.dispose(); beamMat.dispose();
+      coneGeo.dispose(); coneMat.dispose();
+      tailPoolGeo.dispose(); tailPoolMat.dispose();
+      tailHaloGeo.dispose(); tailHaloMat.dispose();
+    },
+  };
 }
 
 // Compute a per-vertex vec4 attribute `aNightGlow` (rgb = glow tint, a = intensity)
@@ -985,8 +1131,14 @@ export function createTimeOfDay({ scene, renderer, country, street, scooter, roo
     nightFixtures.group.visible = showFixtures;
     if (showFixtures) {
       nightFixtures.globeMat.color.setHex(0xffe6a6).multiplyScalar(1.0 + em * 1.45);
-      nightFixtures.poolMat.opacity = em * 0.44;
-      nightFixtures.beamMat.opacity = em * 0.56;
+      nightFixtures.poolMat.opacity = em * 0.25;
+      nightFixtures.beamMat.opacity = em * 0.68;
+      nightFixtures.coneMat.uniforms.uIntensity.value = em * 0.48;
+      nightFixtures.headSpot.intensity = em * 28.0;
+      nightFixtures.tailPoolMat.opacity = em * 0.26;
+      nightFixtures.tailHaloMat.opacity = em * 0.68;
+    } else {
+      nightFixtures.headSpot.intensity = 0.0;
     }
   }
 
@@ -1004,12 +1156,9 @@ export function createTimeOfDay({ scene, renderer, country, street, scooter, roo
       lightZ + THREE.MathUtils.lerp(s[2], c[2], openCountry),
     );
     if (nightFixtures.group.visible && scooterRoot) {
-      nightFixtures.headlightBeam.position.set(
-        scooterRoot.position.x,
-        scooterRoot.position.y + 0.045,
-        scooterRoot.position.z,
-      );
-      nightFixtures.headlightBeam.rotation.y = scooterRoot.rotation.y;
+      const rig = nightFixtures.scooterRig;
+      rig.position.copy(scooterRoot.position);
+      rig.rotation.set(scooterRoot.rotation.x, scooterRoot.rotation.y, scooterRoot.rotation.z, 'YXZ');
     }
   }
 
