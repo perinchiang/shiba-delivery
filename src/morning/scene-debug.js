@@ -1,7 +1,7 @@
 import { rideTuning, trialLimitsKmh } from './free-ride.js';
 import { centerZ, roadYaw, landmarks } from './country-route.js';
 import { COASTAL_SAMPLE, hillRoadPoint } from './coastal-sample.js';
-import { COASTAL_TOWN } from './coastal-town.js';
+import { COASTAL_TOWN, HERO_HAIKAZE } from './coastal-town.js';
 import { streetTreeXs, treePitZ } from './street-layout.js';
 import { orders, start, bunFacade } from './orders.js';
 import { TOD_ORDER, TOD_PRESETS } from './time-of-day.js';
@@ -41,6 +41,53 @@ export const sceneJumps = {
   hubSlope: {
     title: '榕湾坡道镇·下坡看海',
     state: inHub(0.9, -26.0, 0),
+  },
+  heroHaikaze: {
+    title: '标杆建筑·海风庄全景',
+    state: inHub(4.4, 29.0, -0.32, { stand: 1 }),
+    camera: {
+      fov: 48,
+      focus: [COASTAL_TOWN.x + 7.6, 4.9, COASTAL_TOWN.z + 34.4],
+      offset: [-4.4, 0.55, -16.2],
+    },
+  },
+  heroStairs: {
+    title: '标杆建筑·外楼梯上二楼',
+    state: {
+      phase: 'free',
+      mode: 'walk',
+      x: COASTAL_TOWN.x + HERO_HAIKAZE.dx - 3.35,
+      z: COASTAL_TOWN.z + HERO_HAIKAZE.dz - 0.55,
+      yaw: -Math.PI * 0.65,
+      bikeX: COASTAL_TOWN.x + 4.8,
+      bikeZ: COASTAL_TOWN.z + 29.2,
+      bikeYaw: -0.25,
+      stand: 1,
+    },
+    camera: {
+      fov: 45,
+      focus: [COASTAL_TOWN.x + 9.1, 6.2, COASTAL_TOWN.z + 34.6],
+      offset: [-5.4, 1.0, -4.6],
+    },
+  },
+  heroShopClose: {
+    title: '标杆建筑·一楼门面近景',
+    state: {
+      phase: 'free',
+      mode: 'walk',
+      x: COASTAL_TOWN.x + 11.45,
+      z: COASTAL_TOWN.z + 29.15,
+      yaw: 0.18,
+      bikeX: COASTAL_TOWN.x + 5.2,
+      bikeZ: COASTAL_TOWN.z + 29.2,
+      bikeYaw: 0.2,
+      stand: 1,
+    },
+    camera: {
+      fov: 44,
+      focus: [COASTAL_TOWN.x + 11.6, 3.65, COASTAL_TOWN.z + 31.2],
+      offset: [-1.4, 0.15, -8.2],
+    },
   },
   hubCrossing: {
     title: '榕湾坡道镇·电车道口',

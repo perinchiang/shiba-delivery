@@ -82,9 +82,9 @@ export function countryCamera(camera, state, yaw, focus) {
   const x = state.x - Math.sin(yaw)*radius, z = state.z - Math.cos(yaw)*radius;
   const inHub = inCoastalTown(state.x, state.z);
   const inSample = !inHub && inCoastalSample(state.x, state.z);
-  const elevation = inHub ? coastalTownSurfaceHeight(state.x, state.z)
+  const elevation = inHub ? coastalTownSurfaceHeight(state.x, state.z, false)
     : inSample ? coastalSurfaceHeight(state.x, state.z) : roadHeight(state.x);
-  const boomGround = inHub ? coastalTownSurfaceHeight(x, z)
+  const boomGround = inHub ? coastalTownSurfaceHeight(x, z, false)
     : inSample ? coastalSurfaceHeight(x, z) : roadHeight(x);
   // Keep the boom on the road side of the village houses and above bridge approaches.
   const offset = clamp(z - centerZ(x), -5.5, 5.5);

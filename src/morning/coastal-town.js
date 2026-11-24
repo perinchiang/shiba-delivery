@@ -42,11 +42,39 @@ const PLAZA_Z = 25.0;
 export function townSlopeY(dz) {
   if (dz <= -46) return 11.40;
   if (dz <= 15) return lerp(11.40, 1.85, smoothstep(-46, 15, dz));
-  if (dz <= 34) return 1.85;
-  if (dz <= 46) return lerp(1.85, 1.25, smoothstep(34, 46, dz));
+  if (dz <= 38.5) return 1.85;
+  if (dz <= 46.5) return lerp(1.85, 1.25, smoothstep(38.5, 46.5, dz));
   if (dz <= 52) return 1.25;
   if (dz <= 57) return lerp(1.25, 1.05, smoothstep(52, 57, dz));
   return 1.05;
+}
+
+// Direction A Benchmark Hero Building ("海风庄" · 2.5F flat-roofed zakkyo with walkable exterior steel stairs)
+export const HERO_HAIKAZE = Object.freeze({
+  dx: 12.2,
+  dz: 34.4,
+  rotY: Math.PI,
+  baseY: 1.85 + 0.145,
+});
+
+// Single-valued walkable elevation on the Hero Building's exterior staircase & recessed 2F corridor.
+// Local Blender coordinates (bx, by) map to world via dx = HERO.dx - bx, dz = HERO.dz + by (rotY = PI).
+function heroHaikazeElevation(dx, dz) {
+  const bx = HERO_HAIKAZE.dx - dx;
+  const by = dz - HERO_HAIKAZE.dz;
+  const baseY = HERO_HAIKAZE.baseY;
+  // Exterior steel staircase (bottom pad -> 14 steps -> top landing bridge)
+  if (bx >= 4.22 && bx <= 5.62 && by >= -2.72 && by <= 3.84) {
+    if (by <= -1.95) return baseY + 0.12;
+    if (by >= 2.35) return baseY + 3.25;
+    const t = (by - (-1.95)) / (2.35 - (-1.95));
+    return baseY + lerp(0.12, 3.25, t);
+  }
+  // Recessed 2F open-air L-shaped concrete corridor & front balcony (strictly outside 2F solid core)
+  if (bx >= -4.24 && bx <= 4.28 && by >= -3.94 && by <= 3.94) {
+    if (bx >= 2.52 || by <= -2.18) return baseY + 3.25;
+  }
+  return null;
 }
 
 function isOnRoadCorridor(dx, dz) {
@@ -56,8 +84,9 @@ function isOnRoadCorridor(dx, dz) {
   const onUpper = Math.abs(dz - UPPER_Z) <= 5.0 && Math.abs(dx) <= 56;
   const onMidCross = Math.abs(dz - PLAZA_Z) <= 5.4 && Math.abs(dx) <= 56;
   const onPlaza = Math.abs(dx) <= 17.0 && dz >= 14.5 && dz <= 34.5;
+  const onHeroAlley = dx >= 3.85 && dx <= 21.0 && dz >= 28.4 && dz <= 45.2;
   const onBlvd = dz >= 53.5 && dz <= 69.5 && Math.abs(dx) <= 116;
-  return onMain || onWest || onEast || onUpper || onMidCross || onPlaza || onBlvd;
+  return onMain || onWest || onEast || onUpper || onMidCross || onPlaza || onHeroAlley || onBlvd;
 }
 
 function roadSurfaceOffset(dx, dz) {
@@ -108,9 +137,13 @@ export function coastalTownTerrainHeight(x, z) {
   return y;
 }
 
-export function coastalTownSurfaceHeight(x, z) {
+export function coastalTownSurfaceHeight(x, z, includeElevated = true) {
   const dx = x - CX;
   const dz = z - CZ;
+  if (includeElevated) {
+    const heroY = heroHaikazeElevation(dx, dz);
+    if (heroY !== null) return heroY;
+  }
   if (isOnRoadCorridor(dx, dz)) {
     return townSlopeY(dz) + roadSurfaceOffset(dx, dz);
   }
@@ -152,8 +185,10 @@ const BUILDINGS = [
   { mesh: 'Town_Shop_Corner',  dx:  24.5, dz:  15.2, rotY: 0,           halfW: 4.2, halfD: 3.6 },
   { mesh: 'Town_Shop_Corner',  dx: -14.0, dz:  37.8, rotY: Math.PI,     halfW: 4.2, halfD: 3.6 },
   { mesh: 'Town_Shop_Tall',    dx: -26.5, dz:  37.8, rotY: Math.PI,     halfW: 3.8, halfD: 3.5 },
-  { mesh: 'Town_Shop_Konbini', dx:  14.5, dz:  37.8, rotY: Math.PI,     halfW: 4.8, halfD: 3.7 },
-  { mesh: 'Town_Shop_Corner',  dx:  28.0, dz:  37.8, rotY: Math.PI,     halfW: 4.2, halfD: 3.6 },
+  // Direction A Hero Building ("海风庄") at iconic SE Plaza corner + 2.5m East cut-through side alley!
+  { mesh: 'Town_Hero_Haikaze', dx: HERO_HAIKAZE.dx, dz: HERO_HAIKAZE.dz, rotY: HERO_HAIKAZE.rotY, y: HERO_HAIKAZE.baseY, customCollision: true, halfW: 4.32, halfD: 3.96 },
+  { mesh: 'Town_Shop_Corner',  dx:  23.1, dz:  35.4, rotY: Math.PI,     halfW: 4.2, halfD: 3.6 },
+  { mesh: 'Town_Shop_Tall',    dx:  33.6, dz:  36.4, rotY: Math.PI,     halfW: 3.8, halfD: 3.5 },
 
   // --- Upper Residential Street · North Row (dx -48..+48, dz = -66.8, facing South +Z) ---
   { mesh: 'Town_House_SlopeA', dx: -48.0, dz: -66.8, rotY: 0,           halfW: 4.0, halfD: 3.9 },
@@ -208,6 +243,13 @@ function pushOutAABB(pos, cx, cz, halfW, halfD, margin) {
   else pos.z = cz + (lz >= 0 ? wz : -wz);
 }
 
+// Push a world position cleanly out of a Hero Building local Blender AABB [bx0, bx1] x [by0, by1]
+function pushOutHeroLocal(pos, bx0, bx1, by0, by1, margin) {
+  const cx = CX + HERO_HAIKAZE.dx - (bx0 + bx1) * 0.5;
+  const cz = CZ + HERO_HAIKAZE.dz + (by0 + by1) * 0.5;
+  pushOutAABB(pos, cx, cz, (bx1 - bx0) * 0.5, (by1 - by0) * 0.5, margin);
+}
+
 export function constrainCoastalTown(x, z, walking) {
   const margin = walking ? 0.45 : 0.80;
   const pos = {
@@ -215,9 +257,36 @@ export function constrainCoastalTown(x, z, walking) {
     z: clamp(z, CZ - 63.0, CZ + SEAWALL_Z - (walking ? 0.75 : 1.15)),
   };
 
-  // Push cleanly out of all town buildings
+  // Push cleanly out of all standard town buildings
   for (const b of BUILDINGS) {
+    if (b.customCollision) continue;
     pushOutAABB(pos, CX + b.dx, CZ + b.dz, b.halfW, b.halfD, margin);
+  }
+
+  // Hero Building ("海风庄") multi-level walkable exterior stairs & 2F corridor collision
+  if (!walking) {
+    // Riding: keep scooter strictly outside both main building body & exterior staircase footprint
+    pushOutHeroLocal(pos, -4.32, 4.32, -3.96, 3.96, margin);
+    pushOutHeroLocal(pos, 4.25, 5.65, -2.75, 3.85, 0.65);
+  } else {
+    // Walking: solid 2F apartment core + perimeter walls/railings with ONLY 2 openings:
+    //   1) Staircase bottom entry (by = -2.70, bx in [4.25..5.60])
+    //   2) Staircase top landing -> 2F corridor doorway (bx = 4.25, by in [2.35..3.80])
+    const r = 0.28;
+    // W0: 2F solid apartment core (also seals 1F interior from east/south)
+    pushOutHeroLocal(pos, -4.20, 2.55, -2.20, 3.90, r);
+    // W1: Front 1F wall & 2F front balcony railing (prevents ground-to-2F jump AND falling off 2F front)
+    pushOutHeroLocal(pos, -4.25, 4.25, -3.98, -3.82, r);
+    // W2: Stair-side 1F wall/vending + 2F corridor railing (stops at by=+2.30 for top landing opening!)
+    pushOutHeroLocal(pos, 4.17, 4.33, -3.90, 2.30, r);
+    // W3: 2F corridor rear railing
+    pushOutHeroLocal(pos, 2.55, 4.33, 3.82, 3.98, r);
+    // W4: Staircase top landing rear railing
+    pushOutHeroLocal(pos, 4.25, 5.66, 3.72, 3.88, r);
+    // W5: Staircase outer railing & steel stringer
+    pushOutHeroLocal(pos, 5.52, 5.68, -2.70, 3.88, r);
+    // W6: Alley-side end railing of 2F front balcony
+    pushOutHeroLocal(pos, -4.28, -4.12, -3.98, -2.20, r);
   }
 
   // Prevent riding straight onto the fenced railway ballast away from the 3 level crossings
@@ -578,8 +647,8 @@ function buildTownRoadsAndCivil(root, trackTex, trackMat) {
       const zm = (za + zb) * 0.5;
       civil.box(CX + xm, townSlopeY(zm) + 0.02, CZ + zm, 37.2, 0.25, zb - za, { color: Math.abs(xm) < 20 ? plazaCol : lotApronCol });
     }
-    // Warm sandstone corner pads right around the central intersection
-    for (const [za, zb] of [[14.5, 21.6], [28.4, 34.5]]) {
+    // Warm sandstone corner pads right around the central intersection (extends cleanly under SE Hero Building)
+    for (const [za, zb] of [[14.5, 21.6], [28.4, sx > 0 ? 38.6 : 34.5]]) {
       const xm = sx * 10.6;
       const zm = (za + zb) * 0.5;
       civil.box(CX + xm, townSlopeY(zm) + 0.035, CZ + zm, 13.4, 0.25, zb - za, { color: plazaCol });
@@ -696,7 +765,7 @@ function buildTownRoadsAndCivil(root, trackTex, trackMat) {
       );
     }
   };
-  const poleZs = [-52, -32, -12, 8, 36, 54.5];
+  const poleZs = [-52, -32, -12, 8, 41.5, 54.5];
   for (const s of [-1, 1]) {
     const px = CX + s * 5.85;
     for (let i = 0; i < poleZs.length - 1; i++) {
@@ -878,7 +947,7 @@ function buildTownSigns(root) {
     { text: '榕湾 24H 便利店', sub: '关东煮 · 咖啡', bg: 0x2e825e, fg: 0xffffff, accent: 0xf28d38, dx: -24.5, dz: 19.02, rotY: 0, w: 5.4, h: 0.92 },
     { text: '浪花茶室 · カフェ', sub: '甜品 · 刨冰', bg: 0x3e718c, fg: 0xfff7e2, accent: 0xf7ca65, dx:  24.5, dz: 19.02, rotY: 0, w: 4.8, h: 0.92 },
     { text: '坡底便当屋', sub: '热菜现炒 · 堂食外带', bg: 0xc24938, fg: 0xfff5db, accent: 0xffd55c, dx: -14.0, dz: 33.95, rotY: Math.PI, w: 4.8, h: 0.92 },
-    { text: '海滨医药', sub: '常备药品 · 口罩', bg: 0x2e7d63, fg: 0xffffff, accent: 0xdff5dc, dx:  14.5, dz: 33.95, rotY: Math.PI, w: 5.0, h: 0.92 },
+    { text: '海滨医药', sub: '常备药品 · 口罩', bg: 0x2e7d63, fg: 0xffffff, accent: 0xdff5dc, dx:  23.1, dz: 31.65, rotY: Math.PI, w: 4.6, h: 0.90 },
   ];
 
   for (const s of shopSigns) {
@@ -896,6 +965,60 @@ function buildTownSigns(root) {
       font: 'hei',
       storybook: true,
     }, { x: CX + s.dx, y, z: CZ + s.dz, rotY: s.rotY });
+  }
+
+  // Hero Building ("海风庄") bespoke low-profile wooden shop plaque, building sign & 2F apartment doors (201 / 202)
+  kit.add({
+    kind: 'plaque',
+    style: 'lit',
+    text: '海风拉面 · ラーメン',
+    bg: 0xf3e8ce,
+    fg: 0x4b2f1e,
+    accent: 0xc2382e,
+    casing: 0x68422b,
+    trimColor: 0x9b623d,
+    w: 2.35,
+    h: 0.36,
+    font: 'hei',
+    storybook: true,
+  }, { x: CX + 12.98, y: HERO_HAIKAZE.baseY + 2.74, z: CZ + 30.80, rotY: Math.PI });
+  kit.add({
+    kind: 'plaque',
+    style: 'wood',
+    text: '潮風麺処',
+    bg: 0xe9d8b4,
+    fg: 0x3b2618,
+    w: 0.28,
+    h: 0.72,
+    font: 'song',
+    storybook: true,
+  }, { x: CX + 11.70, y: HERO_HAIKAZE.baseY + 1.56, z: CZ + 30.82, rotY: Math.PI });
+  kit.add({
+    kind: 'plaque',
+    style: 'lit',
+    text: '海风庄',
+    bg: 0x3b6c67,
+    fg: 0xf7f0dc,
+    accent: 0xa4b995,
+    casing: 0x2e5a56,
+    trimColor: 0xa4b995,
+    w: 0.92,
+    h: 0.34,
+    font: 'hei',
+    storybook: true,
+  }, { x: CX + 9.20, y: HERO_HAIKAZE.baseY + 2.18, z: CZ + 30.86, rotY: Math.PI });
+  for (const [num, by] of [['201', -0.80], ['202', 1.35]]) {
+    kit.add({
+      kind: 'plaque',
+      style: 'door',
+      text: num,
+      bg: 0x2e5a56,
+      fg: 0xf8f3e3,
+      w: 0.34,
+      h: 0.17,
+      font: 'hei',
+      storybook: true,
+    }, { x: CX + HERO_HAIKAZE.dx - 2.665, y: HERO_HAIKAZE.baseY + 3.25 + 1.58, z: CZ + HERO_HAIKAZE.dz + by, rotY: -Math.PI / 2 });
   }
 
   // Vertical blade signs along Main Slope Avenue for authentic East-Asian depth
@@ -984,7 +1107,7 @@ export function createCoastalTown(townKitGltf) {
     const src = templates[b.mesh];
     if (!src) continue;
     const g = src.clone();
-    dummy.position.set(CX + b.dx, townSlopeY(b.dz) + 0.14, CZ + b.dz);
+    dummy.position.set(CX + b.dx, b.y ?? (townSlopeY(b.dz) + 0.14), CZ + b.dz);
     dummy.rotation.set(0, b.rotY, 0);
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
@@ -1027,7 +1150,7 @@ export function createCoastalTown(townKitGltf) {
 
   // Utility poles flanking Main Slope Avenue, Upper Street & Coastal Boulevard
   const poles = [];
-  for (const dz of [-52, -32, -12, 8, 36, 54.5]) {
+  for (const dz of [-52, -32, -12, 8, 41.5, 54.5]) {
     poles.push({ dx: -5.85, dz, rotY: Math.PI / 2 });
     poles.push({ dx:  5.85, dz, rotY: -Math.PI / 2 });
   }
@@ -1042,7 +1165,7 @@ export function createCoastalTown(townKitGltf) {
   // Courier Battery-Swap Cabinets at Central Plaza & Konbini
   addInstancedProps('Town_Battery_Cabinet', [
     { dx: -13.2, dz: 19.2, rotY: 0 },
-    { dx:  13.2, dz: 31.2, rotY: Math.PI },
+    { dx: -13.2, dz: 31.2, rotY: Math.PI },
     { dx: -39.5, dz: 29.8, rotY: Math.PI / 2 },
   ], true);
 
@@ -1051,7 +1174,7 @@ export function createCoastalTown(townKitGltf) {
     { dx: -6.2, dz:  11.8, rotY: Math.PI / 2 },
     { dx:  6.2, dz: -20.5, rotY: -Math.PI / 2 },
     { dx: -15.6, dz: 19.2, rotY: 0 },
-    { dx:  16.2, dz: 31.2, rotY: Math.PI },
+    { dx:  18.5, dz: 35.0, rotY: -Math.PI / 2 },
     { dx:  40.2, dz: 12.0, rotY: -Math.PI / 2 },
   ], false);
 

@@ -3,6 +3,7 @@ import { Scene } from 'three';
 import { createTireEffects } from '../src/morning/tire-effects.js';
 import { initialState } from '../src/morning/delivery.js';
 import { centerZ, crossing, constrainToRoad, distanceAlong, landmarks, roadEnd, roadHeight, roadYaw } from '../src/morning/country-route.js';
+import { COASTAL_TOWN, HERO_HAIKAZE, coastalTownSurfaceHeight, constrainCoastalTown } from '../src/morning/coastal-town.js';
 import { rideTuning, stepFreeRide, trialLimitsKmh } from '../src/morning/free-ride.js';
 
 assert.ok(distanceAlong(roadEnd) > 1200 && distanceAlong(roadEnd) < 1300);
@@ -130,3 +131,60 @@ bike.speed=-1;
 runEffect(100,0);
 assert.equal(dust.count+marks.geometry.drawRange.count,0,'effects expire in reverse');
 console.log('PASS: rear tyre effects on launch, cruise, braking, cornering, reverse and teleport.');
+
+// Direction A Hero Building ("海风庄"): walkable exterior steel stairs, 2F corridor & collision isolation.
+{
+  const heroWorld = (bx, by) => ({
+    x: COASTAL_TOWN.x + HERO_HAIKAZE.dx - bx,
+    z: COASTAL_TOWN.z + HERO_HAIKAZE.dz + by,
+  });
+  const baseY = HERO_HAIKAZE.baseY;
+
+  // 1) Riding cannot enter the Hero Building body or exterior steel staircase.
+  const rideHit = heroWorld(4.92, 0.0);
+  const rideOut = constrainCoastalTown(rideHit.x, rideHit.z, false);
+  assert.ok(Math.hypot(rideOut.x - rideHit.x, rideOut.z - rideHit.z) > 0.5, 'scooter blocked from climbing stairs');
+
+  // 2) Walking smoothly enters stair foot, climbs 14 steps continuously to 2F, turns onto corridor & front balcony.
+  const stairRoute = [
+    [4.92, -3.20], // sidewalk approach right in front of stair foot
+    [4.92, -2.35], // bottom concrete landing pad (+0.12m)
+    [4.92, -0.80], // lower flight
+    [4.92,  0.60], // mid flight
+    [4.92,  2.35], // top of stairs (+3.25m)
+    [4.92,  3.00], // top steel landing bridge
+    [3.40,  3.00], // 2F doorway onto open-air corridor
+    [3.40,  1.35], // outside Door 202
+    [3.40, -0.80], // outside Door 201
+    [3.40, -3.00], // 2F front-right balcony corner
+    [-2.50, -3.00], // 2F front balcony above 1F noodle shop
+  ];
+  let prevY = 0;
+  for (let i = 0; i < stairRoute.length; i++) {
+    const [bx, by] = stairRoute[i];
+    const p = heroWorld(bx, by);
+    const bounded = constrainCoastalTown(p.x, p.z, true);
+    assert.ok(Math.hypot(bounded.x - p.x, bounded.z - p.z) < 0.01, `walk point ${i} (${bx},${by}) unobstructed`);
+    const y = coastalTownSurfaceHeight(p.x, p.z, true);
+    if (i === 1) assert.ok(Math.abs(y - (baseY + 0.12)) < 0.01, 'bottom stair pad elevation');
+    if (i >= 4) assert.ok(Math.abs(y - (baseY + 3.25)) < 0.01, `2F elevation at step ${i}`);
+    if (i >= 1 && i <= 4) assert.ok(y >= prevY, 'monotonic climb up exterior steel stairs');
+    prevY = y;
+  }
+
+  // 3) Ground sidewalk walker cannot clip/teleport onto 2F front balcony across W1 railing/wall barrier.
+  const frontTry = heroWorld(-1.0, -3.95);
+  const frontConstrained = constrainCoastalTown(frontTry.x, frontTry.z, true);
+  assert.ok(frontConstrained.z - (COASTAL_TOWN.z + HERO_HAIKAZE.dz) <= -4.20, 'ground walker stopped outside 1F shop wall');
+
+  // 4) 2F balcony walker cannot fall off through the front railing.
+  const railTry = heroWorld(-1.0, -3.70);
+  const railConstrained = constrainCoastalTown(railTry.x, railTry.z, true);
+  assert.ok(railConstrained.z - (COASTAL_TOWN.z + HERO_HAIKAZE.dz) >= -3.56, '2F walker kept safely inside front railing');
+
+  // 5) Ground-only query (used by scooter headlight beam & chase camera) stays at ground level under 2F.
+  const under2F = heroWorld(3.40, -0.80);
+  const groundOnlyY = coastalTownSurfaceHeight(under2F.x, under2F.z, false);
+  assert.ok(groundOnlyY < baseY + 0.5, 'ground-only surface query never jumps to 2F');
+  console.log('PASS: Hero Building walkable exterior staircase, 2F corridor & barrier collision.');
+}

@@ -28,9 +28,9 @@ function onCitySidewalk(x, z) {
   return false;
 }
 
-function surfaceHeight(x, z, inside) {
+function surfaceHeight(x, z, inside, includeElevated = true) {
   if (inside) return 0;
-  if (inCoastalTown(x, z)) return coastalTownSurfaceHeight(x, z);
+  if (inCoastalTown(x, z)) return coastalTownSurfaceHeight(x, z, includeElevated);
   if (inCoastalSample(x, z)) return coastalSurfaceHeight(x, z) + (coastalSidewalk(x, z) ? CURB_H : 0);
   const base = roadHeight(x);
   if (onCitySidewalk(x, z)) return base + CURB_H;
@@ -311,10 +311,10 @@ export function createView(renderer, state, world) {
       }
     }
     const ground = inside ? 0
-      : inHub ? coastalTownSurfaceHeight(state.x, state.z)
+      : inHub ? coastalTownSurfaceHeight(state.x, state.z, !riding)
       : inCoastalSample(state.x, state.z) ? coastalSurfaceHeight(state.x, state.z) : roadHeight(state.x);
-    const height = surfaceHeight(state.x, state.z, inside);
-    const bikeHeight = surfaceHeight(state.bikeX, state.bikeZ, inside);
+    const height = surfaceHeight(state.x, state.z, inside, !riding);
+    const bikeHeight = surfaceHeight(state.bikeX, state.bikeZ, inside, false);
     const facing = closeUp && !riding ? 0.45 : state.yaw;
     shiba.root.rotation.y = riding || handling || snap ? facing : dampAngle(shiba.root.rotation.y, facing, 15, dt);
     scooter.root.rotation.y = state.bikeYaw;
@@ -324,8 +324,8 @@ export function createView(renderer, state, world) {
     const bikeInHub = !inside && inCoastalTown(state.bikeX, state.bikeZ);
     const bikeOnCoast = !inside && !bikeInHub && inCoastalSample(state.bikeX, state.bikeZ);
     const grade = inside ? 0 : bikeInHub
-      ? (coastalTownSurfaceHeight(state.bikeX + 0.5 * Math.sin(state.bikeYaw), state.bikeZ + 0.5 * Math.cos(state.bikeYaw))
-        - coastalTownSurfaceHeight(state.bikeX - 0.5 * Math.sin(state.bikeYaw), state.bikeZ - 0.5 * Math.cos(state.bikeYaw)))
+      ? (coastalTownSurfaceHeight(state.bikeX + 0.5 * Math.sin(state.bikeYaw), state.bikeZ + 0.5 * Math.cos(state.bikeYaw), false)
+        - coastalTownSurfaceHeight(state.bikeX - 0.5 * Math.sin(state.bikeYaw), state.bikeZ - 0.5 * Math.cos(state.bikeYaw), false))
       : bikeOnCoast
       ? (coastalSurfaceHeight(state.bikeX + 0.5 * Math.sin(state.bikeYaw), state.bikeZ + 0.5 * Math.cos(state.bikeYaw))
         - coastalSurfaceHeight(state.bikeX - 0.5 * Math.sin(state.bikeYaw), state.bikeZ - 0.5 * Math.cos(state.bikeYaw)))
@@ -472,7 +472,7 @@ export function createView(renderer, state, world) {
       const horiz = walkDist * Math.cos(walkPitch);
       const rawX = state.x - Math.sin(walkCamYaw) * horiz;
       const rawZ = state.z - Math.cos(walkCamYaw) * horiz;
-      const boomGround = inCoastalTown(rawX, rawZ) ? coastalTownSurfaceHeight(rawX, rawZ)
+      const boomGround = inCoastalTown(rawX, rawZ) ? coastalTownSurfaceHeight(rawX, rawZ, false)
         : inCoastalSample(rawX, rawZ) ? coastalSurfaceHeight(rawX, rawZ) : roadHeight(rawX);
       const rawY = Math.max(boomGround + 1.05, height + 1.12 + walkDist * Math.sin(walkPitch) + 0.55);
       desiredEye.set(rawX, rawY, rawZ);
@@ -594,7 +594,7 @@ export function createView(renderer, state, world) {
     timeOfDay.updateLightTransform({
       inside, openCountry, lightX, ground, lightZ,
       scooterRoot: scooter.root,
-      groundAt: (wx, wz) => surfaceHeight(wx, wz, inside),
+      groundAt: (wx, wz) => surfaceHeight(wx, wz, inside, false),
     });
     view = nextView;
     if (!inside) country.sky.position.copy(activeCamera.position);

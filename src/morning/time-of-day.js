@@ -577,6 +577,7 @@ function buildNightFixtures(scene) {
   }
   for (const [dx, dz] of [
     [-12, 22], [12, 22], [-12, 28], [12, 28],
+    [12.8, 29.8], [7.2, 31.4], // Hero Building ("海风庄") 1F shopfront lantern & corner vending spill
     [-24, -58], [0, -58], [24, -58],
     [-18, 60], [18, 60],
   ]) {
