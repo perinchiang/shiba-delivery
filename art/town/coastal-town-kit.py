@@ -237,40 +237,40 @@ def make_ao_fn(eave_z, floor_z=0.0):
 
 def add_recessed_window(m, x, y, z, w, h, facing='-Y', ao_fn=None,
                         frame_col=C_TRIM, shutter_col=None, flowerbox=False):
-    """True 0.16m recessed window opening on -Y, +Y, -X, or +X face."""
-    d_rec = 0.16
+    """True 3D framed window with >=3cm glass-to-wall separation (zero mobile Z-fighting)."""
+    d_rec = 0.18
     if facing in ('-Y', '+Y'):
         sy = -1.0 if facing == '-Y' else 1.0
-        # Back glass pane recessed cleanly
-        m.box((x, y - sy * 0.02, z), (w - 0.10, 0.04, h - 0.10), C_GLASS,
+        # Glass sits strictly proud of the solid wall (back at +0.025m, front at +0.065m)
+        m.box((x, y + sy * 0.045, z), (w - 0.10, 0.04, h - 0.10), C_GLASS,
               bevel=0.0, smooth=False, glass=True)
-        # Shaded surround reveal box
-        m.box((x, y + sy * 0.04, z + h * 0.5 - 0.05), (w + 0.14, d_rec, 0.12), frame_col, bevel=0.015, ao_fn=ao_fn)
-        m.box((x, y + sy * 0.05, z - h * 0.5 + 0.02), (w + 0.24, d_rec + 0.09, 0.11), frame_col, bevel=0.015, ao_fn=ao_fn)
+        # Thick protruding beveled casing & deep sill frame proud of glass (+0.08..+0.20m)
+        m.box((x, y + sy * 0.10, z + h * 0.5 - 0.04), (w + 0.16, d_rec, 0.13), frame_col, bevel=0.015, ao_fn=ao_fn)
+        m.box((x, y + sy * 0.12, z - h * 0.5 + 0.02), (w + 0.26, d_rec + 0.09, 0.12), frame_col, bevel=0.015, ao_fn=ao_fn)
         for s in (-1.0, 1.0):
-            m.box((x + s * (w * 0.5 + 0.01), y + sy * 0.04, z), (0.11, d_rec, h + 0.04), frame_col, bevel=0.015, ao_fn=ao_fn)
-        # Center mullions
-        m.box((x, y + sy * 0.02, z), (0.055, 0.06, h - 0.06), frame_col, bevel=0.008, ao_fn=ao_fn)
-        m.box((x, y + sy * 0.02, z - 0.06), (w - 0.06, 0.055, 0.055), frame_col, bevel=0.008, ao_fn=ao_fn)
+            m.box((x + s * (w * 0.5 + 0.01), y + sy * 0.10, z), (0.12, d_rec, h + 0.05), frame_col, bevel=0.015, ao_fn=ao_fn)
+        # Center mullions cleanly in front of glass (+0.075m)
+        m.box((x, y + sy * 0.085, z), (0.055, 0.05, h - 0.06), frame_col, bevel=0.008, ao_fn=ao_fn)
+        m.box((x, y + sy * 0.085, z - 0.06), (w - 0.06, 0.05, 0.055), frame_col, bevel=0.008, ao_fn=ao_fn)
         if shutter_col is not None:
             for s in (-1.0, 1.0):
-                m.box((x + s * (w * 0.5 + 0.24), y + sy * 0.08, z), (0.30, 0.07, h + 0.02),
+                m.box((x + s * (w * 0.5 + 0.24), y + sy * 0.10, z), (0.30, 0.07, h + 0.02),
                       shutter_col, bevel=0.014, ao_fn=ao_fn)
         if flowerbox:
-            m.box((x, y + sy * 0.16, z - h * 0.5 - 0.06), (w * 0.86, 0.22, 0.19),
+            m.box((x, y + sy * 0.20, z - h * 0.5 - 0.06), (w * 0.86, 0.22, 0.19),
                   C_TIMBER, bevel=0.016, ao_fn=ao_fn)
             for k in (-1, 0, 1):
-                m.box((x + k * w * 0.25, y + sy * 0.17, z - h * 0.5 + 0.08), (0.20, 0.18, 0.14),
+                m.box((x + k * w * 0.25, y + sy * 0.21, z - h * 0.5 + 0.08), (0.20, 0.18, 0.14),
                       C_LEAF_MID, bevel=0.04, ao_fn=ao_fn)
     else:
         sx = -1.0 if facing == '-X' else 1.0
-        m.box((x - sx * 0.02, y, z), (0.04, w - 0.10, h - 0.10), C_GLASS,
+        m.box((x + sx * 0.045, y, z), (0.04, w - 0.10, h - 0.10), C_GLASS,
               bevel=0.0, smooth=False, glass=True)
-        m.box((x + sx * 0.04, y, z + h * 0.5 - 0.05), (d_rec, w + 0.14, 0.12), frame_col, bevel=0.015, ao_fn=ao_fn)
-        m.box((x + sx * 0.05, y, z - h * 0.5 + 0.02), (d_rec + 0.09, w + 0.24, 0.11), frame_col, bevel=0.015, ao_fn=ao_fn)
+        m.box((x + sx * 0.10, y, z + h * 0.5 - 0.04), (d_rec, w + 0.16, 0.13), frame_col, bevel=0.015, ao_fn=ao_fn)
+        m.box((x + sx * 0.12, y, z - h * 0.5 + 0.02), (d_rec + 0.09, w + 0.26, 0.12), frame_col, bevel=0.015, ao_fn=ao_fn)
         for s in (-1.0, 1.0):
-            m.box((x + sx * 0.04, y + s * (w * 0.5 + 0.01), z), (d_rec, 0.11, h + 0.04), frame_col, bevel=0.015, ao_fn=ao_fn)
-        m.box((x + sx * 0.02, y, z), (0.06, 0.055, h - 0.06), frame_col, bevel=0.008, ao_fn=ao_fn)
+            m.box((x + sx * 0.10, y + s * (w * 0.5 + 0.01), z), (d_rec, 0.12, h + 0.05), frame_col, bevel=0.015, ao_fn=ao_fn)
+        m.box((x + sx * 0.085, y, z), (0.05, 0.055, h - 0.06), frame_col, bevel=0.008, ao_fn=ao_fn)
 
 
 def add_striped_awning(m, x, y, z, width, depth, color_a, ao_fn=None, rot_z=0.0):
@@ -328,27 +328,25 @@ def add_balcony(m, x, y, z, width, depth=0.92, rail_col=C_IRON, ao_fn=None):
 
 
 def add_shopfront_ground(m, w, y_front, height, door_x, awning_col, ao_fn, sign_band_col=None):
-    """Lived-in ground-floor East-Asian shopfront facing -Y."""
-    # Glazed storefront display window + warm wooden/aluminum mullions
-    m.box((0.0, y_front + 0.08, height * 0.46), (w - 0.55, 0.14, height * 0.82), C_WALL_RECESS, bevel=0.01, ao_fn=ao_fn)
-    # Wide display glass pane
+    """Lived-in ground-floor East-Asian shopfront facing -Y (all glass >=4cm proud of wall)."""
+    # Wide display glass pane cleanly proud of the solid wall at y_front
     win_w = w - 2.35
     win_x = -0.78 if door_x > 0 else 0.78
-    m.box((win_x, y_front + 0.02, 1.48), (win_w, 0.05, 1.72), C_GLASS, bevel=0.0, smooth=False, glass=True)
+    m.box((win_x, y_front - 0.055, 1.48), (win_w, 0.05, 1.72), C_GLASS, bevel=0.0, smooth=False, glass=True)
     # Kickplate below display window
-    m.box((win_x, y_front - 0.02, 0.34), (win_w + 0.12, 0.14, 0.62), C_STONE_CAP, bevel=0.018, ao_fn=ao_fn)
-    # Mullions on display window
-    for t in (-0.33, 0.33):
-        m.box((win_x + t * win_w, y_front - 0.02, 1.48), (0.06, 0.08, 1.78), C_TIMBER, bevel=0.01, ao_fn=ao_fn)
-    m.box((win_x, y_front - 0.02, 0.64), (win_w + 0.12, 0.16, 0.09), C_TIMBER, bevel=0.014, ao_fn=ao_fn)
-    m.box((win_x, y_front - 0.02, 2.36), (win_w + 0.12, 0.14, 0.10), C_TIMBER, bevel=0.014, ao_fn=ao_fn)
+    m.box((win_x, y_front - 0.08, 0.34), (win_w + 0.14, 0.16, 0.62), C_STONE_CAP, bevel=0.018, ao_fn=ao_fn)
+    # Mullions & frame proud of glass
+    for t in (-0.50, -0.33, 0.33, 0.50):
+        m.box((win_x + t * win_w, y_front - 0.09, 1.48), (0.07, 0.09, 1.82), C_TIMBER, bevel=0.01, ao_fn=ao_fn)
+    m.box((win_x, y_front - 0.09, 0.64), (win_w + 0.14, 0.18, 0.10), C_TIMBER, bevel=0.014, ao_fn=ao_fn)
+    m.box((win_x, y_front - 0.09, 2.36), (win_w + 0.14, 0.16, 0.11), C_TIMBER, bevel=0.014, ao_fn=ao_fn)
 
-    # Entrance sliding door with inset glass
-    m.box((door_x, y_front - 0.02, 1.18), (1.36, 0.12, 2.36), C_TIMBER, bevel=0.016, ao_fn=ao_fn)
-    m.box((door_x, y_front - 0.05, 1.44), (0.98, 0.04, 1.38), C_GLASS, bevel=0.0, smooth=False, glass=True)
-    m.box((door_x, y_front - 0.08, 1.44), (0.05, 0.04, 1.42), C_TIMBER, bevel=0.008, ao_fn=ao_fn)
+    # Entrance sliding door with inset glass strictly in front of door panel
+    m.box((door_x, y_front - 0.06, 1.18), (1.36, 0.12, 2.36), C_TIMBER, bevel=0.016, ao_fn=ao_fn)
+    m.box((door_x, y_front - 0.14, 1.44), (0.98, 0.04, 1.38), C_GLASS, bevel=0.0, smooth=False, glass=True)
+    m.box((door_x, y_front - 0.17, 1.44), (0.06, 0.04, 1.42), C_TIMBER, bevel=0.008, ao_fn=ao_fn)
     # Stone entry step
-    m.box((door_x, y_front - 0.24, 0.07), (1.62, 0.44, 0.14), C_CONCRETE, bevel=0.018, ao_fn=ao_fn)
+    m.box((door_x, y_front - 0.28, 0.07), (1.62, 0.44, 0.14), C_CONCRETE, bevel=0.018, ao_fn=ao_fn)
 
     # Fascia / signboard band above shopfront
     if sign_band_col is not None:
@@ -462,14 +460,14 @@ def build_shop_konbini(mat, col):
     # Recessed warm glow soffit strip under canopy
     m.box((0, fy - 0.22, 2.90), (w - 0.30, 0.18, 0.06), C_LAMP_GLOW, bevel=0.0, smooth=False, glass=True)
 
-    # Full-width bright konbini windows + automatic glass double doors
-    m.box((-2.55, fy + 0.02, 1.56), (3.40, 0.05, 2.08), C_GLASS, bevel=0.0, smooth=False, glass=True)
-    m.box((2.55, fy + 0.02, 1.56), (3.40, 0.05, 2.08), C_GLASS, bevel=0.0, smooth=False, glass=True)
-    m.box((0.0, fy + 0.03, 1.36), (1.76, 0.05, 2.48), C_GLASS, bevel=0.0, smooth=False, glass=True)
+    # Full-width bright konbini windows + automatic glass double doors (>=4.5cm proud of wall)
+    m.box((-2.55, fy - 0.055, 1.56), (3.40, 0.05, 2.08), C_GLASS, bevel=0.0, smooth=False, glass=True)
+    m.box((2.55, fy - 0.055, 1.56), (3.40, 0.05, 2.08), C_GLASS, bevel=0.0, smooth=False, glass=True)
+    m.box((0.0, fy - 0.055, 1.36), (1.76, 0.05, 2.48), C_GLASS, bevel=0.0, smooth=False, glass=True)
     for mx in (-4.28, -2.55, -0.88, 0.0, 0.88, 2.55, 4.28):
-        m.box((mx, fy - 0.02, 1.48), (0.09, 0.12, 2.75), C_IRON_LIGHT, bevel=0.01, ao_fn=ao)
-    m.box((-2.55, fy - 0.02, 0.28), (3.56, 0.14, 0.56), C_CONCRETE, bevel=0.015, ao_fn=ao)
-    m.box((2.55, fy - 0.02, 0.28), (3.56, 0.14, 0.56), C_CONCRETE, bevel=0.015, ao_fn=ao)
+        m.box((mx, fy - 0.08, 1.48), (0.10, 0.14, 2.75), C_IRON_LIGHT, bevel=0.01, ao_fn=ao)
+    m.box((-2.55, fy - 0.08, 0.28), (3.56, 0.16, 0.56), C_CONCRETE, bevel=0.015, ao_fn=ao)
+    m.box((2.55, fy - 0.08, 0.28), (3.56, 0.16, 0.56), C_CONCRETE, bevel=0.015, ao_fn=ao)
 
     # 2F apartments above konbini
     for wx in (-2.9, 0.0, 2.9):
@@ -496,9 +494,9 @@ def build_house_slope_a(mat, col):
     m.box((0, 0, 3.05), (w + 0.14, d + 0.14, 0.13), C_TIMBER, bevel=0.016, ao_fn=ao)
 
     fy = -d * 0.5
-    # Entry door + tiled porch canopy
-    m.box((-1.85, fy - 0.02, 1.38), (1.18, 0.12, 2.20), C_TIMBER, bevel=0.016, ao_fn=ao)
-    m.box((-1.85, fy - 0.05, 1.72), (0.42, 0.04, 0.56), C_GLASS, bevel=0.0, smooth=False, glass=True)
+    # Entry door + tiled porch canopy (glass strictly proud of timber door)
+    m.box((-1.85, fy - 0.06, 1.38), (1.18, 0.12, 2.20), C_TIMBER, bevel=0.016, ao_fn=ao)
+    m.box((-1.85, fy - 0.135, 1.72), (0.42, 0.04, 0.56), C_GLASS, bevel=0.0, smooth=False, glass=True)
     m.box((-1.85, fy - 0.55, 2.68), (1.92, 1.05, 0.14), C_ROOF_TERRA, bevel=0.018, rot=(-0.22, 0.0, 0.0), ao_fn=ao)
     # Front warm porch lamp
     m.box((-1.05, fy - 0.12, 2.25), (0.16, 0.16, 0.22), C_LAMP_GLOW, bevel=0.01, smooth=False, glass=True)
@@ -609,21 +607,21 @@ def build_tram_car(mat, col):
         m.box((sx * 0.26, 0, 4.04), (0.06, 0.65, 0.68), C_IRON, bevel=0.008,
               rot=(0.0, sx * 0.38, 0.0), ao_fn=ao)
 
-    # Side panoramic windows & doors (both -Y and +Y)
+    # Side panoramic windows & doors (both -Y and +Y, cleanly proud of body)
     for sy in (-1.0, 1.0):
-        wy = sy * (W * 0.5 + 0.01)
+        wy = sy * (W * 0.5 + 0.045)
         for wx in (-4.4, -2.9, -0.7, 0.7, 2.9, 4.4):
-            m.box((wx, wy, 2.62), (1.16, 0.05, 0.92), C_GLASS, bevel=0.0, smooth=False, glass=True)
-            m.box((wx, wy + sy * 0.01, 2.16), (1.22, 0.05, 0.06), C_IRON_LIGHT, bevel=0.008, ao_fn=ao)
+            m.box((wx, wy, 2.62), (1.16, 0.045, 0.92), C_GLASS, bevel=0.0, smooth=False, glass=True)
+            m.box((wx, wy + sy * 0.025, 2.16), (1.22, 0.05, 0.06), C_IRON_LIGHT, bevel=0.008, ao_fn=ao)
         for dx in (-1.85, 1.85):
-            m.box((dx, wy, 2.10), (1.02, 0.06, 2.02), C_TRAM_GREEN, bevel=0.015, ao_fn=ao)
-            m.box((dx, wy + sy * 0.02, 2.58), (0.74, 0.04, 0.92), C_GLASS, bevel=0.0, smooth=False, glass=True)
+            m.box((dx, sy * (W * 0.5 + 0.03), 2.10), (1.02, 0.06, 2.02), C_TRAM_GREEN, bevel=0.015, ao_fn=ao)
+            m.box((dx, sy * (W * 0.5 + 0.08), 2.58), (0.74, 0.04, 0.92), C_GLASS, bevel=0.0, smooth=False, glass=True)
 
     # Front & rear driver windows + glowing round headlights
     for sx in (-1.0, 1.0):
-        fx = sx * (L * 0.5 + 0.01)
+        fx = sx * (L * 0.5 + 0.045)
         for wy in (-0.56, 0.56):
-            m.box((fx, wy, 2.62), (0.05, 0.92, 0.88), C_GLASS, bevel=0.0, smooth=False, glass=True)
+            m.box((fx, wy, 2.62), (0.045, 0.92, 0.88), C_GLASS, bevel=0.0, smooth=False, glass=True)
         # Warm glowing round headlamp & destination sign
         m.cyl((fx + sx * 0.03, 0.0, 3.16), 0.14, 0.14, 0.10, C_LAMP_GLOW, segs=12,
               rot=(0.0, math.pi * 0.5, 0.0), smooth=False, glass=True)

@@ -240,13 +240,12 @@ if (uStyleMode > 0.5) {
   }
 }
 if (uIsHero > 0.5 && uNightHeroLift > 0.005) {
-  // Hero-only warm-neutral night fill light on Shiba & Scooter (zero extra scene PointLights).
+  // Subtle cool-moonlight rim separation only (never blasts the rider's back bright at night).
   float hNdv = clamp(dot(geometryNormal, geometryViewDir), 0.0, 1.0);
-  vec3 hFillDir = normalize(geometryViewDir * 0.72 + vec3(0.0, 0.68, 0.12));
-  float hWrap = clamp(dot(geometryNormal, hFillDir) * 0.55 + 0.45, 0.0, 1.0);
-  float hRim = pow(1.0 - hNdv, 2.1) * 0.42;
-  vec3 hWarmTint = vec3(1.06, 0.98, 0.86);
-  reflectedLight.indirectDiffuse += diffuseColor.rgb * hWarmTint * ((0.28 + 0.52 * hWrap + hRim) * uNightHeroLift);
+  float hTop = clamp(geometryNormal.y * 0.5 + 0.5, 0.0, 1.0);
+  float hRim = pow(1.0 - hNdv, 2.6) * 0.55;
+  vec3 hMoonTint = vec3(0.84, 0.92, 1.06);
+  reflectedLight.indirectDiffuse += diffuseColor.rgb * hMoonTint * ((0.06 + 0.14 * hTop + hRim) * uNightHeroLift);
 }
 `;
         shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_end>', styleEnd);
@@ -407,8 +406,8 @@ if (uIsHero > 0.5 && uNightHeroLift > 0.005) {
     sharedUniforms.uShadowTint.value.copy(cur.shadowTint);
     sharedUniforms.uShadowTintStr.value = cur.shadowTintStrength;
     sharedUniforms.uSunRefMag.value = Math.max(0.05, exactSunMag);
-    const duskFill = THREE.MathUtils.smoothstep(cur.emissive, 0.12, 0.45) * 0.26;
-    const nightFill = THREE.MathUtils.smoothstep(cur.emissive, 0.35, 0.98) * 0.59;
+    const duskFill = THREE.MathUtils.smoothstep(cur.emissive, 0.12, 0.45) * 0.08;
+    const nightFill = THREE.MathUtils.smoothstep(cur.emissive, 0.35, 0.98) * 0.18;
     sharedUniforms.uNightHeroLift.value = duskFill + nightFill;
 
     const bloomStr = cur.bloomStrength * 1.15;

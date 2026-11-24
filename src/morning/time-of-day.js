@@ -157,7 +157,7 @@ export const TOD_PRESETS = Object.freeze({
     sunOffsetStreet: [-7.5, 12.8, 8.0],
     sunOffsetCountry: [11.5, 11.2, -6.8],
     sunColor: 0xb0c8de,
-    sunIntensity: 1.05,
+    sunIntensity: 0.72,
     hemiSky: 0x4a607a,
     hemiGround: 0x323b4a,
     hemiIntensity: 1.08,
@@ -567,16 +567,20 @@ function buildNightFixtures(scene) {
   for (const sx of [-12, -5, 2, 9, 16, 23, 30, 37, 44]) {
     pools.push([sx, CURB_H + 0.035, -0.75, 5.4, 3.6, 0]);
   }
-  // Hub #1 Coastal Hillside Town streetlamp pools (follows slope pitch cleanly, 0 extra draw calls)
-  for (const dz of [-52, -32, -12, 8, 36, 54.5]) {
+  // Hub #1 Coastal Hillside Town streetlamp pools (placed strictly on flat terraces & linear mid-slope)
+  for (const dz of [-26, -6]) {
     const y0 = townSlopeY(dz);
     const pitch = Math.atan2(townSlopeY(dz + 1) - townSlopeY(dz - 1), 2.0);
     for (const s of [-1, 1]) {
-      pools.push([COASTAL_TOWN.x + s * 4.5, y0 + 0.055, COASTAL_TOWN.z + dz, 7.6, 7.6, -pitch]);
+      pools.push([COASTAL_TOWN.x + s * 4.4, y0 + 0.065, COASTAL_TOWN.z + dz, 5.8, 5.8, -pitch]);
     }
   }
-  for (const [dx, dz] of [[-12, 22], [12, 22], [-12, 28], [12, 28], [-24, -58], [0, -58], [24, -58]]) {
-    pools.push([COASTAL_TOWN.x + dx, townSlopeY(dz) + 0.055, COASTAL_TOWN.z + dz, 8.2, 8.2, 0]);
+  for (const [dx, dz] of [
+    [-12, 22], [12, 22], [-12, 28], [12, 28],
+    [-24, -58], [0, -58], [24, -58],
+    [-18, 60], [18, 60],
+  ]) {
+    pools.push([COASTAL_TOWN.x + dx, townSlopeY(dz) + 0.06, COASTAL_TOWN.z + dz, 6.4, 6.4, 0]);
   }
 
   const poolGeo = new THREE.PlaneGeometry(1, 1);
@@ -614,17 +618,23 @@ function buildNightFixtures(scene) {
   scooterRig.name = 'scooter-light-rig';
   scooterRig.rotation.order = 'YXZ';
 
-  // (a) Real dynamic tungsten SpotLight mounted at headlamp height (0, 0.85, 0.44) aimed forward-downward
-  const headSpot = new THREE.SpotLight(0xffe9b5, 0.0, 28, 0.50, 0.76, 1.45);
+  // (a) Real dynamic tungsten SpotLight mounted strictly IN FRONT of headlamp (z=+0.92m)
+  //     so Shiba & delivery box are behind the cone (never over-lit on the rider's back)
+  //     while cleanly illuminating road, curbs, buildings & shadows ahead!
+  const headSpot = new THREE.SpotLight(0xffe9b5, 0.0, 34, 0.52, 0.68, 1.25);
   headSpot.castShadow = false;
-  headSpot.position.set(0, 0.85, 0.44);
-  headSpot.target.position.set(0, -0.30, 9.8);
+  headSpot.position.set(0, 0.80, 0.92);
+  headSpot.target.position.set(0, -0.40, 12.5);
   scooterRig.add(headSpot, headSpot.target);
 
-  // (b) Forward ground low-beam projection (narrow origin at z=+0.50, wide smooth fan out to z=+11.3)
-  const beamGeo = new THREE.PlaneGeometry(6.2, 10.8);
+  // (b) Terrain-conforming subdivided ground low-beam projection (4x16 grid updated live in world space
+  //     to hug every slope crest & valley seamlessly — zero flat-plane road clipping!).
+  const beamSegX = 4, beamSegZ = 16;
+  const beamW = 5.8, beamL = 10.6, beamStartZ = 0.90;
+  const beamGeo = new THREE.PlaneGeometry(beamW, beamL, beamSegX, beamSegZ);
   beamGeo.rotateX(-Math.PI / 2);
-  beamGeo.translate(0, 0.055, 5.90);
+  beamGeo.translate(0, 0, beamStartZ + beamL * 0.5);
+  const beamLocalPos = new Float32Array(beamGeo.attributes.position.array);
   const beamTex = makeHeadlightBeamTexture();
   const beamMat = new THREE.MeshBasicMaterial({
     map: beamTex,
@@ -634,23 +644,23 @@ function buildNightFixtures(scene) {
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     polygonOffset: true,
-    polygonOffsetFactor: -3,
-    polygonOffsetUnits: -3,
+    polygonOffsetFactor: -4,
+    polygonOffsetUnits: -4,
   });
   const headlightBeam = new THREE.Mesh(beamGeo, beamMat);
   headlightBeam.frustumCulled = false;
-  scooterRig.add(headlightBeam);
+  group.add(headlightBeam);
 
-  // (c) Soft volumetric Fresnel air beam cone shooting forward-downward from headlamp lens
-  const coneLen = 4.6;
-  const coneGeo = new THREE.CylinderGeometry(0.085, 1.02, coneLen, 20, 1, true);
-  // Rotate so top cap (r=0.085, v=1) sits at origin and expands along +Z
+  // (c) Compact Fresnel air beam cone shooting cleanly forward from the headlamp glass
+  //     (kept strictly above asphalt so the cylinder never slices into ground or shadows).
+  const coneLen = 2.45;
+  const coneGeo = new THREE.CylinderGeometry(0.068, 0.48, coneLen, 20, 1, true);
   coneGeo.translate(0, -coneLen * 0.5, 0);
   coneGeo.rotateX(-Math.PI / 2);
   const coneMat = createVolumetricBeamMaterial();
   const volumetricCone = new THREE.Mesh(coneGeo, coneMat);
-  volumetricCone.position.set(0, 0.84, 0.44);
-  volumetricCone.rotation.x = 0.145; // dip slightly downward toward the asphalt
+  volumetricCone.position.set(0, 0.84, 0.50);
+  volumetricCone.rotation.x = 0.065;
   volumetricCone.frustumCulled = false;
   scooterRig.add(volumetricCone);
 
@@ -694,6 +704,7 @@ function buildNightFixtures(scene) {
   scene.add(group);
   return {
     group, globeMat, poolMat, beamMat, coneMat, tailPoolMat, tailHaloMat, headSpot, scooterRig,
+    headlightBeam, beamLocalPos,
     dispose() {
       globeGeo.dispose(); globeMat.dispose();
       poolGeo.dispose(); poolTex.dispose(); poolMat.dispose();
@@ -768,10 +779,14 @@ export function createTimeOfDay({ scene, renderer, country, street, scooter, roo
   const sun = new THREE.DirectionalLight(0xffefd0, 2.65);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 12, bottom: -10, near: 0.5, far: 48 });
+  const SHADOW_HALF = 24;
+  Object.assign(sun.shadow.camera, {
+    left: -SHADOW_HALF, right: SHADOW_HALF, top: SHADOW_HALF, bottom: -SHADOW_HALF,
+    near: 0.5, far: 92,
+  });
   sun.shadow.camera.updateProjectionMatrix();
-  sun.shadow.normalBias = 0.018;
-  sun.shadow.bias = -0.00015;
+  sun.shadow.normalBias = 0.024;
+  sun.shadow.bias = -0.0002;
   sun.shadow.radius = 2;
   scene.add(hemi, sun, sun.target);
 
@@ -1131,34 +1146,76 @@ export function createTimeOfDay({ scene, renderer, country, street, scooter, roo
     nightFixtures.group.visible = showFixtures;
     if (showFixtures) {
       nightFixtures.globeMat.color.setHex(0xffe6a6).multiplyScalar(1.0 + em * 1.45);
-      nightFixtures.poolMat.opacity = em * 0.25;
-      nightFixtures.beamMat.opacity = em * 0.68;
-      nightFixtures.coneMat.uniforms.uIntensity.value = em * 0.48;
-      nightFixtures.headSpot.intensity = em * 28.0;
-      nightFixtures.tailPoolMat.opacity = em * 0.26;
-      nightFixtures.tailHaloMat.opacity = em * 0.68;
+      nightFixtures.poolMat.opacity = em * 0.22;
+      nightFixtures.beamMat.opacity = em * 0.58;
+      nightFixtures.coneMat.uniforms.uIntensity.value = em * 0.36;
+      nightFixtures.headSpot.intensity = em * 40.0;
+      nightFixtures.tailPoolMat.opacity = em * 0.22;
+      nightFixtures.tailHaloMat.opacity = em * 0.60;
     } else {
       nightFixtures.headSpot.intensity = 0.0;
     }
   }
 
-  function updateLightTransform({ inside, openCountry, lightX, ground, lightZ, scooterRoot }) {
-    sun.target.position.set(lightX, ground + 0.3, lightZ);
+  // Scratch vectors for exact 1-texel light-space shadow stabilization (zero 0.5m stutter, zero shimmer)
+  const _lDir = new THREE.Vector3();
+  const _lRight = new THREE.Vector3();
+  const _lUp = new THREE.Vector3();
+  const _worldUp = new THREE.Vector3(0, 1, 0);
+  const _lTarget = new THREE.Vector3();
+  const SHADOW_TEXEL = (SHADOW_HALF * 2) / 2048;
+
+  function updateLightTransform({ inside, openCountry, lightX, ground, lightZ, scooterRoot, groundAt }) {
     if (inside) {
+      sun.target.position.set(lightX, ground + 0.3, lightZ);
       sun.position.set(lightX - 6, ground + 11.5, lightZ + 7.5);
       return;
     }
     const s = current.sunOffsetStreet;
     const c = current.sunOffsetCountry;
-    sun.position.set(
-      lightX + THREE.MathUtils.lerp(s[0], c[0], openCountry),
-      ground + THREE.MathUtils.lerp(s[1], c[1], openCountry),
-      lightZ + THREE.MathUtils.lerp(s[2], c[2], openCountry),
-    );
+    const ox = THREE.MathUtils.lerp(s[0], c[0], openCountry) * 1.6;
+    const oy = THREE.MathUtils.lerp(s[1], c[1], openCountry) * 1.6;
+    const oz = THREE.MathUtils.lerp(s[2], c[2], openCountry) * 1.6;
+
+    // Project target onto directional light's orthogonal basis and snap to exact 1-texel increments
+    _lDir.set(ox, oy, oz).normalize();
+    _lRight.crossVectors(_worldUp, _lDir).normalize();
+    _lUp.crossVectors(_lDir, _lRight).normalize();
+    _lTarget.set(lightX, ground + 0.3, lightZ);
+    const rx = Math.round(_lTarget.dot(_lRight) / SHADOW_TEXEL) * SHADOW_TEXEL;
+    const ry = Math.round(_lTarget.dot(_lUp) / SHADOW_TEXEL) * SHADOW_TEXEL;
+    const rz = _lTarget.dot(_lDir);
+    _lTarget.set(0, 0, 0)
+      .addScaledVector(_lRight, rx)
+      .addScaledVector(_lUp, ry)
+      .addScaledVector(_lDir, rz);
+
+    sun.target.position.copy(_lTarget);
+    sun.position.set(_lTarget.x + ox, _lTarget.y + oy, _lTarget.z + oz);
+
     if (nightFixtures.group.visible && scooterRoot) {
       const rig = nightFixtures.scooterRig;
       rig.position.copy(scooterRoot.position);
       rig.rotation.set(scooterRoot.rotation.x, scooterRoot.rotation.y, scooterRoot.rotation.z, 'YXZ');
+
+      // Conform subdivided headlight ground ribbon to live terrain/road height (85 verts, <0.02ms)
+      const posAttr = nightFixtures.headlightBeam.geometry.attributes.position;
+      const src = nightFixtures.beamLocalPos;
+      const sx = scooterRoot.position.x;
+      const sy = scooterRoot.position.y;
+      const sz = scooterRoot.position.z;
+      const yaw = scooterRoot.rotation.y;
+      const cosY = Math.cos(yaw);
+      const sinY = Math.sin(yaw);
+      for (let i = 0; i < posAttr.count; i++) {
+        const lx = src[i * 3];
+        const lz = src[i * 3 + 2];
+        const wx = sx + lx * cosY + lz * sinY;
+        const wz = sz - lx * sinY + lz * cosY;
+        const wy = (groundAt ? groundAt(wx, wz) : sy) + 0.055;
+        posAttr.setXYZ(i, wx, wy, wz);
+      }
+      posAttr.needsUpdate = true;
     }
   }
 

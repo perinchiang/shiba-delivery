@@ -588,10 +588,14 @@ export function createView(renderer, state, world) {
     const fromShopSide = (!perspectiveView && camera.position.z < focus.z) || behindOldShops;
     street.shopSide.visible = !fromShopSide;
     street.opposite.visible = (perspectiveView && !(activeCamera.position.z > 6.6 && !outsideTown)) || fromShopSide;
-    const lightX = Math.round(focus.x * 2) / 2;
-    const lightZ = inside ? 0 : Math.round(focus.z * 2) / 2;
+    const lightX = focus.x;
+    const lightZ = inside ? 0 : focus.z;
     const openCountry = inside ? 0 : inHub ? 1 : THREE.MathUtils.smoothstep(state.x, 52, 170);
-    timeOfDay.updateLightTransform({ inside, openCountry, lightX, ground, lightZ, scooterRoot: scooter.root });
+    timeOfDay.updateLightTransform({
+      inside, openCountry, lightX, ground, lightZ,
+      scooterRoot: scooter.root,
+      groundAt: (wx, wz) => surfaceHeight(wx, wz, inside),
+    });
     view = nextView;
     if (!inside) country.sky.position.copy(activeCamera.position);
     renderStyle.render(scene, activeCamera);
