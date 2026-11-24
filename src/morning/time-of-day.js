@@ -834,6 +834,7 @@ export function createTimeOfDay({ scene, renderer, country, street, scooter, roo
   const seenMeshes = new WeakSet();
   const seenMats = new WeakSet();
   const signMaterials = [];       // { mat, baseSelfLit }
+  const emissiveMapMats = [];     // { mat, base, scale } for UV detail atlas (vending/windows/lanterns)
   const trafficLampMats = [];     // MeshBasicMaterial on InstancedMesh signal lamps
   const bikeLampMats = [];        // Bike · Lamp on scooter.root
   const sheafMaterials = [];      // MeshLambertMaterial with hardcoded emissive in harvest-field.js
@@ -897,6 +898,15 @@ export function createTimeOfDay({ scene, renderer, country, street, scooter, roo
       const isRuralSign = obj.matrixWorld.elements[12] > 160;
       for (const m of mats) {
         if (!m) continue;
+        if (m.emissiveMap && m.userData?.nightEmissiveScale && !seenMats.has(m)) {
+          seenMats.add(m);
+          emissiveMapMats.push({
+            mat: m,
+            base: m.userData.dayEmissiveBase ?? 0.0,
+            scale: m.userData.nightEmissiveScale,
+          });
+          continue;
+        }
         if (m.map && m.userData?.worldUniforms?.uSelfLit && !seenMats.has(m)) {
           seenMats.add(m);
           signMaterials.push({ mat: m, base: m.userData.worldUniforms.uSelfLit.value, boost: isRuralSign ? 0.22 : 0.88 });
@@ -1129,6 +1139,10 @@ export function createTimeOfDay({ scene, renderer, country, street, scooter, roo
     for (let i = 0; i < signMaterials.length; i++) {
       const entry = signMaterials[i];
       entry.mat.userData.worldUniforms.uSelfLit.value = entry.base + em * entry.boost;
+    }
+    for (let i = 0; i < emissiveMapMats.length; i++) {
+      const entry = emissiveMapMats[i];
+      entry.mat.emissiveIntensity = entry.base + em * entry.scale;
     }
     for (let i = 0; i < trafficLampMats.length; i++) {
       trafficLampMats[i].color.setScalar(1.0 + em * 1.15);

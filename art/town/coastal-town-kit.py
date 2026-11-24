@@ -17,6 +17,7 @@ from pathlib import Path
 import bpy
 import bmesh
 from mathutils import Euler, Vector
+from mathutils.bvhtree import BVHTree
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 TAU = math.tau
@@ -44,12 +45,12 @@ C_AC_BODY = 0xe5e3da
 C_AC_GRILLE = 0x545d5c
 
 # Hero Direction A ("Haikaze-so" coastal flat-roof zakkyo mixed-use building) palette
-C_HERO_WALL = 0xf3ead0
-C_HERO_SLAB = 0xa4b995
-C_HERO_SLAB_DARK = 0x8ba27d
-C_HERO_DECK = 0xc9c3b3
-C_HERO_STEEL = 0x3b6c67
-C_HERO_STEEL_HI = 0x528982
+C_HERO_WALL = 0xf5ecd2
+C_HERO_SLAB = 0xa6bc97
+C_HERO_SLAB_DARK = 0x8ca37e
+C_HERO_DECK = 0xcfc9b9
+C_HERO_STEEL = 0x407570
+C_HERO_STEEL_HI = 0x5c968e
 C_HERO_DOOR = 0x6f988c
 C_HERO_DOOR_FRAME = 0xbcc4bf
 C_HERO_WOOD = 0x9b623d
@@ -119,8 +120,48 @@ def shade_srgb(col_srgb, ao=1.0, tint_cool=0.0):
     )
 
 
+# Exact 1024x1024 UV rectangles matching src/morning/coastal-detail-atlas.js (canvas pixels x0, y0, x1, y1)
+UV_VEND_WHITE = (0, 0, 256, 512)
+UV_VEND_PINK = (256, 0, 512, 512)
+UV_AC_FRONT = (512, 0, 768, 256)
+UV_MENU_BOARD = (768, 0, 1024, 384)
+UV_WINDOW_SHOP = (512, 256, 768, 512)
+UV_WINDOW_APT = (768, 384, 1024, 640)
+UV_NOREN = [
+    (0, 512, 128, 768),
+    (128, 512, 256, 768),
+    (256, 512, 384, 768),
+    (384, 512, 512, 768),
+]
+UV_MOSAIC_TILE = (512, 512, 768, 768)
+UV_WOOD_DOOR = (0, 768, 256, 1024)
+UV_APT_DOOR = (256, 768, 512, 1024)
+UV_LANTERN_GLOW = (512, 768, 768, 1024)
+UV_CRATE_SIDE = (768, 640, 1024, 896)
+UV_POSTER_WALL = (768, 896, 1024, 1024)
+
+# Precomputed 20 Fibonacci-hemisphere unit ray directions for fast Blender BVHTree Contact AO baking
+_AO_RAYS = []
+_GOLDEN_ANGLE = math.pi * (3.0 - math.sqrt(5.0))
+for _i in range(20):
+    _z = 0.14 + 0.84 * ((_i + 0.5) / 20.0)
+    _r = math.sqrt(max(0.0, 1.0 - _z * _z))
+    _phi = _i * _GOLDEN_ANGLE
+    _AO_RAYS.append((math.cos(_phi) * _r, math.sin(_phi) * _r, _z))
+
+
+def _uv_bounds(rect, pad=2.0):
+    x0, y0, x1, y1 = rect
+    return (
+        (x0 + pad) / 1024.0,
+        1.0 - (y1 - pad) / 1024.0,  # v_bot (Blender V-up -> glTF flipY=false canvas bottom)
+        (x1 - pad) / 1024.0,
+        1.0 - (y0 + pad) / 1024.0,  # v_top (Blender V-up -> glTF flipY=false canvas top)
+    )
+
+
 class TownMesh:
-    """Beveled, vertex-AO shaded, weighted-normal architectural mesh builder."""
+    """Beveled, vertex-AO shaded (or BVH raycast-AO baked), multi-material architectural mesh builder."""
 
     def __init__(self, name):
         self.name = name
@@ -145,11 +186,12 @@ class TownMesh:
                 nors[loop] = acc.normalized() if acc.length > 1e-6 else fn.copy()
         return nors
 
-    def _finalize(self, bm, color, ao_fn=None, smooth=True, glass=False):
+    def _finalize(self, bm, color, ao_fn=None, smooth=True, glass=False, mat_idx=0, ao_mode='full'):
         base = hex_srgb(color) if isinstance(color, int) else color
         col_layer = bm.loops.layers.color.new('Color')
         for f in bm.faces:
             f.smooth = smooth
+            f.material_index = mat_idx
             for loop in f.loops:
                 if glass:
                     loop[col_layer] = base
@@ -158,10 +200,11 @@ class TownMesh:
                     ao = ao_fn(p, f.normal) if ao_fn else 1.0
                     cool = 0.22 if (ao_fn and f.normal.z < -0.35) else 0.0
                     loop[col_layer] = shade_srgb(base, ao, tint_cool=cool)
-        self.parts.append((bm, self._weighted_normals(bm)))
+        eff_mode = 'none' if glass else ao_mode
+        self.parts.append((bm, self._weighted_normals(bm), eff_mode))
 
     def box(self, center, size, color, bevel=0.024, segments=1, rot=(0.0, 0.0, 0.0),
-            ao_fn=None, smooth=True, glass=False):
+            ao_fn=None, smooth=True, glass=False, mat_idx=0, ao_mode='full'):
         bm = bmesh.new()
         bmesh.ops.create_cube(bm, size=1.0)
         sx, sy, sz = size
@@ -179,10 +222,55 @@ class TownMesh:
         mat = Euler(rot, 'XYZ').to_matrix().to_4x4()
         mat.translation = Vector(center)
         bmesh.ops.transform(bm, matrix=mat, verts=bm.verts)
-        self._finalize(bm, color, ao_fn=ao_fn, smooth=smooth, glass=glass)
+        self._finalize(bm, color, ao_fn=ao_fn, smooth=smooth, glass=glass, mat_idx=mat_idx, ao_mode=ao_mode)
+
+    def grid_box(self, center, size, color, step=0.65, bevel=0.028, rot=(0.0, 0.0, 0.0),
+                 ao_fn=None, smooth=True, glass=False, mat_idx=0, ao_mode='full'):
+        """Subdivided beveled box so BVH Contact AO resolves clean localized shadows around props & eaves."""
+        sx, sy, sz = size
+        nx = max(1, int(round(sx / step)))
+        ny = max(1, int(round(sy / step)))
+        nz = max(1, int(round(sz / step)))
+        bm = bmesh.new()
+        bmesh.ops.create_cube(bm, size=1.0)
+        for v in bm.verts:
+            v.co.x *= sx
+            v.co.y *= sy
+            v.co.z *= sz
+        for axis_i, n_div, span in ((0, nx, sx), (1, ny, sy), (2, nz, sz)):
+            if n_div <= 1:
+                continue
+            p_no = Vector((1.0 if axis_i == 0 else 0.0,
+                           1.0 if axis_i == 1 else 0.0,
+                           1.0 if axis_i == 2 else 0.0))
+            for k in range(1, n_div):
+                pos = -0.5 * span + (k / n_div) * span
+                bmesh.ops.bisect_plane(
+                    bm,
+                    geom=list(bm.verts) + list(bm.edges) + list(bm.faces),
+                    plane_co=p_no * pos,
+                    plane_no=p_no,
+                )
+        bm.normal_update()
+        if bevel > 0.0:
+            b_off = min(bevel, min(sx / nx, sy / ny, sz / nz) * 0.30)
+            if b_off > 0.002:
+                sharp_edges = [
+                    e for e in bm.edges
+                    if len(e.link_faces) == 2 and e.link_faces[0].normal.dot(e.link_faces[1].normal) < 0.5
+                ]
+                if sharp_edges:
+                    bmesh.ops.bevel(
+                        bm, geom=sharp_edges, offset=b_off, segments=1,
+                        profile=0.5, affect='EDGES', clamp_overlap=True,
+                    )
+        mat = Euler(rot, 'XYZ').to_matrix().to_4x4()
+        mat.translation = Vector(center)
+        bmesh.ops.transform(bm, matrix=mat, verts=bm.verts)
+        self._finalize(bm, color, ao_fn=ao_fn, smooth=smooth, glass=glass, mat_idx=mat_idx, ao_mode=ao_mode)
 
     def cyl(self, center, r_bot, r_top, height, color, segs=12, rot=(0.0, 0.0, 0.0),
-            ao_fn=None, smooth=True, glass=False):
+            ao_fn=None, smooth=True, glass=False, mat_idx=0, ao_mode='full'):
         bm = bmesh.new()
         bmesh.ops.create_cone(
             bm, cap_ends=True, cap_tris=False, segments=segs,
@@ -191,7 +279,101 @@ class TownMesh:
         mat = Euler(rot, 'XYZ').to_matrix().to_4x4()
         mat.translation = Vector(center)
         bmesh.ops.transform(bm, matrix=mat, verts=bm.verts)
-        self._finalize(bm, color, ao_fn=ao_fn, smooth=smooth, glass=glass)
+        self._finalize(bm, color, ao_fn=ao_fn, smooth=smooth, glass=glass, mat_idx=mat_idx, ao_mode=ao_mode)
+
+    def quad_uv(self, p0, p1, p2, p3, uv_rect, mat_idx=2, color=0xffffff, ao_mode='soft', double_sided=False):
+        """UV-mapped quad (p0=BL, p1=BR, p2=TR, p3=TL, CCW outward normal) matched to 1024x1024 Detail Atlas."""
+        u0, v_bot, u1, v_top = _uv_bounds(uv_rect)
+        uvs = [(u0, v_bot), (u1, v_bot), (u1, v_top), (u0, v_top)]
+        bm = bmesh.new()
+        uv_layer = bm.loops.layers.uv.new('UVMap')
+        vs = [bm.verts.new(Vector(p)) for p in (p0, p1, p2, p3)]
+        f = bm.faces.new(vs)
+        for loop, uv in zip(f.loops, uvs):
+            loop[uv_layer].uv = uv
+        if double_sided:
+            vs_b = [bm.verts.new(Vector(p)) for p in (p1, p0, p3, p2)]
+            fb = bm.faces.new(vs_b)
+            for loop, uv in zip(fb.loops, uvs):
+                loop[uv_layer].uv = uv
+        self._finalize(bm, color, ao_fn=None, smooth=False, glass=False, mat_idx=mat_idx, ao_mode=ao_mode)
+
+    def pipe_elbow(self, corner, dir_in, dir_out, radius, bend_r, color, segs_ring=10, segs_arc=6,
+                   mat_idx=0, ao_fn=None):
+        """Smooth curved 90-degree tubular pipe elbow connecting dir_in (entering corner) to dir_out (exiting)."""
+        d_in = Vector(dir_in).normalized()
+        d_out = Vector(dir_out).normalized()
+        c_pt = Vector(corner)
+        arc_c = c_pt - d_in * bend_r + d_out * bend_r
+        r2 = d_in.cross(d_out)
+        if r2.length < 1e-5:
+            return
+        r2.normalize()
+        bm = bmesh.new()
+        rings = []
+        for s in range(segs_arc + 1):
+            a = (s / segs_arc) * (math.pi * 0.5)
+            ca, sa = math.cos(a), math.sin(a)
+            p_ctr = arc_c + d_in * (bend_r * sa) - d_out * (bend_r * ca)
+            r1 = d_in * sa - d_out * ca
+            ring = []
+            for k in range(segs_ring):
+                phi = k * TAU / segs_ring
+                vpos = p_ctr + (r1 * math.cos(phi) + r2 * math.sin(phi)) * radius
+                ring.append(bm.verts.new(vpos))
+            rings.append(ring)
+        for s in range(segs_arc):
+            ra, rb = rings[s], rings[s + 1]
+            for k in range(segs_ring):
+                nk = (k + 1) % segs_ring
+                bm.faces.new((ra[k], ra[nk], rb[nk], rb[k]))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        self._finalize(bm, color, ao_fn=ao_fn, smooth=True, mat_idx=mat_idx)
+
+    def leaf_blade(self, base_pt, fwd_dir, length, width, arch, color, mat_idx=0, ao_fn=None):
+        """Arched, tapered, subtly cupped 3D botanical leaf blade (solid thin double-sided geometry)."""
+        f = Vector(fwd_dir)
+        f.z = 0.0
+        if f.length < 1e-5:
+            f = Vector((1.0, 0.0, 0.0))
+        f.normalize()
+        up = Vector((0.0, 0.0, 1.0))
+        side = f.cross(up).normalized()
+        b = Vector(base_pt)
+        # 4 longitudinal stations from stem base -> mid-broad -> taper -> tip
+        stations = [
+            (0.00, 0.14, 0.00, 0.00),
+            (0.32, 0.50, arch * 0.72, 0.014),
+            (0.68, 0.42, arch * 0.96, 0.012),
+            (1.00, 0.03, arch * 0.48, 0.00),
+        ]
+        bm = bmesh.new()
+        thick = 0.009
+        top_rings = []
+        bot_rings = []
+        for t, hw_f, z_off, cup in stations:
+            ctr = b + f * (t * length) + up * z_off
+            hw = width * hw_f
+            p_l = ctr - side * hw + up * cup
+            p_m = ctr
+            p_r = ctr + side * hw + up * cup
+            top_rings.append([bm.verts.new(p_l + up * thick * 0.5),
+                              bm.verts.new(p_m + up * thick * 0.5),
+                              bm.verts.new(p_r + up * thick * 0.5)])
+            bot_rings.append([bm.verts.new(p_l - up * thick * 0.5),
+                              bm.verts.new(p_m - up * thick * 0.5),
+                              bm.verts.new(p_r - up * thick * 0.5)])
+        for i in range(len(stations) - 1):
+            ta, tb = top_rings[i], top_rings[i + 1]
+            ba, bb = bot_rings[i], bot_rings[i + 1]
+            for j in (0, 1):
+                bm.faces.new((ta[j], ta[j + 1], tb[j + 1], tb[j]))
+                bm.faces.new((ba[j + 1], ba[j], bb[j], bb[j + 1]))
+            # Side edges
+            bm.faces.new((ta[0], tb[0], bb[0], ba[0]))
+            bm.faces.new((ta[2], ba[2], bb[2], tb[2]))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        self._finalize(bm, color, ao_fn=ao_fn, smooth=True, mat_idx=mat_idx)
 
     def gable_prism(self, center, width, depth, base_z, ridge_h, thickness, color,
                     ridge_along_x=True, bevel=0.025, ao_fn=None):
@@ -224,12 +406,77 @@ class TownMesh:
         bmesh.ops.transform(bm, matrix=mat, verts=bm.verts)
         self._finalize(bm, color, ao_fn=ao_fn, smooth=True)
 
-    def build(self, shared_mat, collection):
+    @staticmethod
+    def _bake_bvh_contact_ao(merged, col_dst, face_ao_modes, max_dist=1.25):
+        """Offline Blender BVHTree raycast soft pastel sky-cool Contact AO baked into vertex colors."""
+        merged.normal_update()
+        bvh = BVHTree.FromBMesh(merged)
+        cache = {}
+        n_rays = float(len(_AO_RAYS))
+
+        def sample_ao(co, nor):
+            key = (
+                int(round(co.x * 60.0)), int(round(co.y * 60.0)), int(round(co.z * 60.0)),
+                int(round(nor.x * 6.0)), int(round(nor.y * 6.0)), int(round(nor.z * 6.0)),
+            )
+            cached = cache.get(key)
+            if cached is not None:
+                return cached
+            n = nor.normalized() if nor.length > 1e-6 else Vector((0.0, 0.0, 1.0))
+            ref = Vector((1.0, 0.0, 0.0)) if abs(n.z) > 0.85 else Vector((0.0, 0.0, 1.0))
+            t_vec = ref.cross(n).normalized()
+            b_vec = n.cross(t_vec).normalized()
+            origin = co + n * 0.028
+            occ = 0.0
+            for rx, ry, rz in _AO_RAYS:
+                d = t_vec * rx + b_vec * ry + n * rz
+                hit_d = max_dist
+                # Analytical ground plane z = 0.0 for gentle sidewalk grounding
+                if d.z < -0.01 and origin.z > 0.004:
+                    tg = -origin.z / d.z
+                    if 0.0 < tg < hit_d:
+                        hit_d = tg
+                loc, _hn, _idx, dist = bvh.ray_cast(origin, d, hit_d)
+                if loc is not None and dist < hit_d:
+                    hit_d = dist
+                if hit_d < max_dist:
+                    occ += (1.0 - hit_d / max_dist) ** 1.45
+            occ_ratio = min(1.0, occ / n_rays)
+            # Clean sunlit Ghibli occlusion curve: airy bright walls + crisp subtle contact shadows
+            val = (1.0 - occ_ratio * 0.34) * (1.02 if n.z > 0.65 else 1.0)
+            cache[key] = val
+            return val
+
+        for f, mode in zip(merged.faces, face_ao_modes):
+            if mode == 'none':
+                continue
+            fn = f.normal
+            mat_i = f.material_index
+            for loop in f.loops:
+                raw_ao = sample_ao(loop.vert.co, fn)
+                if mode == 'soft' or mat_i == 2:
+                    # Keep illustrated UV atlas faces vibrant & true-to-palette with gentle edge grounding
+                    ao = 0.92 + 0.09 * max(0.0, min(1.0, raw_ao))
+                elif mat_i == 1:
+                    # Keep painted steel treads/railings/doors crisp pine-teal (never crushed black-green)
+                    ao = 0.85 + 0.18 * max(0.0, min(1.0, raw_ao))
+                else:
+                    # Warm cream stucco & sage concrete: luminous open walls + clean pastel sky-cool crevices
+                    ao = max(0.76, min(1.04, raw_ao))
+                c = loop[col_dst]
+                loop[col_dst] = shade_srgb((c[0], c[1], c[2], 1.0), ao, tint_cool=0.0)
+
+    def build(self, shared_mat, collection, bake_raycast_ao=False):
+        mats = shared_mat if isinstance(shared_mat, (list, tuple)) else [shared_mat]
+        need_uv = len(mats) > 1 or any(bm.loops.layers.uv.active is not None for bm, _, _ in self.parts)
         merged = bmesh.new()
         col_dst = merged.loops.layers.color.new('Color')
+        uv_dst = merged.loops.layers.uv.new('UVMap') if need_uv else None
         nor_list = []
-        for bm, nors in self.parts:
+        face_ao_modes = []
+        for bm, nors, ao_mode in self.parts:
             col_src = bm.loops.layers.color.active
+            uv_src = bm.loops.layers.uv.active
             vmap = {v: merged.verts.new(v.co) for v in bm.verts}
             for f in bm.faces:
                 try:
@@ -237,14 +484,23 @@ class TownMesh:
                 except ValueError:
                     continue
                 nf.smooth = f.smooth
+                nf.material_index = f.material_index
+                face_ao_modes.append(ao_mode)
                 for ol, nl in zip(f.loops, nf.loops):
                     nl[col_dst] = ol[col_src]
+                    if uv_dst is not None:
+                        nl[uv_dst].uv = ol[uv_src].uv if uv_src is not None else (0.01, 0.01)
                     nor_list.append(nors[ol])
             bm.free()
+
+        if bake_raycast_ao:
+            self._bake_bvh_contact_ao(merged, col_dst, face_ao_modes)
+
         mesh = bpy.data.meshes.new(self.name)
         merged.to_mesh(mesh)
         merged.free()
-        mesh.materials.append(shared_mat)
+        for m_slot in mats:
+            mesh.materials.append(m_slot)
         if len(nor_list) == len(mesh.loops):
             mesh.normals_split_custom_set(nor_list)
         obj = bpy.data.objects.new(self.name, mesh)
@@ -784,140 +1040,285 @@ def build_street_furniture(mat, col):
 #       * 14 steps: by = -1.95 (bz = 0.12m) -> by = +2.35 (bz = 3.25m)
 #       * top landing bridge: by in [+2.35..+3.80], top bz = 3.25m
 # ==============================================================================
-def _add_potted_plant(m, x, y, z, scale=1.0, ao_fn=None):
-    """Terracotta pot with layered storybook foliage."""
+def _add_uv_panel(m, cx, cy, cz, w, h, facing, uv_rect, color=0xffffff, ao_mode='soft', double_sided=False):
+    """Axis-aligned UV-mapped quad cleanly oriented outward on -Y/+Y/+X/-X faces."""
+    hw, hh = w * 0.5, h * 0.5
+    if facing == '-Y':
+        m.quad_uv((cx - hw, cy, cz - hh), (cx + hw, cy, cz - hh),
+                  (cx + hw, cy, cz + hh), (cx - hw, cy, cz + hh),
+                  uv_rect, mat_idx=2, color=color, ao_mode=ao_mode, double_sided=double_sided)
+    elif facing == '+Y':
+        m.quad_uv((cx + hw, cy, cz - hh), (cx - hw, cy, cz - hh),
+                  (cx - hw, cy, cz + hh), (cx + hw, cy, cz + hh),
+                  uv_rect, mat_idx=2, color=color, ao_mode=ao_mode, double_sided=double_sided)
+    elif facing == '+X':
+        m.quad_uv((cx, cy - hw, cz - hh), (cx, cy + hw, cz - hh),
+                  (cx, cy + hw, cz + hh), (cx, cy - hw, cz + hh),
+                  uv_rect, mat_idx=2, color=color, ao_mode=ao_mode, double_sided=double_sided)
+    elif facing == '-X':
+        m.quad_uv((cx, cy + hw, cz - hh), (cx, cy - hw, cz - hh),
+                  (cx, cy - hw, cz + hh), (cx, cy + hw, cz + hh),
+                  uv_rect, mat_idx=2, color=color, ao_mode=ao_mode, double_sided=double_sided)
+
+
+def _add_botanical_plant(m, x, y, z, scale=1.0, seed=0):
+    """Terracotta pot with woody stems & 12 arched, cupped 3D botanical leaf blades (zero blocky cubes!)."""
     s = scale
-    m.cyl((x, y, z + 0.16 * s), 0.13 * s, 0.18 * s, 0.32 * s, C_HERO_POT, segs=10, ao_fn=ao_fn)
-    m.cyl((x, y, z + 0.32 * s), 0.195 * s, 0.195 * s, 0.05 * s, C_HERO_POT, segs=10, ao_fn=ao_fn)
-    m.cyl((x, y, z + 0.33 * s), 0.15 * s, 0.15 * s, 0.03 * s, C_TIMBER, segs=8, ao_fn=ao_fn)
-    # Lush stylized leaf clusters
-    m.box((x, y, z + 0.50 * s), (0.28 * s, 0.28 * s, 0.26 * s), C_LEAF_MID, bevel=0.08 * s, segments=2, ao_fn=ao_fn)
-    m.box((x + 0.09 * s, y - 0.06 * s, z + 0.64 * s), (0.20 * s, 0.20 * s, 0.22 * s), 0x4f8a48,
-          bevel=0.06 * s, segments=2, rot=(0.15, 0.1, 0.4), ao_fn=ao_fn)
-    m.box((x - 0.08 * s, y + 0.05 * s, z + 0.58 * s), (0.19 * s, 0.19 * s, 0.18 * s), 0x71aa62,
-          bevel=0.05 * s, segments=2, rot=(-0.12, -0.1, -0.3), ao_fn=ao_fn)
+    # Tapered terracotta pot + rolled rim + rich dark soil
+    m.cyl((x, y, z + 0.16 * s), 0.125 * s, 0.175 * s, 0.32 * s, C_HERO_POT, segs=12, mat_idx=0)
+    m.cyl((x, y, z + 0.315 * s), 0.192 * s, 0.192 * s, 0.055 * s, C_HERO_POT, segs=12, mat_idx=0)
+    m.cyl((x, y, z + 0.328 * s), 0.158 * s, 0.158 * s, 0.028 * s, C_TIMBER, segs=10, mat_idx=0)
+    # 3 slim woody central stems rising slightly splayed
+    for k, (ox, oy, h_st) in enumerate(((0.0, 0.0, 0.28), (0.04, -0.03, 0.22), (-0.04, 0.03, 0.24))):
+        m.cyl((x + ox * s, y + oy * s, z + (0.33 + h_st * 0.5) * s),
+              0.016 * s, 0.011 * s, h_st * s, 0x5c4a32, segs=6,
+              rot=(oy * 2.5, -ox * 2.5, 0.0), mat_idx=0)
+    # Two lush tiers of arched botanical leaf blades fanning organically around pot
+    greens = (0x54914c, 0x67a45a, 0x457d41, 0x76b064)
+    tiers = [
+        (7, 0.37, 0.34, 0.125, 0.14),  # lower broader spreading fronds
+        (5, 0.50, 0.27, 0.105, 0.20),  # upper upright crown leaves
+    ]
+    idx = 0
+    for count, z_base, l_len, l_wid, arch in tiers:
+        for i in range(count):
+            ang = (i + 0.35 * seed + 0.5 * idx) * TAU / count
+            dx, dy = math.cos(ang), math.sin(ang)
+            col = greens[(idx + seed) % len(greens)]
+            m.leaf_blade(
+                (x + dx * 0.03 * s, y + dy * 0.03 * s, z + z_base * s),
+                (dx, dy, 0.0),
+                l_len * s * (0.90 + 0.18 * ((i + seed) % 3) * 0.5),
+                l_wid * s,
+                arch * s,
+                col,
+                mat_idx=0,
+            )
+            idx += 1
 
 
-def _add_crate(m, x, y, z, col, rot_z=0.0, ao_fn=None):
-    """Japanese plastic beverage delivery crate (0.44m x 0.34m x 0.28m) with rim & handle cutouts."""
+def _add_open_crate(m, x, y, z, col, rot_z=0.0, bottles=False, exposed='-Y'):
+    """Hollow Japanese plastic beverage crate with molded lattice ribs & visible glass bottles inside!"""
     cw, cd, ch = 0.44, 0.34, 0.28
-    m.box((x, y, z + ch * 0.5), (cw, cd, ch), col, bevel=0.014, rot=(0.0, 0.0, rot_z), ao_fn=ao_fn)
-    # Slightly darker recessed top interior & rim lip for authentic depth
-    m.box((x, y, z + ch - 0.015), (cw + 0.02, cd + 0.02, 0.045), col, bevel=0.008, rot=(0.0, 0.0, rot_z), ao_fn=ao_fn)
-    m.box((x, y, z + ch + 0.005), (cw - 0.07, cd - 0.07, 0.018), C_WARN_DARK, bevel=0.004, rot=(0.0, 0.0, rot_z), ao_fn=ao_fn)
+    wt = 0.028
+    cos_r, sin_r = math.cos(rot_z), math.sin(rot_z)
+
+    def pt(lx, ly, lz):
+        return (x + lx * cos_r - ly * sin_r, y + lx * sin_r + ly * cos_r, z + lz)
+
+    # Bottom floor plate + 4 thin side walls + thickened top rim lip (true hollow interior!)
+    m.box(pt(0.0, 0.0, 0.02), (cw, cd, 0.04), col, bevel=0.008, rot=(0.0, 0.0, rot_z), mat_idx=0)
+    for sy in (-1.0, 1.0):
+        m.box(pt(0.0, sy * (cd * 0.5 - wt * 0.5), ch * 0.5), (cw, wt, ch), col,
+              bevel=0.008, rot=(0.0, 0.0, rot_z), mat_idx=0)
+        m.box(pt(0.0, sy * (cd * 0.5), ch - 0.018), (cw + 0.018, 0.036, 0.036), col,
+              bevel=0.006, rot=(0.0, 0.0, rot_z), mat_idx=0)
+    for sx in (-1.0, 1.0):
+        m.box(pt(sx * (cw * 0.5 - wt * 0.5), 0.0, ch * 0.5), (wt, cd - wt, ch), col,
+              bevel=0.008, rot=(0.0, 0.0, rot_z), mat_idx=0)
+        m.box(pt(sx * (cw * 0.5), 0.0, ch - 0.018), (0.036, cd + 0.018, 0.036), col,
+              bevel=0.006, rot=(0.0, 0.0, rot_z), mat_idx=0)
+    # UV molded crate lattice detail panel on visible outer side (tinted by crate color!)
+    if exposed == '-Y' and abs(rot_z) < 0.08:
+        _add_uv_panel(m, x, y - cd * 0.5 - 0.010, z + ch * 0.5, cw - 0.04, ch - 0.04,
+                      '-Y', UV_CRATE_SIDE, color=col, ao_mode='full')
+    elif exposed == '+X' and abs(rot_z) < 0.08:
+        _add_uv_panel(m, x + cw * 0.5 + 0.010, y, z + ch * 0.5, cd - 0.04, ch - 0.04,
+                      '+X', UV_CRATE_SIDE, color=col, ao_mode='full')
+
+    if bottles:
+        # 6 glossy glass soda / beer bottles visibly rising out of the hollow crate!
+        b_cols = (0x7a4622, 0x3b8a57, 0x4ca4c9, 0x7a4622, 0x3b8a57, 0x4ca4c9)
+        idx = 0
+        for bx in (-0.12, 0.0, 0.12):
+            for by in (-0.075, 0.075):
+                bc = b_cols[idx % len(b_cols)]
+                m.cyl(pt(bx, by, 0.17), 0.036, 0.034, 0.22, bc, segs=8, mat_idx=1)
+                m.cyl(pt(bx, by, 0.305), 0.032, 0.014, 0.065, bc, segs=8, mat_idx=1)
+                m.cyl(pt(bx, by, 0.345), 0.016, 0.016, 0.022, 0xf2eee0, segs=8, mat_idx=1)
+                idx += 1
 
 
-def _add_vintage_bicycle(m, x, y, z, yaw=0.0, ao_fn=None):
-    """Compact stylized Japanese mamachari bicycle with hollow spoked rims leaning near shopfront."""
+def _add_vintage_bicycle(m, x, y, z, yaw=0.0):
+    """Compact stylized Japanese mamachari bicycle with true tangent spoked rims & semi-gloss metal frame."""
     cos_y, sin_y = math.cos(yaw), math.sin(yaw)
 
     def pt(lx, ly, lz):
         return (x + lx * cos_y - ly * sin_y, y + lx * sin_y + ly * cos_y, z + lz)
 
-    # Front & rear open spoked wheels (r = 0.31m) built from segmented tire rim + thin spokes
+    # Front & rear open spoked wheels (r = 0.31m) built from tangent tire segments + metal spokes
     for wx in (-0.54, 0.54):
-        segs = 14
+        segs = 16
         r_mid = 0.285
-        seg_len = 2.0 * math.pi * r_mid / segs + 0.012
+        seg_len = 2.0 * math.pi * r_mid / segs + 0.010
         for k in range(segs):
             ang = (k + 0.5) * TAU / segs
             rx = wx + math.cos(ang) * r_mid
             rz = 0.31 + math.sin(ang) * r_mid
             m.box(pt(rx, 0.0, rz), (0.042, 0.044, seg_len), C_BIKE_TIRE, bevel=0.008,
-                  rot=(0.0, -ang, yaw), ao_fn=ao_fn)
-        # 4 crossed thin metal spokes + central hub
+                  rot=(0.0, -ang, yaw), mat_idx=0)
         for sa in (0.0, math.pi * 0.25, math.pi * 0.5, math.pi * 0.75):
-            m.box(pt(wx, 0.0, 0.31), (0.014, 0.014, 0.54), C_IRON_LIGHT, bevel=0.0,
-                  rot=(0.0, sa, yaw), ao_fn=ao_fn)
+            m.box(pt(wx, 0.0, 0.31), (0.013, 0.013, 0.54), C_IRON_LIGHT, bevel=0.0,
+                  rot=(0.0, sa, yaw), mat_idx=1)
         m.cyl(pt(wx, 0.0, 0.31), 0.042, 0.042, 0.075, C_IRON_LIGHT, segs=10,
-              rot=(math.pi * 0.5, 0.0, yaw), ao_fn=ao_fn)
-        # Mudguard cap over wheel
+              rot=(math.pi * 0.5, 0.0, yaw), mat_idx=1)
         m.box(pt(wx, 0.0, 0.635), (0.36, 0.058, 0.032), C_BIKE_FRAME, bevel=0.01,
-              rot=(0.0, 0.0, yaw), ao_fn=ao_fn)
+              rot=(0.0, 0.0, yaw), mat_idx=1)
 
-    # Frame tubes: down tube, seat tube, fork, chainstay, top bar
+    # Semi-gloss painted bicycle frame tubes
     m.box(pt(-0.08, 0.0, 0.56), (0.64, 0.04, 0.04), C_BIKE_FRAME, bevel=0.008,
-          rot=(0.0, -0.35, yaw), ao_fn=ao_fn)
+          rot=(0.0, -0.35, yaw), mat_idx=1)
     m.box(pt(-0.02, 0.0, 0.42), (0.58, 0.035, 0.035), C_BIKE_FRAME, bevel=0.008,
-          rot=(0.0, -0.58, yaw), ao_fn=ao_fn)
+          rot=(0.0, -0.58, yaw), mat_idx=1)
     m.box(pt(-0.24, 0.0, 0.56), (0.04, 0.04, 0.52), C_BIKE_FRAME, bevel=0.008,
-          rot=(0.0, -0.22, yaw), ao_fn=ao_fn)
+          rot=(0.0, -0.22, yaw), mat_idx=1)
     m.box(pt(0.42, 0.0, 0.62), (0.04, 0.04, 0.68), C_BIKE_FRAME, bevel=0.008,
-          rot=(0.0, -0.26, yaw), ao_fn=ao_fn)
+          rot=(0.0, -0.26, yaw), mat_idx=1)
     m.box(pt(-0.32, 0.0, 0.34), (0.48, 0.035, 0.035), C_BIKE_FRAME, bevel=0.008,
-          rot=(0.0, 0.10, yaw), ao_fn=ao_fn)
+          rot=(0.0, 0.10, yaw), mat_idx=1)
     # Leather saddle
     m.box(pt(-0.28, 0.0, 0.85), (0.24, 0.14, 0.065), C_HERO_WOOD_DARK, bevel=0.02,
-          rot=(0.0, 0.0, yaw), ao_fn=ao_fn)
-    # Curved handlebar + grips
+          rot=(0.0, 0.0, yaw), mat_idx=0)
+    # Chrome handlebar + grips
     m.box(pt(0.36, 0.0, 0.94), (0.035, 0.48, 0.035), C_IRON_LIGHT, bevel=0.008,
-          rot=(0.0, 0.0, yaw), ao_fn=ao_fn)
-    # Front wire basket (classic mamachari!)
+          rot=(0.0, 0.0, yaw), mat_idx=1)
+    # Front wire basket + silver rim
     m.box(pt(0.56, 0.0, 0.82), (0.28, 0.34, 0.24), C_BIKE_FRAME, bevel=0.014,
-          rot=(0.0, 0.0, yaw), ao_fn=ao_fn)
+          rot=(0.0, 0.0, yaw), mat_idx=1)
     m.box(pt(0.56, 0.0, 0.935), (0.30, 0.36, 0.028), C_IRON_LIGHT, bevel=0.006,
-          rot=(0.0, 0.0, yaw), ao_fn=ao_fn)
+          rot=(0.0, 0.0, yaw), mat_idx=1)
 
 
-def _add_hero_vending(m, x, y, z, facing='+X', body_col=C_VEND_WHITE, ao_fn=None):
-    """Detailed Japanese glowing drink vending machine with colorful beverage rows."""
+def _add_hero_vending(m, x, y, z, facing='+X', variant='white'):
+    """Detailed UV-illustrated Japanese drink vending machine (enamel metal body + backlit showcase)."""
     w, d, h = 0.96, 0.48, 1.88
+    body_col = C_VEND_PINK if variant == 'pink' else C_VEND_WHITE
+    uv_rect = UV_VEND_PINK if variant == 'pink' else UV_VEND_WHITE
     if facing == '+X':
-        m.box((x, y, z + h * 0.5), (d, w, h), body_col, bevel=0.028, ao_fn=ao_fn)
-        # Recessed dark frame around showcase
-        fx = x + d * 0.5
-        m.box((fx + 0.015, y, z + 1.24), (0.04, w - 0.12, 0.92), C_IRON_LIGHT, bevel=0.01, ao_fn=ao_fn)
-        # Bright deterministic glowing showcase backing (C_PORCH_GLOW -> glows warmly at dusk/night)
-        m.box((fx + 0.045, y, z + 1.24), (0.035, w - 0.18, 0.84), C_PORCH_GLOW, bevel=0.0, smooth=False, glass=True)
-        # 3 rows of colorful miniature drink cans/bottles clearly proud of the glowing panel
-        can_cols = [C_CRATE_GREEN, C_VEND_CYAN, C_CRATE_RED, C_CRATE_YELLOW, C_CRATE_BLUE, C_VEND_PINK]
-        for row_i, rz in enumerate((1.50, 1.24, 0.98)):
-            m.box((fx + 0.068, y, z + rz - 0.095), (0.045, w - 0.20, 0.022), C_IRON_LIGHT, bevel=0.004, ao_fn=ao_fn)
-            for ci in range(6):
-                cy = y - 0.32 + ci * 0.128
-                col = can_cols[(ci + row_i * 2) % len(can_cols)]
-                m.cyl((fx + 0.072, cy, z + rz - 0.02), 0.032, 0.030, 0.12, col, segs=8, ao_fn=ao_fn)
-        # Lower illuminated graphic strip & pickup tray
-        m.box((fx + 0.04, y + 0.10, z + 0.62), (0.03, 0.46, 0.24), C_VEND_CYAN, bevel=0.008, ao_fn=ao_fn)
-        m.box((fx + 0.035, y - 0.26, z + 0.64), (0.04, 0.18, 0.22), C_IRON, bevel=0.008, ao_fn=ao_fn)
-        m.box((fx + 0.025, y, z + 0.28), (0.05, w - 0.20, 0.26), C_WARN_DARK, bevel=0.012, ao_fn=ao_fn)
+        # Semi-gloss enameled steel cabinet + recessed leveling plinth
+        m.box((x, y, z + 0.04), (d - 0.04, w - 0.04, 0.08), C_WARN_DARK, bevel=0.01, mat_idx=1)
+        m.box((x, y, z + h * 0.5 + 0.02), (d, w, h - 0.04), body_col, bevel=0.026, mat_idx=1)
+        # Illustrated front face proud by 1.4cm (zero Z-fighting, glowing drink rows & poster at night!)
+        _add_uv_panel(m, x + d * 0.5 + 0.014, y, z + h * 0.5 + 0.02, w - 0.04, h - 0.08,
+                      '+X', uv_rect, color=0xffffff, ao_mode='soft')
     else:
-        # Facing -Y
-        m.box((x, y, z + h * 0.5), (w, d, h), body_col, bevel=0.028, ao_fn=ao_fn)
-        fy = y - d * 0.5
-        m.box((x, fy - 0.045, z + 1.24), (w - 0.18, 0.035, 0.84), C_PORCH_GLOW, bevel=0.0, smooth=False, glass=True)
-        m.box((x, fy - 0.025, z + 0.28), (w - 0.20, 0.05, 0.26), C_WARN_DARK, bevel=0.012, ao_fn=ao_fn)
+        m.box((x, y, z + 0.04), (w - 0.04, d - 0.04, 0.08), C_WARN_DARK, bevel=0.01, mat_idx=1)
+        m.box((x, y, z + h * 0.5 + 0.02), (w, d, h - 0.04), body_col, bevel=0.026, mat_idx=1)
+        _add_uv_panel(m, x, y - d * 0.5 - 0.014, z + h * 0.5 + 0.02, w - 0.04, h - 0.08,
+                      '-Y', uv_rect, color=0xffffff, ao_mode='soft')
 
 
-def _add_apartment_door(m, x_wall, y_center, z_floor, meter_side=-1.0, ao_fn=None):
-    """Japanese 2F exterior apartment steel door with intercom, electric meter box & warm bulkhead lamp."""
+def _add_hero_ac_unit(m, x, y, z, facing='-Y'):
+    """Japanese outdoor AC compressor with UV radial fan grille, brand badge & wrapped copper refrigerant pipe!"""
+    if facing == '-Y':
+        m.box((x, y - 0.18, z), (0.78, 0.36, 0.58), C_AC_BODY, bevel=0.024, mat_idx=1)
+        _add_uv_panel(m, x, y - 0.372, z, 0.72, 0.52, '-Y', UV_AC_FRONT, color=0xffffff, ao_mode='full')
+        for s in (-0.28, 0.28):
+            m.box((x + s, y - 0.15, z - 0.33), (0.06, 0.34, 0.055), C_IRON_LIGHT, bevel=0.008, mat_idx=1)
+        # Wrapped insulated white copper pipe exiting +X side and curving neatly into wall sleeve!
+        m.cyl((x + 0.44, y - 0.18, z - 0.14), 0.026, 0.026, 0.12, C_HERO_PIPE, segs=8,
+              rot=(0.0, math.pi * 0.5, 0.0), mat_idx=0)
+        m.pipe_elbow((x + 0.54, y - 0.18, z - 0.14), (1, 0, 0), (0, 1, 0), 0.026, 0.06, C_HERO_PIPE, mat_idx=0)
+        m.cyl((x + 0.54, y - 0.07, z - 0.14), 0.026, 0.026, 0.12, C_HERO_PIPE, segs=8,
+              rot=(math.pi * 0.5, 0.0, 0.0), mat_idx=0)
+        m.cyl((x + 0.54, y - 0.015, z - 0.14), 0.052, 0.052, 0.035, C_AC_BODY, segs=10,
+              rot=(math.pi * 0.5, 0.0, 0.0), mat_idx=1)
+    elif facing == '+X':
+        m.box((x + 0.18, y, z), (0.36, 0.78, 0.58), C_AC_BODY, bevel=0.024, mat_idx=1)
+        _add_uv_panel(m, x + 0.372, y, z, 0.72, 0.52, '+X', UV_AC_FRONT, color=0xffffff, ao_mode='full')
+        for s in (-0.28, 0.28):
+            m.box((x + 0.15, y + s, z - 0.33), (0.34, 0.06, 0.055), C_IRON_LIGHT, bevel=0.008, mat_idx=1)
+        # Wrapped refrigerant pipe exiting +Y side and curving into wall duct cap
+        m.cyl((x + 0.18, y + 0.44, z - 0.14), 0.026, 0.026, 0.12, C_HERO_PIPE, segs=8,
+              rot=(math.pi * 0.5, 0.0, 0.0), mat_idx=0)
+        m.pipe_elbow((x + 0.18, y + 0.54, z - 0.14), (0, 1, 0), (-1, 0, 0), 0.026, 0.06, C_HERO_PIPE, mat_idx=0)
+        m.cyl((x + 0.07, y + 0.54, z - 0.14), 0.026, 0.026, 0.12, C_HERO_PIPE, segs=8,
+              rot=(0.0, math.pi * 0.5, 0.0), mat_idx=0)
+        m.cyl((x + 0.015, y + 0.54, z - 0.14), 0.052, 0.052, 0.035, C_AC_BODY, segs=10,
+              rot=(0.0, math.pi * 0.5, 0.0), mat_idx=1)
+
+
+def _add_hero_window(m, x, y, z, w, h, facing='-Y', frame_col=C_HERO_DOOR_FRAME,
+                     frame_mat=1, uv_rect=UV_WINDOW_APT):
+    """3D aluminum/wood framed window with glossy sky-reflected & night-curtain-lit UV glass."""
+    d_rec = 0.18
+    if facing in ('-Y', '+Y'):
+        sy = -1.0 if facing == '-Y' else 1.0
+        _add_uv_panel(m, x, y + sy * 0.050, z, w - 0.10, h - 0.10, facing, uv_rect, ao_mode='soft')
+        m.box((x, y + sy * 0.10, z + h * 0.5 - 0.04), (w + 0.16, d_rec, 0.12), frame_col, bevel=0.014, mat_idx=frame_mat)
+        m.box((x, y + sy * 0.12, z - h * 0.5 + 0.02), (w + 0.24, d_rec + 0.08, 0.11), frame_col, bevel=0.014, mat_idx=frame_mat)
+        for s in (-1.0, 1.0):
+            m.box((x + s * (w * 0.5 + 0.01), y + sy * 0.10, z), (0.11, d_rec, h + 0.04), frame_col, bevel=0.014, mat_idx=frame_mat)
+        m.box((x, y + sy * 0.092, z), (0.050, 0.045, h - 0.06), frame_col, bevel=0.008, mat_idx=frame_mat)
+        m.box((x, y + sy * 0.092, z - 0.05), (w - 0.06, 0.045, 0.048), frame_col, bevel=0.008, mat_idx=frame_mat)
+    else:
+        sx = -1.0 if facing == '-X' else 1.0
+        _add_uv_panel(m, x + sx * 0.050, y, z, w - 0.10, h - 0.10, facing, uv_rect, ao_mode='soft')
+        m.box((x + sx * 0.10, y, z + h * 0.5 - 0.04), (d_rec, w + 0.16, 0.12), frame_col, bevel=0.014, mat_idx=frame_mat)
+        m.box((x + sx * 0.12, y, z - h * 0.5 + 0.02), (d_rec + 0.08, w + 0.24, 0.11), frame_col, bevel=0.014, mat_idx=frame_mat)
+        for s in (-1.0, 1.0):
+            m.box((x + sx * 0.10, y + s * (w * 0.5 + 0.01), z), (d_rec, 0.11, h + 0.04), frame_col, bevel=0.014, mat_idx=frame_mat)
+        m.box((x + sx * 0.092, y, z), (0.045, 0.050, h - 0.06), frame_col, bevel=0.008, mat_idx=frame_mat)
+
+
+def _add_aframe_menu(m, x, y, z, yaw=0.0):
+    """Charming Japanese cedar A-frame sidewalk ramen chalkboard menu stand (A字看板)."""
+    w, h = 0.54, 0.82
+    tilt = 0.20
+    cos_y, sin_y = math.cos(yaw), math.sin(yaw)
+
+    def pt(lx, ly, lz):
+        return (x + lx * cos_y - ly * sin_y, y + lx * sin_y + ly * cos_y, z + lz)
+
+    # Front & rear easel wooden legs forming true 'A' meeting cleanly at top hinge (rot_x=-tilt tilts +Z -> +Y)
+    for side in (-1.0, 1.0):
+        m.box(pt(side * 0.27, -0.10, 0.44), (0.042, 0.036, 0.90), C_HERO_WOOD, bevel=0.008,
+              rot=(-tilt, 0.0, yaw), mat_idx=0)
+        m.box(pt(side * 0.27,  0.10, 0.44), (0.042, 0.036, 0.90), C_HERO_WOOD_DARK, bevel=0.008,
+              rot=(tilt, 0.0, yaw), mat_idx=0)
+    m.box(pt(0.0, 0.0, 0.87), (0.58, 0.055, 0.042), C_HERO_WOOD_DARK, bevel=0.008, rot=(0.0, 0.0, yaw), mat_idx=0)
+    # Wooden backing board tilted cleanly along front easel plane (top leans +Y toward hinge)
+    m.box(pt(0.0, -0.11, 0.49), (w, 0.032, h - 0.06), C_HERO_WOOD_DARK, bevel=0.01,
+          rot=(-tilt, 0.0, yaw), mat_idx=0)
+    # UV-mapped chalk menu board proud of front face (strictly parallel to front backing board!)
+    hw = (w - 0.03) * 0.5
+    z_bot, z_top = 0.14, 0.84
+    y_bot = -0.11 - 0.028 - (0.49 - z_bot) * math.sin(tilt)
+    y_top = -0.11 - 0.028 + (z_top - 0.49) * math.sin(tilt)
+    m.quad_uv(pt(-hw, y_bot, z_bot), pt(hw, y_bot, z_bot),
+              pt(hw, y_top, z_top), pt(-hw, y_top, z_top),
+              UV_MENU_BOARD, mat_idx=2, color=0xffffff, ao_mode='soft')
+
+
+def _add_apartment_door(m, x_wall, y_center, z_floor, meter_side=-1.0):
+    """Japanese 2F painted steel apartment door with UV panel detail, peephole, intercom, meter & glowing sconce."""
     dw, dh = 0.98, 2.12
-    # Aluminum outer frame proud of wall
+    # Semi-gloss aluminum outer frame proud of wall
     m.box((x_wall + 0.04, y_center, z_floor + dh * 0.5), (0.10, dw + 0.14, dh + 0.08), C_HERO_DOOR_FRAME,
-          bevel=0.012, ao_fn=ao_fn)
-    # Recessed seafoam-teal painted steel door leaf
-    m.box((x_wall + 0.055, y_center, z_floor + dh * 0.5), (0.06, dw, dh), C_HERO_DOOR, bevel=0.012, ao_fn=ao_fn)
-    # Subtle lower kick panel & mail slot
-    m.box((x_wall + 0.095, y_center, z_floor + 0.92), (0.025, 0.24, 0.07), C_IRON_LIGHT, bevel=0.005, ao_fn=ao_fn)
-    # Door lever handle & lock escutcheon
-    m.box((x_wall + 0.10, y_center - 0.36, z_floor + 1.02), (0.03, 0.06, 0.18), C_IRON_LIGHT, bevel=0.006, ao_fn=ao_fn)
-    m.box((x_wall + 0.13, y_center - 0.30, z_floor + 1.02), (0.04, 0.14, 0.032), C_HERO_PIPE, bevel=0.006, ao_fn=ao_fn)
+          bevel=0.012, mat_idx=1)
+    # Solid steel door leaf + UV panel/peephole/mailslot overlay cleanly proud by 1.2cm
+    m.box((x_wall + 0.055, y_center, z_floor + dh * 0.5), (0.06, dw, dh), C_HERO_DOOR, bevel=0.012, mat_idx=1)
+    _add_uv_panel(m, x_wall + 0.098, y_center, z_floor + dh * 0.5, dw - 0.02, dh - 0.02,
+                  '+X', UV_APT_DOOR, color=0xffffff, ao_mode='full')
+    # Brushed stainless door lever handle
+    m.box((x_wall + 0.11, y_center - 0.36, z_floor + 1.02), (0.026, 0.055, 0.17), C_IRON_LIGHT, bevel=0.006, mat_idx=1)
+    m.box((x_wall + 0.14, y_center - 0.30, z_floor + 1.02), (0.036, 0.13, 0.030), C_HERO_PIPE, bevel=0.006, mat_idx=1)
     # Intercom & doorbell panel mounted cleanly beside door frame
     iy = y_center + meter_side * 0.66
-    m.box((x_wall + 0.045, iy, z_floor + 1.32), (0.07, 0.14, 0.22), C_HERO_PIPE, bevel=0.01, ao_fn=ao_fn)
-    m.box((x_wall + 0.085, iy, z_floor + 1.38), (0.02, 0.08, 0.07), C_IRON, bevel=0.004, ao_fn=ao_fn)
-    # Electric meter box & vertical conduit mounted high beside door
-    m.box((x_wall + 0.08, iy, z_floor + 2.38), (0.14, 0.22, 0.30), C_AC_BODY, bevel=0.014, ao_fn=ao_fn)
-    m.box((x_wall + 0.155, iy, z_floor + 2.40), (0.025, 0.12, 0.11), C_IRON, bevel=0.004, ao_fn=ao_fn)
-    m.cyl((x_wall + 0.04, iy, z_floor + 2.75), 0.022, 0.022, 0.52, C_IRON_LIGHT, segs=8, ao_fn=ao_fn)
-    # Deterministic glowing warm corridor bulkhead sconce above door (100% lit at dusk/night)
-    m.box((x_wall + 0.055, y_center, z_floor + 2.42), (0.08, 0.26, 0.16), C_HERO_STEEL, bevel=0.012, ao_fn=ao_fn)
-    m.box((x_wall + 0.105, y_center, z_floor + 2.42), (0.055, 0.20, 0.11), C_PORCH_GLOW,
-          bevel=0.0, smooth=False, glass=True)
+    m.box((x_wall + 0.045, iy, z_floor + 1.32), (0.07, 0.14, 0.22), C_HERO_PIPE, bevel=0.01, mat_idx=1)
+    m.box((x_wall + 0.085, iy, z_floor + 1.38), (0.02, 0.08, 0.07), C_IRON, bevel=0.004, mat_idx=1)
+    # Electric meter box & metal conduit mounted high beside door
+    m.box((x_wall + 0.08, iy, z_floor + 2.38), (0.14, 0.22, 0.30), C_AC_BODY, bevel=0.014, mat_idx=1)
+    m.box((x_wall + 0.155, iy, z_floor + 2.40), (0.025, 0.12, 0.11), C_IRON, bevel=0.004, mat_idx=1)
+    m.cyl((x_wall + 0.04, iy, z_floor + 2.75), 0.022, 0.022, 0.52, C_IRON_LIGHT, segs=8, mat_idx=1)
+    # Deterministic glowing warm frosted-glass corridor bulkhead sconce above door
+    m.box((x_wall + 0.055, y_center, z_floor + 2.42), (0.08, 0.28, 0.16), C_HERO_STEEL, bevel=0.012, mat_idx=1)
+    _add_uv_panel(m, x_wall + 0.110, y_center, z_floor + 2.42, 0.22, 0.11,
+                  '+X', UV_LANTERN_GLOW, color=0xffffff, ao_mode='soft')
 
 
-def _add_railing_run(m, p0, p1, z_base, height=1.02, spacing=0.28, col=C_HERO_STEEL, ao_fn=None):
-    """Crisp pine-teal painted steel railing run (top rail, lower rail, dense vertical pickets)."""
+def _add_railing_run(m, p0, p1, z_base, height=1.02, spacing=0.28, col=C_HERO_STEEL):
+    """Crisp semi-gloss painted steel railing run (top rail, lower rail, dense vertical pickets)."""
     x0, y0 = p0
     x1, y1 = p1
     dx, dy = x1 - x0, y1 - y0
@@ -926,77 +1327,61 @@ def _add_railing_run(m, p0, p1, z_base, height=1.02, spacing=0.28, col=C_HERO_ST
         return
     ang = math.atan2(dy, dx)
     mx, my = (x0 + x1) * 0.5, (y0 + y1) * 0.5
-    # Top handrail & bottom curb rail
-    m.box((mx, my, z_base + height), (length + 0.06, 0.065, 0.055), col, bevel=0.01, rot=(0.0, 0.0, ang), ao_fn=ao_fn)
-    m.box((mx, my, z_base + 0.14), (length, 0.045, 0.040), col, bevel=0.008, rot=(0.0, 0.0, ang), ao_fn=ao_fn)
-    # Sturdy corner end posts
+    m.box((mx, my, z_base + height), (length + 0.06, 0.068, 0.056), col, bevel=0.012, rot=(0.0, 0.0, ang), mat_idx=1)
+    m.box((mx, my, z_base + 0.14), (length, 0.045, 0.040), col, bevel=0.008, rot=(0.0, 0.0, ang), mat_idx=1)
     for px, py in (p0, p1):
-        m.box((px, py, z_base + height * 0.5), (0.068, 0.068, height), col, bevel=0.01, ao_fn=ao_fn)
-    # Crisp vertical pickets
+        m.box((px, py, z_base + height * 0.5), (0.070, 0.070, height), col, bevel=0.012, mat_idx=1)
     n = max(2, int(round(length / spacing)))
     for i in range(1, n):
         t = i / n
         px = x0 + dx * t
         py = y0 + dy * t
         m.box((px, py, z_base + 0.14 + (height - 0.14) * 0.5), (0.032, 0.032, height - 0.16),
-              col, bevel=0.006, ao_fn=ao_fn)
+              col, bevel=0.006, mat_idx=1)
 
 
-def build_hero_haikaze(mat, col):
+def build_hero_haikaze(hero_mats, col):
     m = TownMesh('Town_Hero_Haikaze')
-    ao = make_ao_fn(6.5)
 
-    # 1) Deep concrete foundation plinth (extends to z = -2.4m for bulletproof seating)
-    m.box((0.0, 0.18, -1.16), (8.68, 7.82, 2.48), C_STONE_PLINTH, bevel=0.03, ao_fn=ao)
-    # Crisp light concrete base apron/sidewalk skirt around building foot
-    m.box((-0.05, 0.0, 0.04), (8.72, 7.98, 0.08), C_HERO_DECK, bevel=0.018, ao_fn=ao)
+    # 1) Deep concrete foundation plinth & crisp sidewalk skirt
+    m.box((0.0, 0.18, -1.16), (8.68, 7.82, 2.48), C_STONE_PLINTH, bevel=0.03, mat_idx=0)
+    m.box((-0.05, 0.0, 0.04), (8.72, 7.98, 0.08), C_HERO_DECK, bevel=0.018, mat_idx=0)
 
     # 2) 1F Solid Shop/Storage Volume: bx in [-4.20, +3.80], by in [-3.52, +3.90], bz in [0.0, 2.94]
-    #    Recessed 0.38m under the 2F balcony slab on -Y and 0.45m on +X for cozy Japanese overhang shadows!
-    m.box((-0.20, 0.19, 1.48), (8.00, 7.42, 2.94), C_HERO_WALL, bevel=0.032, ao_fn=ao)
-    # Base concrete kick plinth along 1F walls
-    m.box((-0.20, 0.19, 0.14), (8.08, 7.50, 0.22), C_CONCRETE, bevel=0.018, ao_fn=ao)
+    #    Subdivided grid_box ensures Contact AO hugs eaves, windows, crates & pipes without darkening open stucco!
+    m.grid_box((-0.20, 0.19, 1.48), (8.00, 7.42, 2.94), C_HERO_WALL, step=0.60, bevel=0.032, mat_idx=0)
+    m.box((-0.20, 0.19, 0.14), (8.08, 7.50, 0.22), C_CONCRETE, bevel=0.018, mat_idx=0)
 
-    # 3) Iconic Muted Sage-Green 2F Concrete Balcony Slab: bx in [-4.32, +4.32], by in [-3.96, +3.96]
-    #    Walkable top surface at exact bz = 3.25m!
-    m.box((0.0, 0.0, 3.085), (8.64, 7.92, 0.33), C_HERO_SLAB, bevel=0.025, ao_fn=ao)
-    # Clean light concrete walkable corridor deck topping (sits flush at bz = 3.25m)
-    m.box((0.0, 0.0, 3.245), (8.42, 7.70, 0.02), C_HERO_DECK, bevel=0.004, ao_fn=ao)
-    # Subtle darker soffit shadow trim under balcony overhang edge
-    m.box((0.0, 0.0, 2.91), (8.50, 7.78, 0.04), C_HERO_SLAB_DARK, bevel=0.008, ao_fn=ao)
+    # 3) Iconic Muted Sage-Green 2F Concrete Balcony Slab (walkable top at exact bz = 3.25m)
+    m.grid_box((0.0, 0.0, 3.085), (8.64, 7.92, 0.33), C_HERO_SLAB, step=0.75, bevel=0.025, mat_idx=0)
+    m.grid_box((0.0, 0.0, 3.245), (8.42, 7.70, 0.02), C_HERO_DECK, step=0.75, bevel=0.004, mat_idx=0)
+    m.box((0.0, 0.0, 2.91), (8.50, 7.78, 0.04), C_HERO_SLAB_DARK, bevel=0.008, mat_idx=0)
 
     # 4) 2F Recessed Apartment Core: bx in [-4.20, +2.55], by in [-2.20, +3.90], bz in [3.25, 6.42]
-    m.box((-0.825, 0.85, 4.835), (6.75, 6.10, 3.17), C_HERO_WALL, bevel=0.032, ao_fn=ao)
-    # Concrete floor skirting along 2F walls
-    m.box((-0.825, 0.85, 3.32), (6.80, 6.15, 0.14), C_CONCRETE, bevel=0.012, ao_fn=ao)
+    m.grid_box((-0.825, 0.85, 4.835), (6.75, 6.10, 3.17), C_HERO_WALL, step=0.60, bevel=0.032, mat_idx=0)
+    m.box((-0.825, 0.85, 3.32), (6.80, 6.15, 0.14), C_CONCRETE, bevel=0.012, mat_idx=0)
 
-    # 5) Bold Flat Rooftop Sage-Green Concrete Parapet Overhang: bz in [6.38, 7.10]
-    m.box((0.0, 0.0, 6.74), (8.80, 8.10, 0.72), C_HERO_SLAB, bevel=0.032, ao_fn=ao)
-    # Recessed rooftop waterproof membrane floor + concrete coping cap
-    m.box((0.0, 0.0, 7.04), (8.24, 7.54, 0.14), C_CONCRETE, bevel=0.012, ao_fn=ao)
-    # Full-perimeter pine-teal steel rooftop guardrail (bz = 7.10 .. 7.98)
-    _add_railing_run(m, (-4.16, -3.82), (4.16, -3.82), 7.10, height=0.88, spacing=0.34, ao_fn=ao)
-    _add_railing_run(m, (4.16, -3.82), (4.16, 3.82), 7.10, height=0.88, spacing=0.34, ao_fn=ao)
-    _add_railing_run(m, (4.16, 3.82), (-4.16, 3.82), 7.10, height=0.88, spacing=0.34, ao_fn=ao)
-    _add_railing_run(m, (-4.16, 3.82), (-4.16, -3.82), 7.10, height=0.88, spacing=0.34, ao_fn=ao)
-    # Rooftop stair/utility penthouse on far-left corner (gives authentic coastal zakkyo skyline)
-    m.box((-2.25, 1.55, 7.72), (2.15, 2.05, 1.38), C_HERO_WALL, bevel=0.028, ao_fn=ao)
-    m.box((-2.25, 1.55, 8.44), (2.32, 2.22, 0.12), C_HERO_SLAB, bevel=0.02, ao_fn=ao)
-    # Compact rooftop water heater / exhaust box
-    m.box((1.85, 2.15, 7.46), (0.95, 0.72, 0.72), C_AC_BODY, bevel=0.025, ao_fn=ao)
-    m.cyl((1.05, 2.35, 7.45), 0.14, 0.14, 0.68, C_IRON_LIGHT, segs=10, ao_fn=ao)
+    # 5) Bold Flat Rooftop Sage-Green Concrete Parapet Overhang + Metal Rooftop Guardrail
+    m.grid_box((0.0, 0.0, 6.74), (8.80, 8.10, 0.72), C_HERO_SLAB, step=0.80, bevel=0.032, mat_idx=0)
+    m.box((0.0, 0.0, 7.04), (8.24, 7.54, 0.14), C_CONCRETE, bevel=0.012, mat_idx=0)
+    _add_railing_run(m, (-4.16, -3.82), (4.16, -3.82), 7.10, height=0.88, spacing=0.34)
+    _add_railing_run(m, (4.16, -3.82), (4.16, 3.82), 7.10, height=0.88, spacing=0.34)
+    _add_railing_run(m, (4.16, 3.82), (-4.16, 3.82), 7.10, height=0.88, spacing=0.34)
+    _add_railing_run(m, (-4.16, 3.82), (-4.16, -3.82), 7.10, height=0.88, spacing=0.34)
+    # Rooftop stair/utility penthouse + metal exhaust stack
+    m.box((-2.25, 1.55, 7.72), (2.15, 2.05, 1.38), C_HERO_WALL, bevel=0.028, mat_idx=0)
+    m.box((-2.25, 1.55, 8.44), (2.32, 2.22, 0.12), C_HERO_SLAB, bevel=0.02, mat_idx=0)
+    m.box((1.85, 2.15, 7.46), (0.95, 0.72, 0.72), C_AC_BODY, bevel=0.025, mat_idx=1)
+    m.cyl((1.05, 2.35, 7.45), 0.14, 0.14, 0.68, C_IRON_LIGHT, segs=10, mat_idx=1)
 
-    # 6) 2F Open-Air L-Shaped Corridor Balustrade (pine-teal steel, bz = 3.25 .. 4.27)
-    #    Leaves opening at bx = +4.20, by in [+2.35..+3.80] for exterior staircase top landing!
-    _add_railing_run(m, (-4.18, -2.20), (-4.18, -3.86), 3.25, height=1.02, spacing=0.28, ao_fn=ao)
-    _add_railing_run(m, (-4.18, -3.86), (4.18, -3.86), 3.25, height=1.02, spacing=0.28, ao_fn=ao)
-    _add_railing_run(m, (4.18, -3.86), (4.18, 2.35), 3.25, height=1.02, spacing=0.28, ao_fn=ao)
-    _add_railing_run(m, (2.55, 3.86), (4.22, 3.86), 3.25, height=1.02, spacing=0.28, ao_fn=ao)
+    # 6) 2F Open-Air L-Shaped Corridor Balustrade (semi-gloss painted steel)
+    _add_railing_run(m, (-4.18, -2.20), (-4.18, -3.86), 3.25, height=1.02, spacing=0.28)
+    _add_railing_run(m, (-4.18, -3.86), (4.18, -3.86), 3.25, height=1.02, spacing=0.28)
+    _add_railing_run(m, (4.18, -3.86), (4.18, 2.35), 3.25, height=1.02, spacing=0.28)
+    _add_railing_run(m, (2.55, 3.86), (4.22, 3.86), 3.25, height=1.02, spacing=0.28)
 
-    # 7) HERO EXTERIOR PINE-TEAL STEEL STAIRCASE: bx in [+4.25, +5.60]
-    #    - Concrete bottom entry pad: by in [-2.70, -1.95], top bz = 0.12m
-    m.box((4.94, -2.325, 0.06), (1.44, 0.78, 0.12), C_CONCRETE, bevel=0.018, ao_fn=ao)
-    #    - 14 individual beveled steel treads + dark closed risers (by = -1.95 -> +2.35, bz = 0.12 -> 3.25)
+    # 7) HERO EXTERIOR SEMI-GLOSS PAINTED STEEL STAIRCASE: bx in [+4.25, +5.60]
+    m.box((4.94, -2.325, 0.06), (1.44, 0.78, 0.12), C_CONCRETE, bevel=0.018, mat_idx=0)
     n_steps = 14
     y_s0, y_s1 = -1.95, 2.35
     z_s0, z_s1 = 0.12, 3.25
@@ -1005,179 +1390,213 @@ def build_hero_haikaze(mat, col):
     for i in range(n_steps):
         sy = y_s0 + (i + 0.5) * dy_step
         sz_top = z_s0 + (i + 1) * dz_step
-        # Tread plate (slightly lighter painted steel top for crisp step readability!)
-        m.box((4.925, sy, sz_top - 0.028), (1.24, dy_step + 0.03, 0.056), C_HERO_STEEL_HI, bevel=0.010, ao_fn=ao)
-        # Closed riser plate underneath each tread
+        m.box((4.925, sy, sz_top - 0.028), (1.24, dy_step + 0.03, 0.056), C_HERO_STEEL_HI, bevel=0.010, mat_idx=1)
+        # Crisp metallic anti-slip front tread nosing bar!
+        m.box((4.925, y_s0 + i * dy_step + 0.02, sz_top - 0.004), (1.20, 0.032, 0.016), C_HERO_DOOR_FRAME, bevel=0.004, mat_idx=1)
         m.box((4.925, y_s0 + i * dy_step + 0.02, sz_top - dz_step * 0.5 - 0.02),
-              (1.20, 0.045, dz_step + 0.04), C_HERO_STEEL, bevel=0.006, ao_fn=ao)
+              (1.20, 0.045, dz_step + 0.04), C_HERO_STEEL, bevel=0.006, mat_idx=1)
 
-    #    - Twin inclined structural steel channel stringers flanking the steps
     flight_len = math.hypot(y_s1 - y_s0, z_s1 - z_s0)
     flight_ang = math.atan2(z_s1 - z_s0, y_s1 - y_s0)
     mid_y = (y_s0 + y_s1) * 0.5
     mid_z = (z_s0 + z_s1) * 0.5 - 0.06
     for sx in (4.30, 5.55):
-        m.box((sx, mid_y, mid_z), (0.085, flight_len + 0.25, 0.34), C_HERO_STEEL,
-              bevel=0.014, rot=(flight_ang, 0.0, 0.0), ao_fn=ao)
-    #    - Diagonal outer staircase handrail + vertical pickets on bx = +5.55
-    m.box((5.55, mid_y, mid_z + 1.06), (0.065, flight_len + 0.22, 0.055), C_HERO_STEEL,
-          bevel=0.010, rot=(flight_ang, 0.0, 0.0), ao_fn=ao)
-    m.box((5.55, mid_y, mid_z + 0.56), (0.042, flight_len + 0.16, 0.040), C_HERO_STEEL,
-          bevel=0.008, rot=(flight_ang, 0.0, 0.0), ao_fn=ao)
+        m.box((sx, mid_y, mid_z), (0.088, flight_len + 0.25, 0.34), C_HERO_STEEL,
+              bevel=0.014, rot=(flight_ang, 0.0, 0.0), mat_idx=1)
+    m.box((5.55, mid_y, mid_z + 1.06), (0.068, flight_len + 0.22, 0.056), C_HERO_STEEL,
+          bevel=0.012, rot=(flight_ang, 0.0, 0.0), mat_idx=1)
+    m.box((5.55, mid_y, mid_z + 0.56), (0.044, flight_len + 0.16, 0.040), C_HERO_STEEL,
+          bevel=0.008, rot=(flight_ang, 0.0, 0.0), mat_idx=1)
     for k in range(11):
         t = k / 10.0
         py = y_s0 + (y_s1 - y_s0) * t
         pz = z_s0 + (z_s1 - z_s0) * t
-        thick = 0.064 if (k == 0 or k == 10) else 0.032
-        m.box((5.55, py, pz + 0.50), (thick, thick, 1.02), C_HERO_STEEL, bevel=0.007, ao_fn=ao)
+        thick = 0.066 if (k == 0 or k == 10) else 0.032
+        m.box((5.55, py, pz + 0.50), (thick, thick, 1.02), C_HERO_STEEL, bevel=0.007, mat_idx=1)
 
-    #    - Top steel landing bridge: bx in [+4.25, +5.60], by in [+2.35, +3.80], top bz = 3.25m
-    m.box((4.925, 3.075, 3.16), (1.38, 1.48, 0.18), C_HERO_STEEL, bevel=0.018, ao_fn=ao)
-    m.box((4.925, 3.075, 3.245), (1.28, 1.38, 0.02), C_HERO_DECK, bevel=0.004, ao_fn=ao)
-    #    - Top landing outer & rear guardrails
-    _add_railing_run(m, (5.55, 2.35), (5.55, 3.78), 3.25, height=1.02, spacing=0.28, ao_fn=ao)
-    _add_railing_run(m, (4.22, 3.78), (5.55, 3.78), 3.25, height=1.02, spacing=0.28, ao_fn=ao)
-    #    - Structural pine-teal steel support columns cleanly supporting top landing underside (bz = 0..3.16m)
-    m.box((5.52, 2.42, 1.58), (0.11, 0.11, 3.16), C_HERO_STEEL, bevel=0.014, ao_fn=ao)
-    m.box((5.52, 3.74, 1.58), (0.11, 0.11, 3.16), C_HERO_STEEL, bevel=0.014, ao_fn=ao)
-    #    - Cross-beam under landing & horizontal tie bar between support columns
-    m.box((4.92, 3.74, 2.98), (1.30, 0.09, 0.14), C_HERO_STEEL, bevel=0.012, ao_fn=ao)
-    m.box((5.52, 3.08, 2.86), (0.09, 1.32, 0.12), C_HERO_STEEL, bevel=0.012, ao_fn=ao)
+    # Top steel landing bridge + guardrails + support columns + structural knee braces!
+    m.box((4.925, 3.075, 3.16), (1.38, 1.48, 0.18), C_HERO_STEEL, bevel=0.018, mat_idx=1)
+    m.box((4.925, 3.075, 3.245), (1.28, 1.38, 0.02), C_HERO_DECK, bevel=0.004, mat_idx=0)
+    _add_railing_run(m, (5.55, 2.35), (5.55, 3.78), 3.25, height=1.02, spacing=0.28)
+    _add_railing_run(m, (4.22, 3.78), (5.55, 3.78), 3.25, height=1.02, spacing=0.28)
+    m.box((5.52, 2.42, 1.58), (0.11, 0.11, 3.16), C_HERO_STEEL, bevel=0.014, mat_idx=1)
+    m.box((5.52, 3.74, 1.58), (0.11, 0.11, 3.16), C_HERO_STEEL, bevel=0.014, mat_idx=1)
+    m.box((4.92, 3.74, 2.98), (1.30, 0.09, 0.14), C_HERO_STEEL, bevel=0.012, mat_idx=1)
+    m.box((5.52, 3.08, 2.86), (0.09, 1.32, 0.12), C_HERO_STEEL, bevel=0.012, mat_idx=1)
+    # Bolted steel column base plates + diagonal knee gusset braces
+    for py_c in (2.42, 3.74):
+        m.box((5.52, py_c, 0.03), (0.24, 0.24, 0.06), C_IRON, bevel=0.008, mat_idx=1)
+    m.box((5.20, 3.74, 2.74), (0.56, 0.07, 0.08), C_HERO_STEEL, bevel=0.008, rot=(0.0, 0.72, 0.0), mat_idx=1)
 
-    # 8) 2F Apartment Doors (201 & 202), Recessed Windows, AC Units & Balcony Greenery
-    #    East (+X) corridor wall at bx = +2.55 (Doors 201 & 202 face +X -> Main Slope Avenue!)
-    _add_apartment_door(m, 2.55, -0.80, 3.25, meter_side=1.0, ao_fn=ao)   # Door 201
-    _add_apartment_door(m, 2.55, 1.35, 3.25, meter_side=-1.0, ao_fn=ao)   # Door 202
-    add_recessed_window(m, 2.55, -1.78, 4.95, 0.64, 1.12, '+X', ao_fn=ao, frame_col=C_HERO_DOOR_FRAME)
-    add_recessed_window(m, 2.55, 2.75, 4.95, 0.84, 1.12, '+X', ao_fn=ao, frame_col=C_HERO_DOOR_FRAME)
-    add_ac_unit(m, 2.55, 2.85, 5.82, '+X', ao_fn=ao)
+    # 8) 2F Apartment Doors (201 & 202), UV Windows, AC Units w/ Refrigerant Pipes & Botanical Plants
+    _add_apartment_door(m, 2.55, -0.80, 3.25, meter_side=1.0)   # Door 201
+    _add_apartment_door(m, 2.55, 1.35, 3.25, meter_side=-1.0)   # Door 202
+    _add_hero_window(m, 2.55, -1.78, 4.86, 0.64, 1.08, '+X', uv_rect=UV_WINDOW_APT)
+    _add_hero_window(m, 2.55, 2.75, 4.86, 0.84, 1.08, '+X', uv_rect=UV_WINDOW_APT)
+    _add_hero_ac_unit(m, 2.55, 2.85, 5.92, '+X')
 
-    #    Front (-Y) 2F apartment wall at by = -2.20 (above 1F noodle shop)
-    add_recessed_window(m, -1.55, -2.20, 4.95, 1.72, 1.24, '-Y', ao_fn=ao, frame_col=C_HERO_DOOR_FRAME)
-    add_ac_unit(m, 0.85, -2.20, 5.52, '-Y', ao_fn=ao)
-    #    Compact round/hooded kitchen exhaust vent on upper left
-    m.box((-3.52, -2.30, 5.65), (0.34, 0.22, 0.30), C_AC_BODY, bevel=0.035, ao_fn=ao)
-    m.box((-3.52, -2.36, 5.55), (0.28, 0.14, 0.12), C_IRON, bevel=0.01, ao_fn=ao)
+    # Front (-Y) 2F apartment wall (above 1F noodle shop)
+    _add_hero_window(m, -1.55, -2.20, 4.95, 1.72, 1.24, '-Y', uv_rect=UV_WINDOW_APT)
+    _add_hero_ac_unit(m, 0.85, -2.20, 5.52, '-Y')
+    # Hooded stainless kitchen exhaust vent
+    m.box((-3.52, -2.30, 5.65), (0.34, 0.22, 0.30), C_AC_BODY, bevel=0.035, mat_idx=1)
+    m.box((-3.52, -2.36, 5.55), (0.28, 0.14, 0.12), C_IRON, bevel=0.01, mat_idx=1)
 
-    #    Alley (-X) & Rear (+Y) windows so the building looks 360-degree crafted from every angle
-    add_recessed_window(m, -4.20, -0.35, 4.95, 1.32, 1.18, '-X', ao_fn=ao, frame_col=C_HERO_DOOR_FRAME)
-    add_recessed_window(m, -4.20, 2.15, 4.95, 1.32, 1.18, '-X', ao_fn=ao, frame_col=C_HERO_DOOR_FRAME)
-    add_recessed_window(m, -4.20, 1.35, 1.75, 1.48, 1.10, '-X', ao_fn=ao, frame_col=C_HERO_WOOD)
-    add_recessed_window(m, -1.60, 3.90, 4.95, 1.48, 1.22, '+Y', ao_fn=ao, frame_col=C_HERO_DOOR_FRAME)
-    add_recessed_window(m, 0.85, 3.90, 4.95, 1.48, 1.22, '+Y', ao_fn=ao, frame_col=C_HERO_DOOR_FRAME)
-    add_recessed_window(m, -1.20, 3.90, 1.72, 1.55, 1.12, '+Y', ao_fn=ao, frame_col=C_HERO_DOOR_FRAME)
+    # Alley (-X) & Rear (+Y) windows (all UV-mapped with sky reflection & night glow!)
+    _add_hero_window(m, -4.20, -0.35, 4.95, 1.32, 1.18, '-X', uv_rect=UV_WINDOW_APT)
+    _add_hero_window(m, -4.20, 2.15, 4.95, 1.32, 1.18, '-X', uv_rect=UV_WINDOW_APT)
+    _add_hero_window(m, -4.20, 1.35, 1.75, 1.48, 1.10, '-X', frame_col=C_HERO_WOOD, frame_mat=0, uv_rect=UV_WINDOW_SHOP)
+    _add_hero_window(m, -1.60, 3.90, 4.95, 1.48, 1.22, '+Y', uv_rect=UV_WINDOW_APT)
+    _add_hero_window(m, 0.85, 3.90, 4.95, 1.48, 1.22, '+Y', uv_rect=UV_WINDOW_APT)
+    _add_hero_window(m, -1.20, 3.90, 1.72, 1.55, 1.12, '+Y', uv_rect=UV_WINDOW_APT)
 
-    #    2F Potted plants tucked neatly against balcony railing & between Doors 201 & 202
-    _add_potted_plant(m, -3.72, -3.45, 3.25, scale=1.08, ao_fn=ao)
-    _add_potted_plant(m, -3.22, -3.52, 3.25, scale=0.72, ao_fn=ao)
-    _add_potted_plant(m, 2.86, 0.25, 3.25, scale=0.88, ao_fn=ao)
-    _add_potted_plant(m, 3.85, 0.22, 3.25, scale=0.68, ao_fn=ao)
-    _add_potted_plant(m, 2.86, 2.25, 3.25, scale=0.82, ao_fn=ao)
+    # Lush 2F botanical potted plants (true curved leaf blades!)
+    _add_botanical_plant(m, -3.72, -3.42, 3.25, scale=1.08, seed=1)
+    _add_botanical_plant(m, -3.18, -3.50, 3.25, scale=0.76, seed=3)
+    _add_botanical_plant(m, 2.88, 0.25, 3.25, scale=0.92, seed=2)
+    _add_botanical_plant(m, 3.84, 0.20, 3.25, scale=0.72, seed=4)
+    _add_botanical_plant(m, 2.88, 2.25, 3.25, scale=0.84, seed=5)
 
-    # 9) Sculpted White Bent PVC Rain Drainpipes running down the iconic front-right corner!
-    #    Pipe 1: drops from rooftop fascia at (-Y corner), elbows out around 2F slab, drops to ground
-    m.cyl((2.15, -2.30, 6.45), 0.052, 0.052, 0.52, C_HERO_PIPE, segs=10, ao_fn=ao)
-    m.cyl((2.15, -3.10, 6.22), 0.052, 0.052, 1.65, C_HERO_PIPE, segs=10, rot=(math.pi * 0.5, 0.0, 0.0), ao_fn=ao)
-    m.cyl((2.15, -3.90, 4.58), 0.052, 0.052, 3.30, C_HERO_PIPE, segs=10, ao_fn=ao)
-    #    Elbow tucking back onto 1F corner pillar and dropping cleanly to pavement
-    m.cyl((2.15, -3.74, 2.94), 0.052, 0.052, 0.36, C_HERO_PIPE, segs=10, rot=(math.pi * 0.5, 0.0, 0.0), ao_fn=ao)
-    m.cyl((2.15, -3.58, 1.50), 0.052, 0.052, 2.92, C_HERO_PIPE, segs=10, ao_fn=ao)
-    #    Pipe mounting collars
+    # 9) Sculpted White Bent PVC Rain Drainpipes w/ Smooth 90° Curved Elbows + Rooftop Rain Hopper (集水斗)!
+    r_p = 0.050
+    br = 0.14
+    # Square Japanese roof rain collector box under rooftop parapet
+    m.box((2.15, -2.30, 6.46), (0.24, 0.24, 0.24), C_HERO_PIPE, bevel=0.018, mat_idx=1)
+    m.cyl((2.15, -2.30, 6.32), r_p, r_p, 0.12, C_HERO_PIPE, segs=10, mat_idx=1)
+    # Smooth curved elbow out toward 2F balcony edge
+    m.pipe_elbow((2.15, -2.30, 6.18), (0, 0, -1), (0, -1, 0), r_p, br, C_HERO_PIPE, mat_idx=1)
+    m.cyl((2.15, -3.10, 6.18), r_p, r_p, 1.32, C_HERO_PIPE, segs=10, rot=(math.pi * 0.5, 0.0, 0.0), mat_idx=1)
+    m.pipe_elbow((2.15, -3.90, 6.18), (0, -1, 0), (0, 0, -1), r_p, br, C_HERO_PIPE, mat_idx=1)
+    m.cyl((2.15, -3.90, 4.56), r_p, r_p, 2.96, C_HERO_PIPE, segs=10, mat_idx=1)
+    # Smooth S-bend tucking back onto 1F wall and dropping to sidewalk
+    m.pipe_elbow((2.15, -3.90, 2.94), (0, 0, -1), (0, 1, 0), r_p, 0.12, C_HERO_PIPE, mat_idx=1)
+    m.cyl((2.15, -3.74, 2.94), r_p, r_p, 0.08, C_HERO_PIPE, segs=10, rot=(math.pi * 0.5, 0.0, 0.0), mat_idx=1)
+    m.pipe_elbow((2.15, -3.58, 2.94), (0, 1, 0), (0, 0, -1), r_p, 0.12, C_HERO_PIPE, mat_idx=1)
+    m.cyl((2.15, -3.58, 1.44), r_p, r_p, 2.76, C_HERO_PIPE, segs=10, mat_idx=1)
+    # Metal pipe mounting brackets & bottom drainage shoe
     for pz in (0.65, 1.85, 3.85, 5.35):
         py_c = -3.58 if pz < 3.0 else -3.90
-        m.cyl((2.15, py_c, pz), 0.068, 0.068, 0.05, C_IRON_LIGHT, segs=10, ao_fn=ao)
-    #    Pipe 2: secondary balcony drainpipe hugging the inner 2F wall corner cleanly (never blocks corridor!)
-    m.cyl((2.64, -2.14, 6.26), 0.044, 0.044, 0.34, C_HERO_PIPE, segs=10, ao_fn=ao)
-    m.cyl((2.64, -2.14, 4.74), 0.044, 0.044, 2.96, C_HERO_PIPE, segs=10, ao_fn=ao)
+        m.cyl((2.15, py_c, pz), 0.066, 0.066, 0.048, C_IRON_LIGHT, segs=10, mat_idx=1)
+    m.pipe_elbow((2.15, -3.58, 0.14), (0, 0, -1), (0, -1, 0), r_p, 0.08, C_HERO_PIPE, mat_idx=1)
+    # Secondary inner-corner 2F drainpipe hugging wall cleanly
+    m.box((2.64, -2.14, 6.46), (0.18, 0.18, 0.20), C_HERO_PIPE, bevel=0.015, mat_idx=1)
+    m.cyl((2.64, -2.14, 4.82), 0.042, 0.042, 3.10, C_HERO_PIPE, segs=10, mat_idx=1)
     for pz in (3.85, 5.35):
-        m.cyl((2.64, -2.14, pz), 0.058, 0.058, 0.045, C_IRON_LIGHT, segs=10, ao_fn=ao)
+        m.cyl((2.64, -2.14, pz), 0.056, 0.056, 0.045, C_IRON_LIGHT, segs=10, mat_idx=1)
 
     # 10) 1F Lived-in Corner Noodle Shopfront on -Y wall (by = -3.52)
     fy = -3.52
-    #    Timber signboard lintel beam spanning across shopfront
-    m.box((-1.32, fy - 0.06, 2.52), (4.72, 0.16, 0.16), C_HERO_WOOD, bevel=0.016, ao_fn=ao)
-    #    Recessed shopfront timber surround & sliding double lattice doors (centered at bx = -0.78)
+    m.box((-1.32, fy - 0.06, 2.52), (4.72, 0.16, 0.16), C_HERO_WOOD, bevel=0.016, mat_idx=0)
     dx_door = -0.78
-    m.box((dx_door, fy - 0.04, 1.24), (2.14, 0.12, 2.38), C_HERO_WOOD_DARK, bevel=0.016, ao_fn=ao)
-    #    Twin sliding doors: lower crimson-cedar wood panels + upper glass panes (>=4.5cm proud!)
+    m.box((dx_door, fy - 0.04, 1.24), (2.14, 0.12, 2.38), C_HERO_WOOD_DARK, bevel=0.016, mat_idx=0)
+    # Twin sliding doors: UV cedar wood plank lower panels + glossy warm-lit shop glass upper panes + brass pulls
     for sx in (-0.49, 0.49):
-        m.box((dx_door + sx, fy - 0.09, 0.58), (0.90, 0.06, 0.92), C_HERO_WOOD, bevel=0.01, ao_fn=ao)
-        m.box((dx_door + sx, fy - 0.125, 1.54), (0.78, 0.045, 0.94), C_GLASS, bevel=0.0, smooth=False, glass=True)
-        # Crisp lattice mullions proud of glass
-        m.box((dx_door + sx, fy - 0.155, 1.54), (0.045, 0.04, 0.96), C_HERO_WOOD_DARK, bevel=0.006, ao_fn=ao)
-        m.box((dx_door + sx, fy - 0.155, 1.54), (0.82, 0.04, 0.045), C_HERO_WOOD_DARK, bevel=0.006, ao_fn=ao)
-    #    Stone shop threshold step
-    m.box((dx_door, fy - 0.20, 0.07), (2.34, 0.34, 0.14), C_CONCRETE, bevel=0.016, ao_fn=ao)
+        m.box((dx_door + sx, fy - 0.09, 0.58), (0.90, 0.06, 0.92), C_HERO_WOOD, bevel=0.01, mat_idx=0)
+        _add_uv_panel(m, dx_door + sx, fy - 0.132, 0.58, 0.86, 0.88, '-Y', UV_WOOD_DOOR, ao_mode='full')
+        _add_uv_panel(m, dx_door + sx, fy - 0.128, 1.54, 0.78, 0.94, '-Y', UV_WINDOW_SHOP, ao_mode='soft')
+        m.box((dx_door + sx, fy - 0.158, 1.54), (0.045, 0.04, 0.96), C_HERO_WOOD_DARK, bevel=0.006, mat_idx=0)
+        m.box((dx_door + sx, fy - 0.158, 1.54), (0.82, 0.04, 0.045), C_HERO_WOOD_DARK, bevel=0.006, mat_idx=0)
+        # Recessed brushed brass door pull handle
+        m.box((dx_door + sx * 0.22, fy - 0.145, 1.02), (0.045, 0.03, 0.18), 0xd4b262, bevel=0.008, mat_idx=1)
+    m.box((dx_door, fy - 0.20, 0.07), (2.34, 0.34, 0.14), C_CONCRETE, bevel=0.016, mat_idx=0)
 
-    #    Iconic Crimson 4-Panel Noren (暖帘) hanging proudly above the sliding door!
+    # Iconic Crimson 4-Panel Woven Noren (潮 風 拉 麺!) with bamboo rod & subtle breeze sway!
     m.cyl((dx_door, fy - 0.24, 2.34), 0.022, 0.022, 2.18, C_HERO_WOOD_DARK, segs=10,
-          rot=(0.0, math.pi * 0.5, 0.0), ao_fn=ao)
+          rot=(0.0, math.pi * 0.5, 0.0), mat_idx=0)
     for ni in range(4):
         nx = dx_door - 0.72 + ni * 0.48
-        # Slight alternating sway angle for lived-in breeze charm!
-        sway = 0.05 if ni % 2 == 0 else -0.03
-        m.box((nx, fy - 0.25, 2.02), (0.43, 0.032, 0.62), C_HERO_NOREN, bevel=0.010,
-              rot=(sway, 0.0, 0.0), ao_fn=ao)
+        y_bot_off = -0.275 if ni % 2 == 0 else -0.235
+        hw = 0.215
+        m.quad_uv(
+            (nx - hw, fy + y_bot_off, 1.71),
+            (nx + hw, fy + y_bot_off, 1.71),
+            (nx + hw, fy - 0.24, 2.33),
+            (nx - hw, fy - 0.24, 2.33),
+            UV_NOREN[ni], mat_idx=2, color=0xffffff, ao_mode='full', double_sided=True,
+        )
 
-    #    Cozy small timber shop window (left of door) + charming pastel ceramic mosaic wainscot!
+    # Cozy wooden shop window (left of door) + glossy UV pastel glazed ceramic mosaic wainscot!
     wx_shop = -2.72
-    add_recessed_window(m, wx_shop, fy, 1.66, 1.18, 0.88, '-Y', ao_fn=ao, frame_col=C_HERO_WOOD)
-    tile_cols = [C_HERO_TILE_A, C_HERO_TILE_B, C_HERO_TILE_C, C_HERO_TILE_D]
-    for r in range(3):
-        for c in range(5):
-            tc = tile_cols[(r * 2 + c) % len(tile_cols)]
-            m.box((wx_shop - 0.52 + c * 0.26, fy - 0.025, 0.34 + r * 0.26), (0.245, 0.045, 0.245),
-                  tc, bevel=0.006, ao_fn=ao)
-    #    Warm glowing Japanese wall lantern beside shop door (100% lit at night)
-    m.box((0.52, fy - 0.12, 2.04), (0.18, 0.18, 0.28), C_HERO_WOOD_DARK, bevel=0.014, ao_fn=ao)
-    m.box((0.52, fy - 0.16, 2.04), (0.14, 0.14, 0.20), C_PORCH_GLOW, bevel=0.0, smooth=False, glass=True)
+    _add_hero_window(m, wx_shop, fy, 1.66, 1.18, 0.88, '-Y', frame_col=C_HERO_WOOD, frame_mat=0, uv_rect=UV_WINDOW_SHOP)
+    m.box((wx_shop, fy - 0.018, 0.62), (1.30, 0.036, 0.84), C_HERO_WALL, bevel=0.006, mat_idx=0)
+    _add_uv_panel(m, wx_shop, fy - 0.046, 0.62, 1.26, 0.80, '-Y', UV_MOSAIC_TILE, ao_mode='full')
 
-    #    Colorful stacked plastic beverage crates next to shop door (yellow, blue, red, green!)
+    # Glowing ribbed Japanese paper chochin lantern mounted cleanly ABOVE the vertical wood plaque!
+    lx, ly, lz = 0.56, fy - 0.22, 2.18
+    m.box((lx, fy - 0.11, lz + 0.22), (0.05, 0.24, 0.05), C_HERO_WOOD_DARK, bevel=0.008, mat_idx=0)
+    m.cyl((lx, ly, lz + 0.18), 0.10, 0.10, 0.04, C_WARN_DARK, segs=12, mat_idx=1)
+    m.cyl((lx, ly, lz - 0.18), 0.10, 0.10, 0.04, C_WARN_DARK, segs=12, mat_idx=1)
+    # Four-sided glowing UV lantern body for crisp glowing warm light from every angle
+    m.box((lx, ly, lz), (0.20, 0.20, 0.34), C_PORCH_GLOW, bevel=0.03, mat_idx=0, ao_mode='soft')
+    _add_uv_panel(m, lx, ly - 0.108, lz, 0.19, 0.32, '-Y', UV_LANTERN_GLOW, ao_mode='soft')
+    _add_uv_panel(m, lx + 0.108, ly, lz, 0.19, 0.32, '+X', UV_LANTERN_GLOW, ao_mode='soft')
+    _add_uv_panel(m, lx - 0.108, ly, lz, 0.19, 0.32, '-X', UV_LANTERN_GLOW, ao_mode='soft')
+
+    # Charming retro summer ramen poster ("冷やし中華 はじめました！") neatly mounted on right cream wall!
+    _add_uv_panel(m, 3.00, fy - 0.024, 1.56, 0.96, 0.48, '-Y', UV_POSTER_WALL, ao_mode='soft')
+
+    # Wooden Japanese A-frame sidewalk chalkboard menu stand (A字看板) right of drainpipe — keeps pastel mosaic tiles unobstructed!
+    _add_aframe_menu(m, 2.94, fy - 0.34, 0.08, yaw=0.22)
+
+    # Hollow open-walled stacked plastic beverage crates w/ visible colorful glass bottles in top crates!
     crate_stack_1 = [
-        (0.92, fy - 0.22, 0.08, C_CRATE_GREEN, 0.02),
-        (0.92, fy - 0.22, 0.36, C_CRATE_RED, -0.03),
-        (0.92, fy - 0.22, 0.64, C_CRATE_BLUE, 0.01),
-        (0.92, fy - 0.22, 0.92, C_CRATE_YELLOW, 0.04),
-        (1.42, fy - 0.22, 0.08, C_CRATE_GREEN, -0.02),
-        (1.42, fy - 0.22, 0.36, C_CRATE_BLUE, 0.03),
-        (1.42, fy - 0.22, 0.64, C_CRATE_YELLOW, -0.02),
+        (0.92, fy - 0.22, 0.08, C_CRATE_GREEN, 0.02, False),
+        (0.92, fy - 0.22, 0.36, C_CRATE_RED, -0.02, False),
+        (0.92, fy - 0.22, 0.64, C_CRATE_BLUE, 0.01, False),
+        (0.92, fy - 0.22, 0.92, C_CRATE_YELLOW, 0.03, True),
+        (1.42, fy - 0.22, 0.08, C_CRATE_GREEN, -0.02, False),
+        (1.42, fy - 0.22, 0.36, C_CRATE_BLUE, 0.02, False),
+        (1.42, fy - 0.22, 0.64, C_CRATE_YELLOW, -0.01, True),
     ]
-    for cx_c, cy_c, cz_c, cc, cr in crate_stack_1:
-        _add_crate(m, cx_c, cy_c, cz_c, cc, rot_z=cr, ao_fn=ao)
+    for cx_c, cy_c, cz_c, cc, cr, has_b in crate_stack_1:
+        _add_open_crate(m, cx_c, cy_c, cz_c, cc, rot_z=cr, bottles=has_b, exposed='-Y')
 
-    #    Stylized vintage Japanese mamachari bicycle leaning on far-left corner of shopfront!
-    _add_vintage_bicycle(m, -3.48, fy - 0.28, 0.08, yaw=0.08, ao_fn=ao)
+    # Vintage Japanese mamachari bicycle with spoked rims leaning on far-left corner!
+    _add_vintage_bicycle(m, -3.52, fy - 0.28, 0.08, yaw=0.06)
 
     # 11) 1F Stair-Side Corner (+X wall at bx = +3.80):
-    #     Hero glowing white vending machine + wall AC unit directly above it (tucked cleanly under 2F overhang!)
-    _add_hero_vending(m, 4.04, -3.22, 0.08, facing='+X', body_col=C_VEND_WHITE, ao_fn=ao)
-    add_ac_unit(m, 3.80, -3.22, 2.38, '+X', ao_fn=ao)
+    #     UV-illustrated glowing white vending machine + AC unit with wrapped refrigerant pipes above it!
+    _add_hero_vending(m, 4.04, -3.22, 0.08, facing='+X', variant='white')
+    _add_hero_ac_unit(m, 3.80, -3.22, 2.38, '+X')
 
-    #     Under-stair lived-in props: colorful stacked crates + pastel pink secondary vending machine
+    #     Under-stair lived-in props: hollow bottle crates + pastel pink illustrated vending machine + fire box
     under_crates = [
-        (4.78, 0.88, 0.08, C_CRATE_BLUE, 0.03),
-        (4.78, 0.88, 0.36, C_CRATE_RED, -0.02),
-        (4.78, 0.88, 0.64, C_CRATE_YELLOW, 0.04),
-        (4.78, 1.36, 0.08, C_CRATE_GREEN, -0.03),
-        (4.78, 1.36, 0.36, C_CRATE_YELLOW, 0.02),
+        (4.78, 0.88, 0.08, C_CRATE_BLUE, 0.02, False),
+        (4.78, 0.88, 0.36, C_CRATE_RED, -0.02, False),
+        (4.78, 0.88, 0.64, C_CRATE_YELLOW, 0.03, True),
+        (4.78, 1.36, 0.08, C_CRATE_GREEN, -0.02, False),
+        (4.78, 1.36, 0.36, C_CRATE_YELLOW, 0.01, True),
     ]
-    for cx_c, cy_c, cz_c, cc, cr in under_crates:
-        _add_crate(m, cx_c, cy_c, cz_c, cc, rot_z=cr, ao_fn=ao)
-    _add_hero_vending(m, 4.04, 2.95, 0.08, facing='+X', body_col=C_VEND_PINK, ao_fn=ao)
+    for cx_c, cy_c, cz_c, cc, cr, has_b in under_crates:
+        _add_open_crate(m, cx_c, cy_c, cz_c, cc, rot_z=cr, bottles=has_b, exposed='+X')
+    _add_hero_vending(m, 4.04, 2.95, 0.08, facing='+X', variant='pink')
+    # Compact red Japanese fire-extinguisher cabinet tucked under stairs on +X wall
+    m.box((3.90, 0.15, 0.56), (0.20, 0.28, 0.62), C_WARN_RED, bevel=0.016, mat_idx=1)
 
-    return m.build(mat, col)
+    return m.build(hero_mats, col, bake_raycast_ao=True)
 
 
-def main():
-    col = bpy.context.scene.collection
-    mat = bpy.data.materials.new('CoastalTown_VertexColor')
+def _make_vcol_mat(name, roughness=0.88, metallic=0.0):
+    mat = bpy.data.materials.new(name)
     mat.use_nodes = True
     nt = mat.node_tree
     bsdf = nt.nodes.get('Principled BSDF')
     vcol = nt.nodes.new('ShaderNodeVertexColor')
     vcol.layer_name = 'Color'
     nt.links.new(vcol.outputs['Color'], bsdf.inputs['Base Color'])
-    bsdf.inputs['Roughness'].default_value = 0.88
+    bsdf.inputs['Roughness'].default_value = roughness
+    bsdf.inputs['Metallic'].default_value = metallic
+    return mat
+
+
+def main():
+    col = bpy.context.scene.collection
+    mat = _make_vcol_mat('CoastalTown_VertexColor', roughness=0.88, metallic=0.0)
+    hero_mats = [
+        _make_vcol_mat('Hero_Plaster', roughness=0.90, metallic=0.0),
+        _make_vcol_mat('Hero_Metal', roughness=0.34, metallic=0.30),
+        _make_vcol_mat('Hero_Atlas', roughness=0.55, metallic=0.05),
+    ]
 
     build_shop_corner(mat, col)
     build_shop_tall(mat, col)
@@ -1188,7 +1607,7 @@ def main():
     build_crossing_gate(mat, col)
     build_utility_pole(mat, col)
     build_street_furniture(mat, col)
-    build_hero_haikaze(mat, col)
+    build_hero_haikaze(hero_mats, col)
 
     out_path = Path(__file__).resolve().parent / 'coastal-town-kit.glb'
     bpy.ops.export_scene.gltf(

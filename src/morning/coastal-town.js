@@ -11,6 +11,7 @@ import { RNG } from '../core/rng.js';
 import { makeCanvas, canvasTexture, fbm2D } from '../core/textures.js';
 import { clamp, lerp, smoothstep } from '../core/mathx.js';
 import { SignKit } from './sign-kit.js';
+import { getCoastalDetailAtlas } from './coastal-detail-atlas.js';
 import {
   MEADOW_COMMON_GLSL,
   meadowUniforms,
@@ -186,7 +187,7 @@ const BUILDINGS = [
   { mesh: 'Town_Shop_Corner',  dx: -14.0, dz:  37.8, rotY: Math.PI,     halfW: 4.2, halfD: 3.6 },
   { mesh: 'Town_Shop_Tall',    dx: -26.5, dz:  37.8, rotY: Math.PI,     halfW: 3.8, halfD: 3.5 },
   // Direction A Hero Building ("海风庄") at iconic SE Plaza corner + 2.5m East cut-through side alley!
-  { mesh: 'Town_Hero_Haikaze', dx: HERO_HAIKAZE.dx, dz: HERO_HAIKAZE.dz, rotY: HERO_HAIKAZE.rotY, y: HERO_HAIKAZE.baseY, customCollision: true, halfW: 4.32, halfD: 3.96 },
+  { mesh: 'Town_Hero_Haikaze', dx: HERO_HAIKAZE.dx, dz: HERO_HAIKAZE.dz, rotY: HERO_HAIKAZE.rotY, y: HERO_HAIKAZE.baseY, customCollision: true, multiMaterial: true, halfW: 4.32, halfD: 3.96 },
   { mesh: 'Town_Shop_Corner',  dx:  23.1, dz:  35.4, rotY: Math.PI,     halfW: 4.2, halfD: 3.6 },
   { mesh: 'Town_Shop_Tall',    dx:  33.6, dz:  36.4, rotY: Math.PI,     halfW: 3.8, halfD: 3.5 },
 
@@ -303,7 +304,7 @@ export function constrainCoastalTown(x, z, walking) {
 // ==============================================================================
 // Stylized PBR Shaders: Architecture, Asphalt, Ocean & Cloud Shadows
 // ==============================================================================
-function createCoastalTownArchMaterial() {
+function createCoastalTownArchMaterial({ allowStone = true } = {}) {
   const mat = litMaterial({ vertexColors: true, grid: false, roughness: 0.89 });
   const prev = mat.onBeforeCompile;
   const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
@@ -348,12 +349,12 @@ function createCoastalTownArchMaterial() {
         float chroma = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
         float isRoofTile = isSlope * smoothstep(0.06, 0.14, chroma);
 
-        // Detect concrete/stone plinths & retaining bases (strictly mid-dark low-chroma stone, never white plaster/vending)
+        // Detect concrete/stone plinths & retaining bases (disabled for Hero_Plaster so shadowed stucco stays clean!)
         float luma = dot(c, vec3(0.299, 0.587, 0.114));
-        float isStone = (1.0 - isGlass) * (1.0 - isRoofTile)
+        float isStone = ${allowStone ? `(1.0 - isGlass) * (1.0 - isRoofTile)
                       * smoothstep(0.11, 0.04, chroma)
                       * smoothstep(0.46, 0.34, luma)
-                      * smoothstep(0.75, 0.35, wN.y);
+                      * smoothstep(0.75, 0.35, wN.y)` : '0.0'};
 
         float isPlaster = (1.0 - isGlass) * (1.0 - isRoofTile) * (1.0 - isStone);
 
@@ -403,7 +404,7 @@ function createCoastalTownArchMaterial() {
         vec3 cloud = mix(vec3(1.0), meadowCloudShadow(wPos.xz, uMeadowTime), 0.28);
         diffuseColor.rgb = c * cloud;`);
   };
-  mat.customProgramCacheKey = () => prevKey() + '|coastal-town-arch-v1';
+  mat.customProgramCacheKey = () => prevKey() + (allowStone ? '|coastal-town-arch-v1' : '|coastal-town-arch-plaster-v1');
   return mat;
 }
 
@@ -992,7 +993,7 @@ function buildTownSigns(root) {
     h: 0.72,
     font: 'song',
     storybook: true,
-  }, { x: CX + 11.70, y: HERO_HAIKAZE.baseY + 1.56, z: CZ + 30.82, rotY: Math.PI });
+  }, { x: CX + 11.70, y: HERO_HAIKAZE.baseY + 1.44, z: CZ + 30.82, rotY: Math.PI });
   kit.add({
     kind: 'plaque',
     style: 'lit',
@@ -1087,9 +1088,13 @@ export function createCoastalTown(townKitGltf) {
 
   // Extract geometry templates from Blender coastal-town-kit.glb
   const templates = {};
+  let heroTemplate = null;
   if (townKitGltf?.scene) {
+    heroTemplate = townKitGltf.scene.getObjectByName('Town_Hero_Haikaze');
     townKitGltf.scene.traverse(obj => {
-      if (obj.isMesh && obj.name) templates[obj.name] = obj.geometry;
+      if (obj.isMesh && obj.name && !obj.name.startsWith('Town_Hero_Haikaze')) {
+        templates[obj.name] = obj.geometry;
+      }
     });
   }
 
@@ -1098,12 +1103,11 @@ export function createCoastalTown(townKitGltf) {
   trackedGeos.push(...buildTownRoadsAndCivil(root, trackTex, trackMat));
   trackedGeos.push(buildTownOcean(root, trackMat));
 
-  // 2) Merge all static Blender Buildings into 1 single baked world-space Mesh:
-  //    - Only 1 draw call for all 43 town buildings!
-  //    - Automatically discovered & warmly illuminated at dusk/night by time-of-day.js!
+  // 2) Merge all standard static Blender Buildings into 1 single baked world-space Mesh:
   const dummy = new THREE.Object3D();
   const buildingParts = [];
   for (const b of BUILDINGS) {
+    if (b.multiMaterial) continue;
     const src = templates[b.mesh];
     if (!src) continue;
     const g = src.clone();
@@ -1125,6 +1129,78 @@ export function createCoastalTown(townKitGltf) {
     buildingsMesh.matrixAutoUpdate = false;
     buildingsMesh.updateMatrix();
     root.add(buildingsMesh);
+  }
+
+  // 2b) Direction A Benchmark Hero Building ("海风庄") — 3 shared stylized PBR material slots:
+  //     Hero_Plaster (matte gouache stucco/concrete/foliage w/ localized BVH contact AO, never brick-masked),
+  //     Hero_Metal   (semi-gloss painted steel staircase/railings/doors/bike w/ upward sky-bounce sheen),
+  //     Hero_Atlas   (1024x1024 illustrated vending/AC/noren/mosaic/menu/windows w/ controlled night emissiveMap).
+  if (heroTemplate) {
+    const atlas = getCoastalDetailAtlas();
+    const heroPlasterMat = trackMat(createCoastalTownArchMaterial({ allowStone: false }));
+    const heroMetalMat = trackMat(litMaterial({
+      vertexColors: true,
+      grid: false,
+      roughness: 0.30,
+      metalness: 0.12,
+    }));
+    const prevMetal = heroMetalMat.onBeforeCompile;
+    const prevMetalKey = heroMetalMat.customProgramCacheKey ? heroMetalMat.customProgramCacheKey.bind(heroMetalMat) : () => '';
+    heroMetalMat.onBeforeCompile = (shader, renderer) => {
+      if (prevMetal) prevMetal(shader, renderer);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vHeroMetalNW;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvHeroMetalNW = normalize(mat3(modelMatrix) * normal);');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vHeroMetalNW;')
+        .replace('#include <color_fragment>', `#include <color_fragment>
+          float upSheen = smoothstep(-0.15, 0.85, normalize(vHeroMetalNW).y);
+          diffuseColor.rgb *= mix(vec3(0.98, 1.00, 1.02), vec3(1.08, 1.12, 1.13), upSheen);`);
+    };
+    heroMetalMat.customProgramCacheKey = () => prevMetalKey() + '|hero-painted-metal-v1';
+
+    const heroAtlasMat = trackMat(litMaterial({
+      map: atlas.colorTex,
+      roughnessMap: atlas.roughnessTex,
+      roughness: 1.0,
+      metalness: 0.05,
+      vertexColors: true,
+      grid: false,
+    }));
+    heroAtlasMat.emissive = new THREE.Color(0xffffff);
+    heroAtlasMat.emissiveMap = atlas.emissiveTex;
+    heroAtlasMat.emissiveIntensity = 0.08;
+    heroAtlasMat.userData = {
+      ...heroAtlasMat.userData,
+      dayEmissiveBase: 0.08,
+      nightEmissiveScale: 1.12,
+    };
+
+    const heroGroup = heroTemplate.clone(true);
+    heroGroup.position.set(CX + HERO_HAIKAZE.dx, HERO_HAIKAZE.baseY, CZ + HERO_HAIKAZE.dz);
+    heroGroup.rotation.set(0, HERO_HAIKAZE.rotY, 0);
+    heroGroup.traverse(obj => {
+      if (!obj.isMesh) return;
+      const mName = obj.material?.name || '';
+      if (mName.includes('Hero_Atlas')) {
+        obj.material = heroAtlasMat;
+        obj.castShadow = false;
+        obj.receiveShadow = true;
+      } else if (mName.includes('Hero_Metal')) {
+        obj.material = heroMetalMat;
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+      } else {
+        obj.material = heroPlasterMat;
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+      }
+      obj.matrixAutoUpdate = false;
+      obj.updateMatrix();
+    });
+    heroGroup.matrixAutoUpdate = false;
+    heroGroup.updateMatrix();
+    root.add(heroGroup);
   }
 
   // 3) Instanced Street Furniture: Utility Poles, Vending Machines, Battery Cabinets, Bus Stops
