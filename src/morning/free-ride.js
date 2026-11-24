@@ -1,6 +1,7 @@
 import { approach, clamp, damp, dampAngle, lerp, smoothstep } from '../core/mathx.js';
 import { centerZ, crossing, constrainToRoad, roadHeight, roadYaw } from './country-route.js';
 import { inCoastalSample, coastalSurfaceHeight } from './coastal-sample.js';
+import { inCoastalTown, coastalTownSurfaceHeight } from './coastal-town.js';
 
 export const trialLimitsKmh = [50, 32.4, 25, 35];
 export const maxTrialSpeed = trialLimitsKmh[0] / 3.6;
@@ -55,14 +56,19 @@ export function stepFreeRide(state, dx, dz, wheelbase, dt) {
   const z = state.z + Math.cos(state.bikeYaw)*state.speed*dt;
   const bounded = constrainToRoad(x, z, false);
   const hitX = Math.abs(x-bounded.x) > .0001, hitZ = Math.abs(z-bounded.z) > .0001;
-  const sideWall = hitX && Math.abs(bounded.x-crossing.x) <= crossing.half;
-  const endOfArm = hitZ && Math.abs(bounded.x-crossing.x) <= crossing.half && Math.abs(bounded.z-crossing.z) > crossing.arm-1;
-  if (endOfArm || (hitX && !sideWall)) state.speed = 0;
-  else if (hitX || hitZ) {
-    const tangent = sideWall ? 0 : roadYaw(x);
-    const target = Math.cos(tangent-state.bikeYaw)>=0 ? tangent : tangent+Math.PI;
-    state.bikeYaw = dampAngle(state.bikeYaw, target, 4.8, dt);
-    state.speed *= Math.exp(-2.8*dt);
+  const inHub = inCoastalTown(x, z);
+  if (inHub) {
+    if (hitX || hitZ) state.speed *= Math.exp(-3.4 * dt);
+  } else {
+    const sideWall = hitX && Math.abs(bounded.x-crossing.x) <= crossing.half;
+    const endOfArm = hitZ && Math.abs(bounded.x-crossing.x) <= crossing.half && Math.abs(bounded.z-crossing.z) > crossing.arm-1;
+    if (endOfArm || (hitX && !sideWall)) state.speed = 0;
+    else if (hitX || hitZ) {
+      const tangent = sideWall ? 0 : roadYaw(x);
+      const target = Math.cos(tangent-state.bikeYaw)>=0 ? tangent : tangent+Math.PI;
+      state.bikeYaw = dampAngle(state.bikeYaw, target, 4.8, dt);
+      state.speed *= Math.exp(-2.8*dt);
+    }
   }
   const travel = Math.hypot(bounded.x-state.x,bounded.z-state.z);
   Object.assign(state,bounded,{ bikeX: bounded.x, bikeZ: bounded.z, yaw: state.bikeYaw });
@@ -74,16 +80,19 @@ export function countryCamera(camera, state, yaw, focus) {
   const speed = Math.min(1, Math.abs(state.speed)/maxTrialSpeed);
   const radius = 6.6+1.35*speed;
   const x = state.x - Math.sin(yaw)*radius, z = state.z - Math.cos(yaw)*radius;
-  const inSample = inCoastalSample(state.x, state.z);
-  const elevation = inSample ? coastalSurfaceHeight(state.x, state.z) : roadHeight(state.x);
-  const boomGround = inSample ? coastalSurfaceHeight(x, z) : roadHeight(x);
+  const inHub = inCoastalTown(state.x, state.z);
+  const inSample = !inHub && inCoastalSample(state.x, state.z);
+  const elevation = inHub ? coastalTownSurfaceHeight(state.x, state.z)
+    : inSample ? coastalSurfaceHeight(state.x, state.z) : roadHeight(state.x);
+  const boomGround = inHub ? coastalTownSurfaceHeight(x, z)
+    : inSample ? coastalSurfaceHeight(x, z) : roadHeight(x);
   // Keep the boom on the road side of the village houses and above bridge approaches.
   const offset = clamp(z - centerZ(x), -5.5, 5.5);
-  const boom = inSample ? { x, z }
+  const boom = (inHub || inSample) ? { x, z }
     : state.x <= 46 ? { x, z: clamp(z, -0.4, 7.2) }
     : Math.abs(state.x - crossing.x) < 29
       ? constrainToRoad(x, z, true) : { x, z: centerZ(x)+offset };
-  camera.position.set(boom.x, Math.max(boomGround + (inSample ? 1.55 : 1.45), elevation + 3.05), boom.z);
+  camera.position.set(boom.x, Math.max(boomGround + (inHub || inSample ? 1.65 : 1.45), elevation + (inHub ? 3.25 : 3.05)), boom.z);
   const lead = 1.6+2.5*speed;
   focus.set(state.x+Math.sin(yaw)*lead, elevation+1.28, state.z+Math.cos(yaw)*lead);
   camera.lookAt(focus);

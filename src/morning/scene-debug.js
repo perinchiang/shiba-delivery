@@ -1,6 +1,7 @@
 import { rideTuning, trialLimitsKmh } from './free-ride.js';
 import { centerZ, roadYaw, landmarks } from './country-route.js';
 import { COASTAL_SAMPLE, hillRoadPoint } from './coastal-sample.js';
+import { COASTAL_TOWN } from './coastal-town.js';
 import { streetTreeXs, treePitZ } from './street-layout.js';
 import { orders, start, bunFacade } from './orders.js';
 import { TOD_ORDER, TOD_PRESETS } from './time-of-day.js';
@@ -29,9 +30,40 @@ function onHillRoad(s) {
 const coastalStart = onHillRoad(10);
 const coastalPlaza = onHillRoad(170);
 
+function inHub(dx, dz, yaw = 0, extra = {}) {
+  const x = COASTAL_TOWN.x + dx;
+  const z = COASTAL_TOWN.z + dz;
+  return { phase: 'free', mode: 'ride', x, z, bikeX: x, bikeZ: z, yaw, bikeYaw: yaw, ...extra };
+}
+
 // State overrides are applied to a fresh delivery. Optional camera presets are cleared on movement.
 export const sceneJumps = {
-  street: { title: '老街起点' },
+  hubSlope: {
+    title: '榕湾坡道镇·下坡看海',
+    state: inHub(0.9, -26.0, 0),
+  },
+  hubCrossing: {
+    title: '榕湾坡道镇·电车道口',
+    state: inHub(1.2, 37.5, 0),
+  },
+  hubPlaza: {
+    title: '榕湾坡道镇·十字小广场',
+    state: inHub(-4.5, 25.0, Math.PI * 0.36),
+  },
+  hubUphill: {
+    title: '榕湾坡道镇·坡上住宅巷',
+    state: inHub(-14.0, -58.0, Math.PI * 0.35),
+  },
+  hubOverview: {
+    title: '榕湾坡道镇·全景鸟瞰',
+    state: inHub(0.9, -12.0, 0),
+    camera: {
+      fov: 46,
+      focus: [COASTAL_TOWN.x, 4.5, COASTAL_TOWN.z + 10],
+      offset: [-68, 56, -82],
+    },
+  },
+  street: { title: '旧老街起点（历史）' },
   shibaFront: {
     title: '阿柴正面·站姿',
     state: { phase: 'free', mode: 'walk', x: 2.0, z: 0.4, yaw: 0, bikeX: -2.2, bikeZ: start.z, bikeYaw: Math.PI / 2, stand: 1 },
@@ -276,7 +308,7 @@ export function setupSceneDebug(reset, renderer, state) {
     }
   }
   const id = params.get('scene');
-  reset(enabled && Object.hasOwn(sceneJumps, id) ? sceneJumps[id] : sceneJumps.street);
+  reset(enabled && Object.hasOwn(sceneJumps, id) ? sceneJumps[id] : sceneJumps.hubSlope);
 
   const speedButton = document.getElementById('test-speed');
   let speedIndex = 0;

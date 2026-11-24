@@ -3,6 +3,7 @@ import { rideMinZ } from './street-layout.js';
 // immediately after a teleport or when the rider travels west back to town.
 import { clamp, lerp, smoothstep } from '../core/mathx.js';
 import { inCoastalSample, constrainCoastalSample } from './coastal-sample.js';
+import { inCoastalTown, constrainCoastalTown } from './coastal-town.js';
 
 const knots = [
   [-8, 4.17], [60, 4.17], [120, 4.17], [210, 22], [320, 62],
@@ -62,7 +63,8 @@ export const landmarks = [
   { id: 'village', name: '村口', x: 1191 },
 ];
 export function roadPlace(x, z) {
-  if (z !== undefined && inCoastalSample(x, z)) return '海风坡道镇';
+  if (z !== undefined && inCoastalTown(x, z)) return '榕湾海滨坡道镇';
+  if (z !== undefined && inCoastalSample(x, z)) return '边缘风车村';
   if (x <= crossing.x-31) return '榕湾老街';
   if (Math.abs(x - crossing.x) < 31) return '城市十字路口';
   if (x < 210) return '镇口';
@@ -89,6 +91,7 @@ export function routeDistances(x, z) {
 // Use the existing pedestrian pavement in town. Outside town the gravel shoulder
 // is walkable. Leave boot clearance inside the rail when parking on the bridge.
 export function constrainToRoad(x, z, walking) {
+  if (inCoastalTown(x, z)) return constrainCoastalTown(x, z, walking);
   if (inCoastalSample(x, z)) return constrainCoastalSample(x, z, walking);
   x = clamp(x, walking ? -8.3 : -7.2, roadEnd);
   const half = halfWidth(x);

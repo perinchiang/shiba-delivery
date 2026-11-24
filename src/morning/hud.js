@@ -9,6 +9,7 @@ import { mountBunHandoff } from './bun-handoff.jsx';
 import { drawRouteMap } from './route-map.js';
 import { crossing, distanceAlong, roadEnd, roadPlace, routeDistances } from './country-route.js';
 import { inCoastalSample } from './coastal-sample.js';
+import { inCoastalTown } from './coastal-town.js';
 import { drawStreetMap } from './street-map.js';
 
 export function createHUD(state, delivery, view, { shiba, marker }, { input, stick, releaseStick }, reset, rideAudio) {
@@ -314,7 +315,7 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     $('shift-summary').hidden = !hasShift;
     if (hasShift) write('shift-summary', '今日已完成 ' + state.completedCount + ' 单　·　累计到手 ' + formatPay(state.totalEarnedCents || 0));
     write('order-summary', free ? Math.round(Math.abs(state.speed)*3.6) + (state.speed < 0 ? ' km/h · 倒车' : ' km/h · 自由骑行') : done ? '实际到账 ' + net : '送往' + state.order.customer.address);
-    write('place', free ? (inCoastalSample(state.x, state.z) ? '海风坡道镇' : '榕湾村道') : state.mode === 'shop' ? state.order.room.name : state.x > 45 ? roadPlace(state.x, state.z) : '榕湾老街');
+    write('place', free ? (inCoastalTown(state.x, state.z) ? '榕湾海滨坡道镇' : inCoastalSample(state.x, state.z) ? '边缘风车村' : '榕湾村道') : state.mode === 'shop' ? state.order.room.name : state.x > 45 ? roadPlace(state.x, state.z) : '榕湾老街');
     write('clock', free ? '清晨' : state.order.clock[state.phase]);
     actionButton.hidden = !action || action === 'phone' || action === 'statement' || phoneExpanded;
     const bunHandoff = state.order.id === 'buns' && state.dialog === 'shopkeeper';

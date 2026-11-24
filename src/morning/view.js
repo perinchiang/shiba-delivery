@@ -9,6 +9,7 @@ import { clamp, damp, dampAngle } from '../core/mathx.js';
 import { isBoxSequence, isStandSequence, positionParcel } from './sequence.js';
 import { CURB_H, CURB_Z } from './street-layout.js';
 import { inCoastalSample, coastalSurfaceHeight, coastalSidewalk } from './coastal-sample.js';
+import { inCoastalTown, coastalTownSurfaceHeight } from './coastal-town.js';
 
 const OLD_STREET_LIMIT_X = 46;
 const SIGNAL_POLES = [
@@ -29,6 +30,7 @@ function onCitySidewalk(x, z) {
 
 function surfaceHeight(x, z, inside) {
   if (inside) return 0;
+  if (inCoastalTown(x, z)) return coastalTownSurfaceHeight(x, z);
   if (inCoastalSample(x, z)) return coastalSurfaceHeight(x, z) + (coastalSidewalk(x, z) ? CURB_H : 0);
   const base = roadHeight(x);
   if (onCitySidewalk(x, z)) return base + CURB_H;
@@ -87,7 +89,7 @@ function clearCrossingObstacles(pos, target) {
 }
 
 export function createView(renderer, state, world) {
-  const { scene, country, coastalSample, camera, chase, timeOfDay, renderStyle, rooms, street, shiba, scooter, looseBag, marker, contact } = world;
+  const { scene, country, coastalSample, coastalTown, camera, chase, timeOfDay, renderStyle, rooms, street, shiba, scooter, looseBag, marker, contact } = world;
   const roomList = Object.values(rooms);
   const courierScale = scooter.root.scale.y;
   const suspension = createRideMotion(scooter.frontZ, scooter.rearZ);
@@ -267,7 +269,8 @@ export function createView(renderer, state, world) {
   const desiredFocus = new THREE.Vector3(), eye = new THREE.Vector3(), desiredEye = new THREE.Vector3();
   function draw(dt, time, { stride, walking }) {
     const inside = state.mode === 'shop', riding = state.mode === 'ride';
-    const outsideTown = !inside && state.x > OLD_STREET_LIMIT_X;
+    const inHub = !inside && inCoastalTown(state.x, state.z);
+    const outsideTown = !inside && (state.x > OLD_STREET_LIMIT_X || inHub);
     if (inside) {
       streetOrbit = false;
       rideYawOffset = 0;
@@ -295,13 +298,21 @@ export function createView(renderer, state, world) {
     room.bag.visible = state.phase === 'pickup';
     country.root.visible = !inside;
     country.sky.visible = !inside && perspectiveView;
-    street.root.visible = !inside && state.x < 240;
+    street.root.visible = !inside && !inHub && state.x < 240;
+    if (coastalTown) coastalTown.root.visible = !inside && inHub;
+    if (coastalSample) coastalSample.root.visible = !inside && !inHub;
     scooter.root.visible = !inside;
     if (inside) room.update(time); else {
-      street.update(time);
-      coastalSample?.update(time);
+      if (!inHub) {
+        street.update(time);
+        coastalSample?.update(time);
+      } else {
+        coastalTown?.update(time);
+      }
     }
-    const ground = inside ? 0 : inCoastalSample(state.x, state.z) ? coastalSurfaceHeight(state.x, state.z) : roadHeight(state.x);
+    const ground = inside ? 0
+      : inHub ? coastalTownSurfaceHeight(state.x, state.z)
+      : inCoastalSample(state.x, state.z) ? coastalSurfaceHeight(state.x, state.z) : roadHeight(state.x);
     const height = surfaceHeight(state.x, state.z, inside);
     const bikeHeight = surfaceHeight(state.bikeX, state.bikeZ, inside);
     const facing = closeUp && !riding ? 0.45 : state.yaw;
@@ -310,8 +321,12 @@ export function createView(renderer, state, world) {
     scooter.root.position.set(state.bikeX, bikeHeight, state.bikeZ);
     scooter.steer(state.steer);
     scooter.setStand(state.stand);
-    const bikeOnCoast = !inside && inCoastalSample(state.bikeX, state.bikeZ);
-    const grade = inside ? 0 : bikeOnCoast
+    const bikeInHub = !inside && inCoastalTown(state.bikeX, state.bikeZ);
+    const bikeOnCoast = !inside && !bikeInHub && inCoastalSample(state.bikeX, state.bikeZ);
+    const grade = inside ? 0 : bikeInHub
+      ? (coastalTownSurfaceHeight(state.bikeX + 0.5 * Math.sin(state.bikeYaw), state.bikeZ + 0.5 * Math.cos(state.bikeYaw))
+        - coastalTownSurfaceHeight(state.bikeX - 0.5 * Math.sin(state.bikeYaw), state.bikeZ - 0.5 * Math.cos(state.bikeYaw)))
+      : bikeOnCoast
       ? (coastalSurfaceHeight(state.bikeX + 0.5 * Math.sin(state.bikeYaw), state.bikeZ + 0.5 * Math.cos(state.bikeYaw))
         - coastalSurfaceHeight(state.bikeX - 0.5 * Math.sin(state.bikeYaw), state.bikeZ - 0.5 * Math.cos(state.bikeYaw)))
       : (roadHeight(state.bikeX + .5) - roadHeight(state.bikeX - .5)) * Math.sin(state.bikeYaw);
@@ -355,7 +370,7 @@ export function createView(renderer, state, world) {
           ? THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(halfAngle) / aspect))
           : shopReview.fov;
         chase.near = 0.12;
-        chase.far = 245;
+        chase.far = inHub ? 380 : 245;
         chase.updateProjectionMatrix();
       } else if (!perspectiveView) {
         const detailScale = nextView === 'portrait' || nextView === 'box' ? courierScale : 1;
@@ -367,7 +382,7 @@ export function createView(renderer, state, world) {
         camera.updateProjectionMatrix();
       }
     }
-    const baseFogDensity = inside ? 0.014 : 0.016 - 0.0122 * THREE.MathUtils.smoothstep(state.x, 28, 120);
+    const baseFogDensity = inside ? 0.014 : inHub ? 0.0022 : 0.016 - 0.0122 * THREE.MathUtils.smoothstep(state.x, 28, 120);
     timeOfDay.applyAtmosphere({
       inside,
       perspectiveView,
@@ -398,7 +413,7 @@ export function createView(renderer, state, world) {
       const activeYaw = followYaw + rideYawOffset;
       walkCamYaw = activeYaw;
       const fov = (aspect < .85 ? 63 : 55) + 7 * Math.min(1, Math.abs(state.speed) / maxTrialSpeed) ** 2;
-      const far = outsideTown ? 245 : 118;
+      const far = inHub ? 380 : outsideTown ? 245 : 118;
       if (Math.abs(chase.fov - fov) > .03 || chase.near !== 0.25 || chase.far !== far) {
         chase.fov = fov;
         chase.near = 0.25;
@@ -410,7 +425,9 @@ export function createView(renderer, state, world) {
       const userOrbited = Math.abs(rideYawOffset) > 0.005 || Math.abs(ridePitchOffset) > 0.005;
       countryCamera(chase, state, activeYaw, focus);
       if (userOrbited) {
-        const groundAtCam = inCoastalSample(chase.position.x, chase.position.z)
+        const groundAtCam = inCoastalTown(chase.position.x, chase.position.z)
+          ? coastalTownSurfaceHeight(chase.position.x, chase.position.z)
+          : inCoastalSample(chase.position.x, chase.position.z)
           ? coastalSurfaceHeight(chase.position.x, chase.position.z)
           : roadHeight(chase.position.x);
         chase.position.y = Math.max(groundAtCam + 1.15, chase.position.y + ridePitchOffset * 3.8);
@@ -455,7 +472,8 @@ export function createView(renderer, state, world) {
       const horiz = walkDist * Math.cos(walkPitch);
       const rawX = state.x - Math.sin(walkCamYaw) * horiz;
       const rawZ = state.z - Math.cos(walkCamYaw) * horiz;
-      const boomGround = inCoastalSample(rawX, rawZ) ? coastalSurfaceHeight(rawX, rawZ) : roadHeight(rawX);
+      const boomGround = inCoastalTown(rawX, rawZ) ? coastalTownSurfaceHeight(rawX, rawZ)
+        : inCoastalSample(rawX, rawZ) ? coastalSurfaceHeight(rawX, rawZ) : roadHeight(rawX);
       const rawY = Math.max(boomGround + 1.05, height + 1.12 + walkDist * Math.sin(walkPitch) + 0.55);
       desiredEye.set(rawX, rawY, rawZ);
       if (outsideTown) clearCrossingObstacles(desiredEye, desiredFocus);
@@ -475,7 +493,7 @@ export function createView(renderer, state, world) {
       if (Math.abs(chase.fov - portraitFov) > 0.03 || chase.near !== 0.12 || chase.far !== 245) {
         chase.fov = portraitFov;
         chase.near = 0.12;
-        chase.far = 245;
+        chase.far = inHub ? 380 : 245;
         chase.updateProjectionMatrix();
       }
       const radius = (riding ? 3.55 : 2.75) * courierScale;
@@ -572,7 +590,7 @@ export function createView(renderer, state, world) {
     street.opposite.visible = (perspectiveView && !(activeCamera.position.z > 6.6 && !outsideTown)) || fromShopSide;
     const lightX = Math.round(focus.x * 2) / 2;
     const lightZ = inside ? 0 : Math.round(focus.z * 2) / 2;
-    const openCountry = inside ? 0 : THREE.MathUtils.smoothstep(state.x, 52, 170);
+    const openCountry = inside ? 0 : inHub ? 1 : THREE.MathUtils.smoothstep(state.x, 52, 170);
     timeOfDay.updateLightTransform({ inside, openCountry, lightX, ground, lightZ, scooterRoot: scooter.root });
     view = nextView;
     if (!inside) country.sky.position.copy(activeCamera.position);
