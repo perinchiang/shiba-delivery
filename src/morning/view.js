@@ -300,7 +300,7 @@ export function createView(renderer, state, world) {
       }
       const activeYaw = followYaw + rideYawOffset;
       walkCamYaw = activeYaw;
-      const fov = (aspect < 0.85 ? 62 : 54) + 7 * Math.min(1, Math.abs(state.speed) / maxTrialSpeed) ** 2;
+      const fov = (aspect < 0.85 ? 55 : 46) + 6 * Math.min(1, Math.abs(state.speed) / maxTrialSpeed) ** 2;
       if (Math.abs(chase.fov - fov) > 0.03 || chase.near !== 0.25 || chase.far !== 380) {
         chase.fov = fov; chase.near = 0.25; chase.far = 380;
         chase.updateProjectionMatrix();

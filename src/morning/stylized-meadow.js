@@ -37,9 +37,10 @@ vec3 meadowTint(vec2 xz) {
   float nFine  = mNoise(xz * 0.42  + vec2(7.1, 14.2));
   float blend  = clamp(nBroad * 0.62 + nMed * 0.38, 0.0, 1.0);
 
-  vec3 coolLush = vec3(0.082, 0.305, 0.062);
-  vec3 midLush  = vec3(0.165, 0.430, 0.068);
-  vec3 warmSun  = vec3(0.268, 0.520, 0.075);
+  // Calibrated Kamakura coastal sage-emerald hillside tones (harmonizes with AgX + Haikaze-so!)
+  vec3 coolLush = vec3(0.052, 0.168, 0.072);
+  vec3 midLush  = vec3(0.095, 0.238, 0.082);
+  vec3 warmSun  = vec3(0.158, 0.305, 0.092);
 
   vec3 col = mix(coolLush, midLush, smoothstep(0.18, 0.58, blend));
   col = mix(col, warmSun, smoothstep(0.54, 0.88, blend));

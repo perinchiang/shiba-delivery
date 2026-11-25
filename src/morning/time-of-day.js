@@ -1,8 +1,8 @@
-// Clean-Slate 4-time-of-day lighting, atmosphere, coastal sky, Haikaze-so lived-in night
-// illumination (dynamic glTF emissives + 4 warm non-shadow PointLights + subtle ground spill),
-// and the 4-layer scooter headlight rig. Zero legacy Old-Street/Crossing/Countryside hacks.
+// 4-time-of-day lighting calibrated to Blender Cycles AgX renders (`01-diorama-hero-34.png` & `05-diorama-night.png`).
+// Drives Haikaze-so's literal Cycles Day/Night 2K Lightmaps (zero wall-piercing PointLights!),
+// crisp dynamic shadows for Shiba & scooter, coastal sky/ocean, and the 4-layer scooter headlamp rig.
 import * as THREE from 'three';
-import { HERO_HAIKAZE, heroLocalToWorld } from './coastal-town.js';
+import { haikazeLightmapUniforms, heroLocalToWorld } from './coastal-town.js';
 
 export const TOD_ORDER = Object.freeze(['morning', 'noon', 'dusk', 'night']);
 
@@ -11,189 +11,205 @@ export const TOD_PRESETS = Object.freeze({
     id: 'morning',
     label: '早晨',
     t: 0,
-    sunOffset: [-14.0, 15.0, -13.0],
-    sunColor: 0xffe4bc,
-    sunIntensity: 2.85,
-    hemiSky: 0xd0eafa,
-    hemiGround: 0xb6a084,
-    hemiIntensity: 1.38,
-    envIntensity: 0.48,
-    skyZenith: 0x4b9cd6,
-    skyMid: 0x9bd4eb,
-    skyHorizon: 0xfff0d2,
-    skySunDir: [-0.60, 0.42, -0.68],
-    skySunGlowColor: [0.48, 0.28, 0.09],
-    skySunGlowStr: 1.0,
-    skySunDiscColor: [1.5, 1.25, 0.85],
-    skySunDiscStr: 1.0,
-    mountainTint: 0xffffff,
-    cloudShadow: [0.75, 0.86, 0.94],
-    cloudLit: [1.0, 0.985, 0.945],
+    // Matches Blender Cycles SummerSun direction (-X, +Y, -Z after rotY=PI)
+    sunOffset: [-14.0, 15.0, -16.0],
+    sunColor: 0xffeed0,
+    sunIntensity: 2.75,
+    hemiSky: 0x9ad8fc,
+    hemiGround: 0x626b75,
+    hemiIntensity: 0.92,
+    envIntensity: 0.44,
+    // Cycles Lightmap blend (0 = pure Cycles Day, 1 = pure Cycles Night)
+    lmNightMix: 0.0,
+    lmTint: [1.00, 1.00, 1.00],
+    lmGain: 1.00,
+    // Crisp Blender Cycles summer coastal azure sky!
+    skyZenith: 0x1678e2,
+    skyMid: 0x4ab8f5,
+    skyHorizon: 0xa4e0fc,
+    skySunDir: [-0.56, 0.56, -0.61],
+    skySunGlowColor: [0.36, 0.28, 0.14],
+    skySunGlowStr: 0.75,
+    skySunDiscColor: [1.5, 1.35, 1.05],
+    skySunDiscStr: 0.95,
+    mountainTint: 0xd8eef8,
+    cloudShadow: [0.76, 0.87, 0.96],
+    cloudLit: [1.02, 1.00, 0.97],
     cloudOpacity: 1.0,
     starStrength: 0.0,
-    skyBg: 0x9cd3e9,
-    fogColor: 0xd8eef5,
-    fogColorStyled: 0xd8ebf2,
-    fogDensityScale: 1.0,
-    shadowTint: 0x6280ad,
-    shadowTintStrength: 0.22,
+    skyBg: 0x6ac3f4,
+    fogColor: 0xaadbf5,
+    fogColorStyled: 0xaadbf5,
+    fogDensityScale: 0.75,
+    shadowTint: 0x4b74a8,
+    shadowTintStrength: 0.26,
     grade: {
-      lift: [0.004, 0.005, 0.009],
-      gamma: [1.01, 1.00, 0.985],
-      gain: [1.05, 1.02, 0.95],
-      saturation: 1.07,
-      contrast: 1.03,
+      lift: [0.0, 0.0, 0.0],
+      gamma: [1.0, 1.0, 1.0],
+      gain: [1.0, 1.0, 1.0],
+      saturation: 1.04,
+      contrast: 1.02,
     },
     emissive: 0.0,
-    bloomStrength: 0.14,
-    bloomThreshold: 0.96,
-    exposure: 1.06,
-    waterTint: 0xffffff,
+    bloomStrength: 0.11,
+    bloomThreshold: 0.98,
+    exposure: 1.02,
+    waterTint: 0x9cdbf7,
   },
   noon: {
     id: 'noon',
     label: '中午',
     t: 1 / 3,
-    sunOffset: [-5.5, 22.0, -7.5],
-    sunColor: 0xfff9e6,
-    sunIntensity: 3.30,
-    hemiSky: 0xa6dfff,
-    hemiGround: 0xb8bd8a,
-    hemiIntensity: 1.62,
-    envIntensity: 0.54,
-    skyZenith: 0x1b78dc,
-    skyMid: 0x6ec2f2,
-    skyHorizon: 0xf7f6de,
+    sunOffset: [-6.0, 22.0, -8.5],
+    sunColor: 0xfff9ea,
+    sunIntensity: 3.15,
+    hemiSky: 0x8cd2ff,
+    hemiGround: 0x6e7878,
+    hemiIntensity: 1.08,
+    envIntensity: 0.50,
+    lmNightMix: 0.0,
+    lmTint: [1.02, 1.04, 1.06],
+    lmGain: 1.12,
+    skyZenith: 0x1266d6,
+    skyMid: 0x40b0f4,
+    skyHorizon: 0xbce8fc,
     skySunDir: [-0.24, 0.91, -0.34],
-    skySunGlowColor: [0.42, 0.38, 0.22],
-    skySunGlowStr: 0.95,
-    skySunDiscColor: [1.75, 1.65, 1.38],
+    skySunGlowColor: [0.34, 0.32, 0.22],
+    skySunGlowStr: 0.80,
+    skySunDiscColor: [1.7, 1.6, 1.35],
     skySunDiscStr: 1.0,
-    mountainTint: 0xd0ecf7,
-    cloudShadow: [0.76, 0.89, 0.99],
-    cloudLit: [1.08, 1.06, 1.01],
+    mountainTint: 0xd0ecf8,
+    cloudShadow: [0.78, 0.90, 0.99],
+    cloudLit: [1.06, 1.05, 1.02],
     cloudOpacity: 1.0,
     starStrength: 0.0,
-    skyBg: 0x72c3f2,
-    fogColor: 0xe2f2f8,
-    fogColorStyled: 0xc0e4f7,
-    fogDensityScale: 0.72,
-    shadowTint: 0x3c62b5,
+    skyBg: 0x5abaf2,
+    fogColor: 0xb4e2f7,
+    fogColorStyled: 0xb4e2f7,
+    fogDensityScale: 0.62,
+    shadowTint: 0x3b66b0,
     shadowTintStrength: 0.30,
     grade: {
-      lift: [0.010, 0.008, -0.004],
-      gamma: [1.01, 1.00, 0.97],
-      gain: [1.08, 1.05, 0.97],
-      saturation: 1.12,
-      contrast: 1.05,
+      lift: [0.0, 0.0, 0.0],
+      gamma: [1.0, 1.0, 1.0],
+      gain: [1.02, 1.02, 1.00],
+      saturation: 1.06,
+      contrast: 1.03,
     },
     emissive: 0.0,
-    bloomStrength: 0.18,
-    bloomThreshold: 0.98,
-    exposure: 1.08,
-    waterTint: 0xf0fdff,
+    bloomStrength: 0.14,
+    bloomThreshold: 0.99,
+    exposure: 1.05,
+    waterTint: 0xaee6ff,
   },
   dusk: {
     id: 'dusk',
     label: '傍晚',
     t: 2 / 3,
     sunOffset: [-18.5, 7.2, -10.5],
-    sunColor: 0xffb370,
-    sunIntensity: 2.65,
-    hemiSky: 0xa4afbf,
-    hemiGround: 0x7d7674,
-    hemiIntensity: 1.38,
-    envIntensity: 0.30,
-    skyZenith: 0x3a4c78,
-    skyMid: 0xd68496,
-    skyHorizon: 0xffb368,
+    sunColor: 0xffa860,
+    sunIntensity: 2.35,
+    hemiSky: 0x8e96b2,
+    hemiGround: 0x564c52,
+    hemiIntensity: 0.86,
+    envIntensity: 0.24,
+    lmNightMix: 0.44,
+    lmTint: [1.14, 0.88, 0.70],
+    lmGain: 0.92,
+    skyZenith: 0x2a3c68,
+    skyMid: 0xc9788e,
+    skyHorizon: 0xffa85e,
     skySunDir: [-0.84, 0.18, -0.51],
     skySunGlowColor: [0.85, 0.42, 0.16],
-    skySunGlowStr: 1.40,
+    skySunGlowStr: 1.35,
     skySunDiscColor: [2.0, 1.24, 0.64],
     skySunDiscStr: 1.10,
-    mountainTint: 0x8f7a8a,
-    cloudShadow: [0.52, 0.48, 0.62],
-    cloudLit: [1.12, 0.76, 0.54],
+    mountainTint: 0x7b687c,
+    cloudShadow: [0.46, 0.42, 0.56],
+    cloudLit: [1.10, 0.72, 0.50],
     cloudOpacity: 1.0,
-    starStrength: 0.12,
-    skyBg: 0xd28b8c,
-    fogColor: 0xd4a498,
-    fogColorStyled: 0xc9a39b,
-    fogDensityScale: 0.80,
-    shadowTint: 0x586585,
-    shadowTintStrength: 0.28,
+    starStrength: 0.14,
+    skyBg: 0xc47d84,
+    fogColor: 0xc49288,
+    fogColorStyled: 0xc49288,
+    fogDensityScale: 0.78,
+    shadowTint: 0x4e587a,
+    shadowTintStrength: 0.30,
     grade: {
-      lift: [0.008, 0.007, 0.010],
-      gamma: [1.01, 0.995, 0.985],
-      gain: [1.05, 1.00, 0.95],
-      saturation: 1.05,
+      lift: [0.002, 0.001, 0.004],
+      gamma: [1.0, 0.995, 0.985],
+      gain: [1.03, 0.99, 0.95],
+      saturation: 1.06,
       contrast: 1.03,
     },
-    emissive: 0.42,
-    bloomStrength: 0.28,
+    emissive: 0.48,
+    bloomStrength: 0.24,
     bloomThreshold: 0.88,
-    exposure: 1.06,
-    waterTint: 0xc89a90,
+    exposure: 1.00,
+    waterTint: 0xa67c7a,
   },
   night: {
     id: 'night',
     label: '夜晚',
     t: 1,
-    sunOffset: [-9.5, 14.0, -10.5],
-    sunColor: 0x8eb0d6,
-    sunIntensity: 0.46,
-    hemiSky: 0x324766,
-    hemiGround: 0x1e2636,
-    hemiIntensity: 0.68,
+    sunOffset: [-12.0, 15.0, -14.0],
+    sunColor: 0x7aa4dc,
+    sunIntensity: 0.42,
+    hemiSky: 0x223656,
+    hemiGround: 0x101828,
+    hemiIntensity: 0.54,
     envIntensity: 0.10,
-    skyZenith: 0x0d1626,
-    skyMid: 0x17263c,
-    skyHorizon: 0x263850,
-    skySunDir: [-0.62, 0.48, -0.62],
-    skySunGlowColor: [0.14, 0.20, 0.30],
-    skySunGlowStr: 0.55,
-    skySunDiscColor: [1.35, 1.42, 1.60],
-    skySunDiscStr: 0.90,
-    mountainTint: 0x24344a,
-    cloudShadow: [0.07, 0.10, 0.16],
-    cloudLit: [0.14, 0.21, 0.31],
+    lmNightMix: 1.0,
+    lmTint: [1.00, 1.00, 1.00],
+    lmGain: 1.00,
+    // Exact Cycles 05-diorama-night deep coastal midnight navy!
+    skyZenith: 0x061022,
+    skyMid: 0x0d1c36,
+    skyHorizon: 0x1a3052,
+    skySunDir: [-0.56, 0.52, -0.64],
+    skySunGlowColor: [0.10, 0.16, 0.26],
+    skySunGlowStr: 0.45,
+    skySunDiscColor: [1.30, 1.40, 1.60],
+    skySunDiscStr: 0.85,
+    mountainTint: 0x182840,
+    cloudShadow: [0.05, 0.08, 0.15],
+    cloudLit: [0.12, 0.18, 0.28],
     cloudOpacity: 1.0,
     starStrength: 1.0,
-    skyBg: 0x18263a,
-    fogColor: 0x1a283e,
-    fogColorStyled: 0x1c2b42,
+    skyBg: 0x0e1d36,
+    fogColor: 0x10203a,
+    fogColorStyled: 0x10203a,
     fogDensityScale: 0.85,
-    shadowTint: 0x3b4e6b,
+    shadowTint: 0x2c4264,
     shadowTintStrength: 0.34,
     grade: {
-      lift: [0.010, 0.014, 0.024],
-      gamma: [1.00, 1.01, 1.02],
-      gain: [1.00, 1.01, 1.03],
-      saturation: 1.02,
+      lift: [0.0, 0.0, 0.004],
+      gamma: [1.0, 1.0, 1.01],
+      gain: [1.0, 1.0, 1.01],
+      saturation: 1.03,
       contrast: 1.02,
     },
     emissive: 1.0,
-    bloomStrength: 0.48,
-    bloomThreshold: 0.74,
-    exposure: 1.08,
-    waterTint: 0x283b54,
+    bloomStrength: 0.36,
+    bloomThreshold: 0.82,
+    exposure: 1.04,
+    waterTint: 0x193152,
   },
 });
 
-// Haikaze-so named glTF emissive curves: { day, night, color }
-// Deeper amber-honey tints preserve rich warm gold through ACES Filmic without desaturating to white!
+// Matches Blender Cycles `boost_night_emissives()` so window curtains, ramen interior,
+// porch lamps, chochin lantern & vending showcase glow identically to `05-diorama-night.png`!
 const HAIKAZE_EMISSIVE_CURVES = Object.freeze({
-  Arch_Shop_Interior:       { day: 0.24, night: 3.10, color: 0xffa438 },
-  Arch_Room_Interior:       { day: 0.14, night: 2.35, color: 0xffae46 },
-  Arch_Curtain_Cream:       { day: 0.02, night: 1.85, color: 0xff9f38 },
-  Arch_Curtain_Blue:        { day: 0.02, night: 1.45, color: 0xffb24c },
-  Arch_Porch_Lamp:          { day: 0.32, night: 3.80, color: 0xffbe54 },
-  Prop_Lantern_Paper:       { day: 0.28, night: 3.60, color: 0xff9c36 },
-  Arch_Sign_Board_Cream:    { day: 0.05, night: 0.92, color: 0xffd288 },
-  Emissive_Vending:         { day: 0.35, night: 2.15, color: 0xfff0d0 },
-  Prop_VendingPoster_White: { day: 0.08, night: 0.72, color: 0xfff5e4 },
-  Prop_VendingPoster_Pink:  { day: 0.08, night: 0.72, color: 0xfff0f2 },
+  Arch_Shop_Interior:       { day: 0.45, night: 2.35, color: 0xffc86e },
+  Arch_Room_Interior:       { day: 0.24, night: 2.05, color: 0xffcc78 },
+  Arch_Curtain_Cream:       { day: 0.00, night: 1.05, color: 0xffd082 },
+  Arch_Curtain_Blue:        { day: 0.00, night: 0.88, color: 0xffe0a4 },
+  Arch_Porch_Lamp:          { day: 0.65, night: 3.80, color: 0xffd282 },
+  Prop_Lantern_Paper:       { day: 0.48, night: 3.20, color: 0xffcb74 },
+  Arch_Sign_Board_Cream:    { day: 0.06, night: 0.82, color: 0xffeac0 },
+  Emissive_Vending:         { day: 0.55, night: 2.10, color: 0xfff6df },
+  Prop_VendingPoster_White: { day: 0.06, night: 0.62, color: 0xffffff },
+  Prop_VendingPoster_Pink:  { day: 0.06, night: 0.62, color: 0xffffff },
 });
 
 const PRESET_ARRAY = TOD_ORDER.map(id => {
@@ -318,58 +334,17 @@ function buildNightFixtures(scene) {
   const group = new THREE.Group();
   group.name = 'night-fixtures';
 
-  // 1) 4 Lightweight non-shadow warm PointLights giving Haikaze-so genuine Cycles-style lived-in night glow!
-  const haikazeLights = [
-    // 1F Ramen Shop doorway & chochin lantern warm honey spill onto sidewalk, bicycle & Shiba
-    { pos: heroLocalToWorld(-0.4, -4.55, 2.15), color: 0xffa648, maxInt: 8.2, dist: 10.5 },
-    // SE Corner white vending machine & corner terrace cream glow
-    { pos: heroLocalToWorld(4.1, -4.45, 1.65), color: 0xffd490, maxInt: 4.6, dist: 7.5 },
-    // 2F open corridor & exterior golden-handrail stairway warm porch spill
-    { pos: heroLocalToWorld(3.75, 0.25, 4.90), color: 0xffb456, maxInt: 6.4, dist: 9.2 },
-    // 2F front balcony & 3D "海风拉面" signboard soft golden wash
-    { pos: heroLocalToWorld(-0.4, -4.40, 4.20), color: 0xffbe66, maxInt: 3.6, dist: 7.5 },
-  ].map(cfg => {
-    const light = new THREE.PointLight(cfg.color, 0.0, cfg.dist, 1.75);
-    light.castShadow = false;
-    light.position.set(cfg.pos.x, cfg.pos.y, cfg.pos.z);
-    group.add(light);
-    return { light, maxInt: cfg.maxInt };
-  });
+  // Single soft warm doorway light purely to illuminate dynamic Shiba & scooter outside the shop at night!
+  // (Haikaze-so's own walls & sidewalk get 100% real shadowed Cycles Night Lightmap — zero light bleeding!)
+  const shopHeroLightPos = heroLocalToWorld(-0.4, -4.8, 2.0);
+  const shopDynamicFill = new THREE.PointLight(0xffb860, 0.0, 7.5, 1.8);
+  shopDynamicFill.castShadow = false;
+  shopDynamicFill.position.set(shopHeroLightPos.x, shopHeroLightPos.y, shopHeroLightPos.z);
+  group.add(shopDynamicFill);
 
-  // 2) Soft warm additive spill pools directly beneath Haikaze-so's shopfront & corner vending
   const poolTex = makeRadialPoolTexture();
-  const poolGeo = new THREE.PlaneGeometry(1, 1);
-  poolGeo.rotateX(-Math.PI / 2);
-  const poolMat = new THREE.MeshBasicMaterial({
-    map: poolTex,
-    color: 0xffd88c,
-    transparent: true,
-    opacity: 0.0,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2,
-  });
-  const poolSpecs = [
-    { ...heroLocalToWorld(-0.4, -5.2, 0.03), sx: 7.4, sz: 4.8 },
-    { ...heroLocalToWorld(4.2, -4.9, 0.03), sx: 5.4, sz: 4.8 },
-    { ...heroLocalToWorld(5.1, -1.5, 0.03), sx: 4.8, sz: 5.6 },
-  ];
-  const poolMesh = new THREE.InstancedMesh(poolGeo, poolMat, poolSpecs.length);
-  const dummy = new THREE.Object3D();
-  poolSpecs.forEach((p, i) => {
-    dummy.position.set(p.x, p.y, p.z);
-    dummy.rotation.set(0, 0, 0);
-    dummy.scale.set(p.sx, 1, p.sz);
-    dummy.updateMatrix();
-    poolMesh.setMatrixAt(i, dummy.matrix);
-  });
-  poolMesh.instanceMatrix.needsUpdate = true;
-  poolMesh.frustumCulled = false;
-  group.add(poolMesh);
 
-  // 3) 4-layer Scooter Lighting Rig (SpotLight + terrain-conforming ground beam + volumetric cone + taillight)
+  // 4-layer Scooter Lighting Rig (SpotLight + terrain-conforming ground beam + volumetric cone + taillight)
   const scooterRig = new THREE.Group();
   scooterRig.name = 'scooter-light-rig';
   scooterRig.rotation.order = 'YXZ';
@@ -449,10 +424,10 @@ function buildNightFixtures(scene) {
   scene.add(group);
 
   return {
-    group, haikazeLights, poolMat, beamMat, coneMat, tailPoolMat, tailHaloMat, headSpot,
+    group, shopDynamicFill, beamMat, coneMat, tailPoolMat, tailHaloMat, headSpot,
     scooterRig, headlightBeam, beamLocalPos,
     dispose() {
-      poolGeo.dispose(); poolTex.dispose(); poolMat.dispose();
+      poolTex.dispose();
       beamGeo.dispose(); beamTex.dispose(); beamMat.dispose();
       coneGeo.dispose(); coneMat.dispose();
       tailPoolGeo.dispose(); tailPoolMat.dispose();
@@ -462,24 +437,24 @@ function buildNightFixtures(scene) {
 }
 
 export function createTimeOfDay({ scene, renderer, coastalSky, coastalTown, scooter }) {
-  const hemi = new THREE.HemisphereLight(0xd0eafa, 0xb6a084, 1.38);
-  const sun = new THREE.DirectionalLight(0xffe4bc, 2.85);
+  const hemi = new THREE.HemisphereLight(0x9ad8fc, 0x626b75, 0.92);
+  const sun = new THREE.DirectionalLight(0xffeed0, 2.75);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  const SHADOW_HALF = 22;
+  // Tighter shadow frustum (28m x 28m -> ~1.3cm/texel!) for crisp grounded character & street shadows!
+  const SHADOW_HALF = 14;
   Object.assign(sun.shadow.camera, {
     left: -SHADOW_HALF, right: SHADOW_HALF, top: SHADOW_HALF, bottom: -SHADOW_HALF,
-    near: 0.5, far: 96,
+    near: 0.5, far: 86,
   });
   sun.shadow.camera.updateProjectionMatrix();
-  sun.shadow.normalBias = 0.022;
-  sun.shadow.bias = -0.0002;
+  sun.shadow.normalBias = 0.012;
+  sun.shadow.bias = -0.00018;
   sun.shadow.radius = 2;
   scene.add(hemi, sun, sun.target);
 
   const nightFixtures = buildNightFixtures(scene);
 
-  // Discover Haikaze-so named emissive materials & scooter headlamp material once at boot
   const haikazeEmissives = [];
   const bikeLampMats = [];
   const seenMats = new WeakSet();
@@ -489,7 +464,8 @@ export function createTimeOfDay({ scene, renderer, coastalSky, coastalTown, scoo
     const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
     for (const m of mats) {
       if (!m || seenMats.has(m)) continue;
-      const spec = HAIKAZE_EMISSIVE_CURVES[m.name];
+      const baseName = (m.name || '').replace(/\.\d+$/, '');
+      const spec = HAIKAZE_EMISSIVE_CURVES[baseName];
       if (spec) {
         seenMats.add(m);
         if (spec.color !== 0xffffff) m.emissive.setHex(spec.color);
@@ -512,38 +488,41 @@ export function createTimeOfDay({ scene, renderer, coastalSky, coastalTown, scoo
   const current = {
     t: 0,
     presetId: 'morning',
-    sunOffset: [-14.0, 15.0, -13.0],
-    sunColor: new THREE.Color(0xffe4bc),
-    sunIntensity: 2.85,
-    hemiSky: new THREE.Color(0xd0eafa),
-    hemiGround: new THREE.Color(0xb6a084),
-    hemiIntensity: 1.38,
-    envIntensity: 0.48,
-    skyZenith: new THREE.Color(0x4b9cd6),
-    skyMid: new THREE.Color(0x9bd4eb),
-    skyHorizon: new THREE.Color(0xfff0d2),
-    skySunDir: new THREE.Vector3(-0.60, 0.42, -0.68).normalize(),
-    skySunGlowColor: [0.48, 0.28, 0.09],
-    skySunGlowStr: 1.0,
-    skySunDiscColor: [1.5, 1.25, 0.85],
-    skySunDiscStr: 1.0,
-    mountainTint: new THREE.Color(0xffffff),
-    cloudShadow: [0.75, 0.86, 0.94],
-    cloudLit: [1.0, 0.985, 0.945],
+    sunOffset: [-14.0, 15.0, -16.0],
+    sunColor: new THREE.Color(0xffeed0),
+    sunIntensity: 2.75,
+    hemiSky: new THREE.Color(0x9ad8fc),
+    hemiGround: new THREE.Color(0x626b75),
+    hemiIntensity: 0.92,
+    envIntensity: 0.44,
+    lmNightMix: 0.0,
+    lmTint: [1, 1, 1],
+    lmGain: 1.0,
+    skyZenith: new THREE.Color(0x1678e2),
+    skyMid: new THREE.Color(0x4ab8f5),
+    skyHorizon: new THREE.Color(0xa4e0fc),
+    skySunDir: new THREE.Vector3(-0.56, 0.56, -0.61).normalize(),
+    skySunGlowColor: [0.36, 0.28, 0.14],
+    skySunGlowStr: 0.75,
+    skySunDiscColor: [1.5, 1.35, 1.05],
+    skySunDiscStr: 0.95,
+    mountainTint: new THREE.Color(0xd8eef8),
+    cloudShadow: [0.76, 0.87, 0.96],
+    cloudLit: [1.02, 1.00, 0.97],
     cloudOpacity: 1.0,
     starStrength: 0.0,
-    skyBg: new THREE.Color(0x9cd3e9),
-    fogColor: new THREE.Color(0xd8eef5),
-    fogColorStyled: new THREE.Color(0xd8ebf2),
-    fogDensityScale: 1.0,
-    shadowTint: new THREE.Color(0x6280ad),
-    shadowTintStrength: 0.22,
-    grade: { lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1], saturation: 1.07, contrast: 1.03 },
+    skyBg: new THREE.Color(0x6ac3f4),
+    fogColor: new THREE.Color(0xaadbf5),
+    fogColorStyled: new THREE.Color(0xaadbf5),
+    fogDensityScale: 0.75,
+    shadowTint: new THREE.Color(0x4b74a8),
+    shadowTintStrength: 0.26,
+    grade: { lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1], saturation: 1.04, contrast: 1.02 },
     emissive: 0.0,
-    bloomStrength: 0.14,
-    bloomThreshold: 0.96,
-    exposure: 1.06,
-    waterTint: new THREE.Color(0xffffff),
+    bloomStrength: 0.11,
+    bloomThreshold: 0.98,
+    exposure: 1.02,
+    waterTint: new THREE.Color(0x9cdbf7),
   };
 
   const scratchSunDir = new THREE.Vector3();
@@ -569,6 +548,10 @@ export function createTimeOfDay({ scene, renderer, coastalSky, coastalTown, scoo
     current.hemiGround.copy(a.hemiGroundObj).lerp(b.hemiGroundObj, f);
     current.hemiIntensity = THREE.MathUtils.lerp(a.hemiIntensity, b.hemiIntensity, f);
     current.envIntensity = THREE.MathUtils.lerp(a.envIntensity, b.envIntensity, f);
+
+    current.lmNightMix = THREE.MathUtils.lerp(a.lmNightMix, b.lmNightMix, f);
+    lerp3(current.lmTint, a.lmTint, b.lmTint, f);
+    current.lmGain = THREE.MathUtils.lerp(a.lmGain, b.lmGain, f);
 
     current.skyZenith.copy(a.skyZenithObj).lerp(b.skyZenithObj, f);
     current.skyMid.copy(a.skyMidObj).lerp(b.skyMidObj, f);
@@ -613,8 +596,8 @@ export function createTimeOfDay({ scene, renderer, coastalSky, coastalTown, scoo
 
   evaluate(0);
 
-  if (!scene.background) scene.background = new THREE.Color(0x9cd3e9);
-  if (!scene.fog) scene.fog = new THREE.FogExp2(0xd8eef5, 0.0022);
+  if (!scene.background) scene.background = new THREE.Color(0x6ac3f4);
+  if (!scene.fog) scene.fog = new THREE.FogExp2(0xaadbf5, 0.0018);
 
   function setPreset(id) {
     if (!Object.hasOwn(TOD_PRESETS, id)) return false;
@@ -622,7 +605,7 @@ export function createTimeOfDay({ scene, renderer, coastalSky, coastalTown, scoo
     return true;
   }
 
-  function applyAtmosphere({ baseFogDensity = 0.0022, styleFogFactor = 1.0, useStyledFog = false } = {}) {
+  function applyAtmosphere({ baseFogDensity = 0.0016, styleFogFactor = 1.0, useStyledFog = false } = {}) {
     hemi.color.copy(current.hemiSky);
     hemi.groundColor.copy(current.hemiGround);
     hemi.intensity = current.hemiIntensity;
@@ -630,6 +613,11 @@ export function createTimeOfDay({ scene, renderer, coastalSky, coastalTown, scoo
     sun.intensity = current.sunIntensity;
     scene.environmentIntensity = current.envIntensity;
     renderer.toneMappingExposure = current.exposure;
+
+    // Drive Haikaze-so Cycles Day/Night 2K Lightmaps smoothly!
+    haikazeLightmapUniforms.uLmNightMix.value = current.lmNightMix;
+    haikazeLightmapUniforms.uLmTint.value.setRGB(current.lmTint[0], current.lmTint[1], current.lmTint[2]);
+    haikazeLightmapUniforms.uLmGain.value = current.lmGain;
 
     scene.background.copy(current.skyBg);
     scene.fog.color.copy(useStyledFog ? current.fogColorStyled : current.fogColor);
@@ -671,20 +659,14 @@ export function createTimeOfDay({ scene, renderer, coastalSky, coastalTown, scoo
     const showFixtures = em > 0.03;
     nightFixtures.group.visible = showFixtures;
     if (showFixtures) {
-      for (let i = 0; i < nightFixtures.haikazeLights.length; i++) {
-        const hl = nightFixtures.haikazeLights[i];
-        hl.light.intensity = hl.maxInt * em;
-      }
-      nightFixtures.poolMat.opacity = em * 0.24;
+      nightFixtures.shopDynamicFill.intensity = em * 4.2;
       nightFixtures.beamMat.opacity = em * 0.56;
       nightFixtures.coneMat.uniforms.uIntensity.value = em * 0.34;
       nightFixtures.headSpot.intensity = em * 38.0;
       nightFixtures.tailPoolMat.opacity = em * 0.22;
       nightFixtures.tailHaloMat.opacity = em * 0.60;
     } else {
-      for (let i = 0; i < nightFixtures.haikazeLights.length; i++) {
-        nightFixtures.haikazeLights[i].light.intensity = 0.0;
-      }
+      nightFixtures.shopDynamicFill.intensity = 0.0;
       nightFixtures.headSpot.intensity = 0.0;
     }
   }

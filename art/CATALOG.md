@@ -54,7 +54,8 @@
 | 文件 | 角色与规格（实测） | 用途 |
 |---|---|---|
 | [`town/haikaze-hero/Haikaze-Hero.blend`](town/haikaze-hero/Haikaze-Hero.blend) | `16M` · `423,108 tris` · 1,764 对象（源：[`build_haikaze_hero.py`](town/haikaze-hero/build_haikaze_hero.py)） | **Gate 1 Cycles 审图高精母版**（已通过终审，含 1F L 型贴墙楼梯、3D 立体字「海风拉面」、下倾直边遮阳棚、真牙盘链条单车、二楼精简绿植与全部共享公模引用） |
-| [`town/haikaze-hero/haikaze-hero-game.glb`](town/haikaze-hero/haikaze-hero-game.glb) | **`6.1M` · `183,583 tris` · `28 draw-call batches`**（零 Draco WASM、内嵌 WebP 贴图 + 世界立方 UV + BVH 接触 AO 烘焙，源：[`export_game_ready.py`](town/haikaze-hero/export_game_ready.py)） | **Gate 2 Three.js 实机运行资产**（已实装于 [`src/morning/coastal-town.js`](../src/morning/coastal-town.js)，与 `time-of-day.js` 联动实现日景手办质感 + 夜间「海风拉面」/二楼背光窗帘/贩卖机暖光溢出） |
+| [`town/haikaze-hero/haikaze-hero-game.glb`](town/haikaze-hero/haikaze-hero-game.glb) | **`7.1M` · `185,303 tris` · `28 draw-call batches`**（Meshopt 压缩、内嵌 1024px WebP AI PBR 贴图 + 雕琢转角人行道底座 + 双 UV `UVMap`/`UVMap_LM`，源：[`export_game_ready.py`](town/haikaze-hero/export_game_ready.py)） | **Gate 2 Three.js 实机运行资产**（已实装于 [`src/morning/coastal-town.js`](../src/morning/coastal-town.js)，与原生 `AgX` 色调映射和 2K Cycles 日/夜光图联动实现实机微缩手办级 GI 与零穿墙夜景） |
+| [`town/haikaze-hero/haikaze-lm-day.webp`](town/haikaze-hero/haikaze-lm-day.webp) & [`haikaze-lm-night.webp`](town/haikaze-hero/haikaze-lm-night.webp) | **`803K` + `645K` · `2048×2048` 线性平方根编码 HDR WebP**（单通道 Cycles CPU + OIDN 离线烘培，源：[`export_game_ready.py`](town/haikaze-hero/export_game_ready.py)） | 海风庄日/夜真实 Cycles 直接+间接光图（通过 `TEXCOORD_1` / `UVMap_LM` 注入 `coastal-town.js`，由 `time-of-day.js` 按清晨/中午/傍晚/夜晚无缝混合） |
 | [`town/haikaze-hero/haikaze-hero.glb`](town/haikaze-hero/haikaze-hero.glb) | `14M` · Draco 高精母版导出 | Blender 母版归档参考（运行时不使用） |
 
 ### 3.2 角色与车辆（`art/morning/`）

@@ -14,11 +14,12 @@ const stairs2FPt = heroLocalToWorld(3.35, -0.80);
 export const sceneJumps = {
   haikazeHero: {
     title: '海风庄·全景街角',
-    state: rideAt(2.4, 14.0, 0.42, { stand: 1 }),
+    state: rideAt(2.3, 14.2, 0.45, { stand: 1 }),
     camera: {
-      fov: 44,
-      focus: [8.6, 5.1, 19.8],
-      offset: [-11.8, 1.35, -14.6],
+      // 34-deg miniature diorama telephoto lens matching Blender Cycles 38mm collector framing!
+      fov: 34,
+      focus: [9.4, 5.15, 20.6],
+      offset: [-14.8, 3.6, -16.8],
     },
   },
   haikazePlay: {
@@ -33,15 +34,15 @@ export const sceneJumps = {
       x: shopWalkPt.x,
       z: shopWalkPt.z,
       yaw: 0.22,
-      bikeX: 2.4,
-      bikeZ: 14.0,
-      bikeYaw: 0.42,
+      bikeX: 2.3,
+      bikeZ: 14.2,
+      bikeYaw: 0.45,
       stand: 1,
     },
     camera: {
-      fov: 42,
-      focus: [HERO_HAIKAZE.x - 0.2, 3.85, HERO_HAIKAZE.z - 3.6],
-      offset: [-2.0, 0.25, -8.8],
+      fov: 34,
+      focus: [HERO_HAIKAZE.x - 0.1, 3.85, HERO_HAIKAZE.z - 3.6],
+      offset: [-1.8, 0.35, -10.8],
     },
   },
   haikazeStairs2F: {
@@ -52,15 +53,15 @@ export const sceneJumps = {
       x: stairs2FPt.x,
       z: stairs2FPt.z,
       yaw: -Math.PI * 0.65,
-      bikeX: 2.4,
-      bikeZ: 14.0,
-      bikeYaw: 0.42,
+      bikeX: 2.3,
+      bikeZ: 14.2,
+      bikeYaw: 0.45,
       stand: 1,
     },
     camera: {
-      fov: 44,
-      focus: [HERO_HAIKAZE.x - 3.6, 5.4, HERO_HAIKAZE.z - 0.2],
-      offset: [-6.8, 1.35, -6.2],
+      fov: 34,
+      focus: [HERO_HAIKAZE.x - 3.4, 5.55, HERO_HAIKAZE.z - 0.2],
+      offset: [-8.8, 1.85, -7.8],
     },
   },
   coastalSlope: {

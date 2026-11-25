@@ -172,6 +172,8 @@ export function createRenderStyle({ renderer, shiba, scooter, coastalTown, timeO
 
   function patchMaterial(mat, isHero) {
     if (!mat || patchedMats.has(mat)) return;
+    // Cycles-lightmapped hero buildings already carry authentic GI + AgX contrast — leave untouched!
+    if (mat.userData?.cyclesBaked) return;
     const isStd = mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial;
     const isLamb = mat.isMeshLambertMaterial;
     if (!isStd && !isLamb) return;
