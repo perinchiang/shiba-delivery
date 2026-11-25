@@ -132,7 +132,7 @@ func _process(delta: float) -> void:
 func _refresh_hud() -> void:
 	var calls := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
 	var prims := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)
-	var gi_tag := "VoxelGI+SSIL+SSAO+SSR" if (env_ctrl.gi_enabled and voxel_gi.data != null) else ("SDFGI" if env_ctrl.gi_enabled else "GI OFF")
+	var gi_tag := "VoxelGI+SSAO+SSR+TAA" if (env_ctrl.gi_enabled and voxel_gi.data != null) else ("SDFGI+TAA" if env_ctrl.gi_enabled else "GI OFF")
 	var prompt := delivery.get_context_prompt(rider_ctrl.get_active_pos(), rider_ctrl.is_riding, rider_ctrl.can_mount_scooter())
 	hud.update_state(
 		int(round(smoothed_fps)), calls, prims / 1000.0, gi_tag,

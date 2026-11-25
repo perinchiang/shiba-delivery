@@ -80,6 +80,8 @@ func _walk_diorama(node: Node) -> void:
 		var nname := mi.name
 		var is_sky_or_sea := nname.begins_with("_Stg_Cloud") or nname.begins_with("_Stg_BackdropFloor") or nname == "Diorama_Backdrop"
 		var is_glass := (nname == "Haikaze_Glass")
+		var is_road := (nname == "Rongwan_Road")
+		var is_decal := (nname == "Haikaze_Decals")
 
 		var mesh := mi.mesh
 		if mesh:
@@ -140,10 +142,19 @@ func _walk_diorama(node: Node) -> void:
 				elif base_name == "Arch_Sign_Ink":
 					dup.albedo_color = Color(0.08, 0.10, 0.11, 1.0)
 					dup.roughness = 0.26
+				elif base_name == "Arch_Aluminum" or base_name == "Arch_Apt_Frame":
+					# Tame thin white frame metallic sparkle so frames stay rock-solid while walking!
+					dup.metallic = 0.22
+					dup.roughness = 0.46
+					dup.clearcoat_enabled = false
 
 		if is_glass or is_sky_or_sea:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+		elif is_road or is_decal:
+			# Roads & flat signboards receive shadows cleanly without self-shadow acne / Moiré waves!
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mi.gi_mode = GeometryInstance3D.GI_MODE_STATIC
 		else:
 			mi.gi_mode = GeometryInstance3D.GI_MODE_STATIC
 
@@ -159,10 +170,10 @@ func _setup_lights() -> void:
 	sun_light.directional_shadow_max_distance = 46.0
 	sun_light.directional_shadow_split_1 = 0.28
 	sun_light.directional_shadow_blend_splits = true
-	sun_light.shadow_bias = 0.016
-	sun_light.shadow_normal_bias = 0.9
-	sun_light.shadow_blur = 1.6
-	sun_light.light_angular_distance = 1.8
+	sun_light.shadow_bias = 0.042
+	sun_light.shadow_normal_bias = 1.45
+	sun_light.shadow_blur = 1.25
+	sun_light.light_angular_distance = 0.0
 	add_child(sun_light)
 
 	sky_fill_light = DirectionalLight3D.new()
@@ -336,7 +347,7 @@ func set_gi_enabled(enabled: bool) -> void:
 	voxel_gi.visible = enabled
 	var env := world_env.environment
 	env.ssao_enabled = enabled
-	env.ssil_enabled = enabled
+	env.ssil_enabled = false
 	env.ssr_enabled = enabled
 	if voxel_gi.data == null:
 		env.sdfgi_enabled = enabled

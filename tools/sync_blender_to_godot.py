@@ -340,23 +340,42 @@ def main():
         res.parent = None
         return res
 
-    opaque_objs, glass_objs, backdrop_objs = [], [], []
+    # Prevent chalkboard Z-fighting/shadow-acne: push MenuArt quad +8mm cleanly along outward face normal
+    for o in bpy.data.objects:
+        if o.type == "MESH" and "MenuArt" in o.name:
+            if o.data.users > 1:
+                o.data = o.data.copy()
+            bm = bmesh.new()
+            bm.from_mesh(o.data)
+            for f in bm.faces:
+                n = f.normal.normalized()
+                for v in f.verts:
+                    v.co += n * 0.008
+            bm.to_mesh(o.data)
+            bm.free()
+            o.data.update()
+
+    opaque_objs, road_objs, decal_objs, glass_objs, backdrop_objs = [], [], [], [], []
     for o in list(bpy.data.objects):
         if o.type != "MESH":
             continue
         if o.name.startswith(("_Stg_Cloud", "_Stg_BackdropFloor")):
             backdrop_objs.append(o)
             continue
-        is_glass = any(
-            m and m.name.split(".")[0] in ("Arch_Window_Glass", "Prop_Clear_Glass")
-            for m in (o.data.materials or [])
-        )
-        if is_glass:
+        if o.name.startswith(("_Stg_Asphalt", "_Stg_Cross_", "_Stg_Dash")):
+            road_objs.append(o)
+            continue
+        mat_names = [m.name.split(".")[0] for m in (o.data.materials or []) if m]
+        if any(mn in ("Arch_Window_Glass", "Prop_Clear_Glass") for mn in mat_names):
             glass_objs.append(o)
+        elif any(mn in ("Prop_Menu_Chalkboard", "Arch_Poster_Summer", "Arch_Plaque_Haikaze", "Arch_Plaque_Vertical", "Arch_Plaque_201", "Arch_Plaque_202") for mn in mat_names):
+            decal_objs.append(o)
         else:
             opaque_objs.append(o)
 
     join_group(opaque_objs, "Haikaze_Static_Opaque")
+    join_group(road_objs, "Rongwan_Road")
+    join_group(decal_objs, "Haikaze_Decals")
     join_group(glass_objs, "Haikaze_Glass")
     join_group(backdrop_objs, "Diorama_Backdrop")
 

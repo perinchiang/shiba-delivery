@@ -1311,8 +1311,8 @@ def build_aframe_menu(M):
     add_rounded_box(f"{name}_FTop", (0, 0, 0.41), (W, 0.038, 0.052), M["cedar"], col, bevel=0.011, parent=front_grp)
     add_rounded_box(f"{name}_FBot", (0, 0, -0.32), (W, 0.038, 0.052), M["cedar"], col, bevel=0.011, parent=front_grp)
     add_rounded_box(f"{name}_Board", (0, 0.006, 0.045), (W - 0.08, 0.020, 0.70), M["cedar_dark"], col, bevel=0.005, parent=front_grp)
-    # Crisp illustrated ramen chalkboard art sitting cleanly on front (-Y) face of board!
-    add_uv_quad(f"{name}_MenuArt", (0, -0.008, 0.045), W - 0.10, 0.67, M["menu_chalk"], col, facing="-Y", parent=front_grp)
+    # Crisp illustrated ramen chalkboard art sitting 12mm clear of front (-Y) face of board (zero Z-fighting!)
+    add_uv_quad(f"{name}_MenuArt", (0, -0.016, 0.045), W - 0.10, 0.67, M["menu_chalk"], col, facing="-Y", parent=front_grp)
     # Cute chalk ledge + two miniature chalk sticks sitting on it!
     add_rounded_box(f"{name}_ChalkLedge", (0, -0.028, -0.30), (W - 0.10, 0.042, 0.022), M["cedar"], col, bevel=0.006, parent=front_grp)
     add_cyl(f"{name}_Chalk1", (-0.09, -0.032, -0.282), 0.007, 0.068, M["chalk_white"], col, segs=10, rot=(0, math.pi * 0.5, 0.12), parent=front_grp)

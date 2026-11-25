@@ -17,3 +17,4 @@ game/.godot/
 game/assets/gi/
 game/assets/textures/
 game/assets/**/*.import
+*.app/

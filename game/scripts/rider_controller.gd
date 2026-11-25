@@ -23,8 +23,18 @@ var bike_pos := Vector3(7.4, RongwanGround.ROAD_Y, 7.6)
 
 var shiba_pos := Vector3(5.35, RongwanGround.SIDEWALK_Y, 4.45)
 var shiba_yaw := 0.52
+var shiba_vel := Vector2.ZERO
 var shiba_moving := false
 var current_anim := ""
+
+# Smooth Mount / Dismount hop transition animation
+var mount_anim_t := 1.0 # 1.0 = idle/done
+var mount_anim_dur := 0.32
+var mount_from_pos := Vector3.ZERO
+var mount_to_pos := Vector3.ZERO
+var mount_from_yaw := 0.0
+var mount_to_yaw := 0.0
+var bike_bounce_t := 0.0
 
 # Camera state (chase + orbit + inspect presets)
 var free_inspect := false
@@ -80,9 +90,12 @@ func setup(p_scooter: Node3D, p_shiba: Node3D, p_camera: Camera3D) -> void:
 func _optimize_actor_meshes(root_node: Node, is_bike: bool) -> void:
 	var idx := 0
 	for mi in _collect_meshes(root_node):
-		mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
-		# Keep shadows on primary body/head/cargo/frame pieces, skip tiny bolts/eyelashes
 		var n := mi.name.to_lower()
+		# Hide stray unparented reference Icosphere left inside legacy shiba-courier.glb
+		if not is_bike and n.contains("icosphere"):
+			mi.visible = false
+			continue
+		mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 		var tiny := n.contains("bolt") or n.contains("screw") or n.contains("eye") or n.contains("spoke") or n.contains("cable") or n.contains("lens")
 		if tiny:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -161,29 +174,48 @@ func can_mount_scooter() -> bool:
 	return (not is_riding) and shiba_pos.distance_to(bike_pos) <= 2.4
 
 
+func _seat_world_pos() -> Vector3:
+	var basis := Basis.from_euler(Vector3(0.0, bike_yaw, bike_lean))
+	return bike_pos + basis * Vector3(0.0, 0.22, -0.06)
+
+
 func toggle_mount() -> bool:
+	if mount_anim_t < 1.0:
+		return false
 	if is_riding:
-		if absf(speed) > 2.2:
-			speed *= 0.3
 		is_riding = false
 		speed = 0.0
 		bike_lean = 0.0
-		# Step off to the left of the scooter cleanly
-		var side := Vector3(cos(bike_yaw), 0.0, -sin(bike_yaw)) * 0.95
-		shiba_pos = RongwanGround.resolve_walk_pos(bike_pos, bike_pos + side)
+		var side := Vector3(cos(bike_yaw), 0.0, -sin(bike_yaw)) * 0.98
+		var target := RongwanGround.resolve_walk_pos(bike_pos, bike_pos + side)
+		mount_from_pos = _seat_world_pos()
+		mount_to_pos = target
+		mount_from_yaw = bike_yaw
+		mount_to_yaw = bike_yaw
+		mount_anim_dur = 0.28
+		mount_anim_t = 0.0
+		bike_bounce_t = 1.0
+		shiba_pos = target
 		shiba_yaw = bike_yaw
+		shiba_vel = Vector2.ZERO
 		free_inspect = false
 		orbit_dist = 5.4
 		_play_anim("Stand")
-		sync_transforms()
 		return true
 	elif can_mount_scooter():
 		is_riding = true
 		speed = 0.0
+		mount_from_pos = shiba_pos
+		mount_to_pos = _seat_world_pos()
+		mount_from_yaw = shiba_yaw
+		mount_to_yaw = bike_yaw
+		mount_anim_dur = 0.34
+		mount_anim_t = 0.0
+		bike_bounce_t = 1.0
+		shiba_vel = Vector2.ZERO
 		free_inspect = false
 		orbit_dist = 7.4
 		_play_anim("Ride")
-		sync_transforms()
 		return true
 	return false
 
@@ -265,6 +297,16 @@ func recenter_camera() -> void:
 
 
 func step(delta: float) -> void:
+	if bike_bounce_t > 0.0:
+		bike_bounce_t = maxf(0.0, bike_bounce_t - delta * 3.4)
+
+	if mount_anim_t < 1.0:
+		mount_anim_t = minf(1.0, mount_anim_t + delta / mount_anim_dur)
+		sync_transforms()
+		if not free_inspect:
+			_apply_chase_camera(delta)
+		return
+
 	var throttle := 0.0
 	var steer := 0.0
 	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP): throttle += 1.0
@@ -272,7 +314,6 @@ func step(delta: float) -> void:
 	if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT): steer += 1.0
 	if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT): steer -= 1.0
 
-	# Pressing movement keys automatically exits static inspect view into playable chase!
 	if free_inspect and (absf(throttle) > 0.1 or absf(steer) > 0.1):
 		free_inspect = false
 		camera.fov = 44.0 if is_riding else 42.0
@@ -321,33 +362,57 @@ func _step_riding(delta: float, throttle: float, steer: float) -> void:
 
 func _step_walking(delta: float, move_fwd: float, move_right: float) -> void:
 	var inp := Vector2(move_right, move_fwd)
-	shiba_moving = inp.length() > 0.05
-	if shiba_moving:
+	var target_vel := Vector2.ZERO
+	if inp.length() > 0.05:
 		inp = inp.normalized()
 		var fwd := Vector3(-sin(orbit_yaw), 0.0, -cos(orbit_yaw)).normalized()
 		var right := Vector3(cos(orbit_yaw), 0.0, -sin(orbit_yaw)).normalized()
 		var dir := (fwd * inp.y + right * inp.x).normalized()
-		var next_pos := shiba_pos + dir * WALK_SPEED * delta
+		var on_stairs := (shiba_pos.y > 0.25 and shiba_pos.y < 3.15)
+		var max_spd := WALK_SPEED * (0.76 if on_stairs else 1.0)
+		target_vel = Vector2(dir.x, dir.z) * max_spd
+		shiba_yaw = lerp_angle(shiba_yaw, atan2(dir.x, dir.z), clampf(delta * 10.0, 0.0, 1.0))
+
+	# Smooth acceleration / deceleration so footsteps never feel robotic
+	shiba_vel = shiba_vel.move_toward(target_vel, (18.0 if target_vel.length() > 0.1 else 22.0) * delta)
+	var spd := shiba_vel.length()
+	shiba_moving = spd > 0.18
+	if shiba_moving:
+		var next_pos := shiba_pos + Vector3(shiba_vel.x, 0.0, shiba_vel.y) * delta
 		shiba_pos = RongwanGround.resolve_walk_pos(shiba_pos, next_pos)
-		shiba_yaw = lerp_angle(shiba_yaw, atan2(dir.x, dir.z), clampf(delta * 11.0, 0.0, 1.0))
 		_play_anim("Walk")
+		if shiba_anim:
+			shiba_anim.speed_scale = clampf(spd / 2.9, 0.65, 1.25)
 	else:
 		_play_anim("Stand")
+		if shiba_anim:
+			shiba_anim.speed_scale = 1.0
 
 
 func sync_transforms() -> void:
-	scooter.position = bike_pos
+	var bounce_dip := -0.045 * sin(bike_bounce_t * PI) if bike_bounce_t > 0.0 else 0.0
+	scooter.position = bike_pos + Vector3(0.0, bounce_dip, 0.0)
 	scooter.rotation = Vector3(0.0, bike_yaw, bike_lean)
 
+	if mount_anim_t < 1.0:
+		var u := mount_anim_t
+		var ease_u := u * u * (3.0 - 2.0 * u)
+		var arc := sin(u * PI) * 0.44
+		var p := mount_from_pos.lerp(mount_to_pos, ease_u)
+		p.y += arc
+		shiba.position = p
+		shiba.rotation = Vector3(0.10 * sin(u * PI), lerp_angle(mount_from_yaw, mount_to_yaw, ease_u), 0.0)
+		return
+
 	if is_riding:
-		# Seat Shiba cleanly on the scooter saddle (aligned with monkey-delivery.glb)
-		var seat_local := Vector3(0.0, 0.22, -0.06)
 		var basis := Basis.from_euler(Vector3(0.0, bike_yaw, bike_lean))
-		shiba.position = bike_pos + basis * seat_local
+		shiba.position = bike_pos + Vector3(0.0, bounce_dip, 0.0) + basis * Vector3(0.0, 0.22, -0.06)
 		shiba.rotation = Vector3(0.0, bike_yaw, bike_lean * 0.85)
 	else:
+		var on_stairs := (shiba_pos.y > 0.25 and shiba_pos.y < 3.15)
+		var pitch_lean := 0.09 if (on_stairs and shiba_moving) else (0.04 if shiba_moving else 0.0)
 		shiba.position = shiba_pos
-		shiba.rotation = Vector3(0.0, shiba_yaw, 0.0)
+		shiba.rotation = Vector3(pitch_lean, shiba_yaw, 0.0)
 
 
 func _apply_chase_camera(delta: float) -> void:

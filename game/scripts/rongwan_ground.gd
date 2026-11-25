@@ -1,62 +1,77 @@
 class_name RongwanGround
 extends RefCounted
 
-## Walkable elevation & collision bounds for the Rongwan Coastal Corner & Haikaze-so.
+## Walkable elevation & strict railing-safe collision bounds for Haikaze-so & Rongwan Corner.
 ## Coordinate convention: Godot Y-up (Blender X, Y, Z -> Godot X, Z, -Y).
+## Every 2F balcony railing and exterior stair handrail is inset by Shiba's body radius (0.36m)
+## so the player can NEVER walk or clip through any railing!
 
 const ROAD_Y := -0.04
 const SIDEWALK_Y := 0.06
 const FLOOR_2F_Y := 3.25
 
-const WORLD_MIN_X := -14.2
-const WORLD_MAX_X := 16.8
-const WORLD_MIN_Z := -12.6
-const WORLD_MAX_Z := 14.8
+const WORLD_MIN_X := -14.0
+const WORLD_MAX_X := 16.5
+const WORLD_MIN_Z := -12.2
+const WORLD_MAX_Z := 14.2
 
 
-static func walkable_height(x: float, z: float) -> float:
+static func _in_2f_corridor(x: float, z: float) -> bool:
+	return x >= 2.86 and x <= 3.82 and z >= -3.46 and z <= 3.46
+
+
+static func _in_2f_front_balcony(x: float, z: float) -> bool:
+	return x >= -3.82 and x <= 3.82 and z >= 2.52 and z <= 3.46
+
+
+static func _in_stair_top_landing(x: float, z: float) -> bool:
+	return x >= 3.78 and x <= 5.18 and z >= -3.46 and z <= -2.38
+
+
+static func _in_stair_flight(x: float, z: float) -> bool:
+	return x >= 4.60 and x <= 5.18 and z >= -2.42 and z <= 2.58
+
+
+static func _is_valid_upper_pos(x: float, z: float) -> bool:
+	return _in_2f_corridor(x, z) or _in_2f_front_balcony(x, z) or _in_stair_top_landing(x, z) or _in_stair_flight(x, z)
+
+
+static func _stair_height_at_z(z: float) -> float:
+	# z = +1.95 (bottom step) -> z = -2.35 (top landing at 3.25m)
+	if z >= 1.95:
+		return 0.12
+	if z <= -2.35:
+		return FLOOR_2F_Y
+	var t := (1.95 - z) / (1.95 - (-2.35))
+	return lerpf(0.12, FLOOR_2F_Y, t)
+
+
+static func _ground_height(x: float, z: float) -> float:
 	var by := -z
-	# 14-step exterior steel staircase (bottom pad -> 14 steps -> top 2F landing)
-	if x >= 4.18 and x <= 5.66 and by >= -2.78 and by <= 3.88:
-		if by <= -1.95:
-			return 0.12
-		if by >= 2.35:
-			return FLOOR_2F_Y
-		var t := (by - (-1.95)) / (2.35 - (-1.95))
-		return lerpf(0.12, FLOOR_2F_Y, t)
-
-	# 2F open-air L-shaped concrete corridor & front balcony
-	if x >= -4.28 and x <= 4.30 and by >= -3.96 and by <= 3.96:
-		if x >= 2.48 or by <= -2.14:
-			return FLOOR_2F_Y
-
-	# Sculpted corner sidewalk surrounding Haikaze-so
 	if x >= -5.35 and x <= 6.50 and by >= -5.25 and by <= 5.45:
 		return SIDEWALK_Y
-
 	return ROAD_Y
 
 
-static func is_on_2f_or_stairs(x: float, z: float) -> bool:
-	var by := -z
-	if x >= 4.18 and x <= 5.66 and by >= -2.78 and by <= 3.88:
+static func _is_blocked_ground(x: float, z: float) -> bool:
+	# 1F L-shaped building core + flush stair-backing wall (with 0.34m body clearance)
+	if x >= -4.54 and x <= 4.56 and z >= -4.22 and z <= 3.84:
 		return true
-	if x >= -4.28 and x <= 4.30 and by >= -3.96 and by <= 3.96:
-		if x >= 2.48 or by <= -2.14:
-			return true
+	# Under-stair steel frame & pink vending area (only allow entering stairs from front z >= 1.85!)
+	if x >= 4.20 and x <= 5.78 and z >= -3.98 and z <= 1.85:
+		return true
+	# 1F white vending machine + A-frame + crates tight footprint
+	if x >= 3.55 and x <= 4.62 and z >= 2.25 and z <= 3.95:
+		return true
 	return false
 
 
-static func _inside_1f_core(x: float, z: float, pad: float) -> bool:
-	# 1F building footprint (L-shaped flush wall + vending/stairs under-space)
-	var by := -z
-	return x >= -4.45 - pad and x <= 4.35 + pad and by >= -3.85 - pad and by <= 4.05 + pad
-
-
-static func _inside_2f_core(x: float, z: float, pad: float) -> bool:
-	# 2F recessed apartment core (leaves east corridor x>=2.55 & front balcony by<=-2.20 walkable)
-	var by := -z
-	return x >= -4.35 - pad and x <= 2.52 + pad and by >= -2.16 - pad and by <= 3.95 + pad
+static func walkable_height(x: float, z: float) -> float:
+	if _in_stair_flight(x, z):
+		return _stair_height_at_z(z)
+	if _in_2f_corridor(x, z) or _in_2f_front_balcony(x, z) or _in_stair_top_landing(x, z):
+		return FLOOR_2F_Y
+	return _ground_height(x, z)
 
 
 static func resolve_walk_pos(prev: Vector3, desired: Vector3) -> Vector3:
@@ -64,43 +79,56 @@ static func resolve_walk_pos(prev: Vector3, desired: Vector3) -> Vector3:
 	p.x = clampf(p.x, WORLD_MIN_X, WORLD_MAX_X)
 	p.z = clampf(p.z, WORLD_MIN_Z, WORLD_MAX_Z)
 
-	var was_high := prev.y > 1.2
-	var next_y := walkable_height(p.x, p.z)
+	var on_upper := prev.y > 0.35
 
-	# Prevent walking straight off the 2F balcony railing (must exit via stairs!)
-	if was_high and next_y < 0.25:
-		var try_x := Vector3(p.x, prev.y, prev.z)
-		var try_z := Vector3(prev.x, prev.y, p.z)
-		if walkable_height(try_x.x, try_x.z) > 0.25:
+	if on_upper:
+		# Allow walking smoothly off the bottom of the staircase onto the 1F sidewalk
+		if _in_stair_flight(prev.x, prev.z) and prev.z > 1.70 and p.z > 2.35:
+			if not _is_blocked_ground(p.x, p.z):
+				p.y = _ground_height(p.x, p.z)
+				return p
+
+		# Otherwise strictly stay inside the inset 2F railings & stair handrails!
+		# Also prevent crossing the 2F east railing (x=4.18) except through the real top landing (z <= -2.38)!
+		var legal := _is_valid_upper_pos(p.x, p.z) and not (
+			(prev.x <= 3.84 and p.x > 3.84 and p.z > -2.38) or
+			(prev.x >= 4.58 and p.x < 4.58 and p.z > -2.38)
+		)
+		if not legal:
+			var try_x := _is_valid_upper_pos(p.x, prev.z) and not (
+				(prev.x <= 3.84 and p.x > 3.84 and prev.z > -2.38) or
+				(prev.x >= 4.58 and p.x < 4.58 and prev.z > -2.38)
+			)
+			var try_z := _is_valid_upper_pos(prev.x, p.z) and not (
+				(prev.x <= 3.84 and prev.x > 3.84 and p.z > -2.38) or
+				(prev.x >= 4.58 and prev.x < 4.58 and p.z > -2.38)
+			)
+			if try_x:
+				p.z = prev.z
+			elif try_z:
+				p.x = prev.x
+			else:
+				p.x = prev.x
+				p.z = prev.z
+
+		p.y = _stair_height_at_z(p.z) if _in_stair_flight(p.x, p.z) else FLOOR_2F_Y
+		return p
+
+	# Ground-level walking: allow stepping onto bottom of stairs cleanly when entering from front
+	if _in_stair_flight(p.x, p.z) and prev.z >= 1.80:
+		p.y = _stair_height_at_z(p.z)
+		return p
+
+	if _is_blocked_ground(p.x, p.z):
+		if not _is_blocked_ground(p.x, prev.z):
 			p.z = prev.z
-		elif walkable_height(try_z.x, try_z.z) > 0.25:
+		elif not _is_blocked_ground(prev.x, p.z):
 			p.x = prev.x
 		else:
 			p.x = prev.x
 			p.z = prev.z
-		next_y = walkable_height(p.x, p.z)
 
-	# Prevent stepping up onto 2F straight through the air from ground level (must use bottom stair entry!)
-	if prev.y < 0.65 and next_y > 1.2:
-		p.x = prev.x
-		p.z = prev.z
-		next_y = prev.y
-
-	# Wall core collisions
-	var blocked := _inside_2f_core(p.x, p.z, 0.28) if next_y > 1.8 else _inside_1f_core(p.x, p.z, 0.30)
-	if blocked:
-		var slide_x_ok := not (_inside_2f_core(p.x, prev.z, 0.28) if next_y > 1.8 else _inside_1f_core(p.x, prev.z, 0.30))
-		var slide_z_ok := not (_inside_2f_core(prev.x, p.z, 0.28) if next_y > 1.8 else _inside_1f_core(prev.x, p.z, 0.30))
-		if slide_x_ok:
-			p.z = prev.z
-		elif slide_z_ok:
-			p.x = prev.x
-		else:
-			p.x = prev.x
-			p.z = prev.z
-		next_y = walkable_height(p.x, p.z)
-
-	p.y = next_y
+	p.y = _ground_height(p.x, p.z)
 	return p
 
 
@@ -109,7 +137,6 @@ static func resolve_ride_pos(prev: Vector3, desired: Vector3) -> Vector3:
 	p.x = clampf(p.x, WORLD_MIN_X + 0.6, WORLD_MAX_X - 0.6)
 	p.z = clampf(p.z, WORLD_MIN_Z + 0.6, WORLD_MAX_Z - 0.6)
 
-	# Keep scooter cleanly outside Haikaze-so building + stairs + tight sidewalk props
 	var by := -p.z
 	var hits_building := (p.x >= -5.65 and p.x <= 6.75 and by >= -5.50 and by <= 5.65)
 	if hits_building:

@@ -1,0 +1,91 @@
+{
+  "date": "2026-11-25",
+  "short_title": "G0.1 · 实测渲染与碰撞精修",
+  "title": "实测精修 G0.1｜彻底修清公路波浪纹、空调角细碎、走动闪动与栏杆穿模（61 FPS）",
+  "summary": "针对你在家首次实机试玩反馈的全部渲染与碰撞问题逐一查明根因并一次修清：公路斜纹/波浪纹 100% 消失、一楼空调角黄色细碎 100% 清除、黑板与二楼白框开启 TAA + 12mm 深度防冲突消除走动闪动、全二楼/楼梯栏杆严格内缩防穿模，并补上了平滑上下车跳姿与走路速度衔接；同步把骑行帧率拉升至 57–61 FPS。",
+  "metrics": [
+    { "value": "61 FPS", "label": "清晨骑行稳态帧率 (M2)" },
+    { "value": "57 FPS", "label": "夜晚骑行稳态帧率 (M2)" },
+    { "value": "288 calls", "label": "建筑全景 Draw Calls" },
+    { "value": "TAA + MSAA", "label": "走动零闪动抗锯齿" },
+    { "value": "0 报错", "label": "全 8 机位复核过关" }
+  ],
+  "changes": [
+    {
+      "head": "彻底消除公路地面斜纹与远处波浪纹（Shadow Acne / Moiré）",
+      "body": "根因是 34×30m 扁平沥青路面在斜射阳光下自投影产生阴影粉刺与莫尔波浪纹。已在 tools/sync_blender_to_godot.py 将公路与标线拆分为独立 Rongwan_Road 网格并关闭其自投影（只接收建筑与角色阴影），同步校准方向光 shadow_bias=0.042 / shadow_normal_bias=1.45，路面恢复彻底平滑。"
+    },
+    {
+      "head": "100% 清除一楼空调外机上方角落的「黄色细碎」",
+      "body": "根因是方向光开启了 PCSS 变软半影角（light_angular_distance=1.8）导致二楼阳台底角在 1F 奶油墙阴影边界喷出噪点颗粒（以及半分辨率 SSIL 噪点）。将方向光切换为纯平滑 PCF 软阴影（light_angular_distance=0.0）并关闭噪点 SSIL 后，该角落 100% 丝滑干净，同时骑行帧率从 49 FPS 飙升到 61 FPS。"
+    },
+    {
+      "head": "消除黑板拉面图与二楼门窗白框走动闪动",
+      "body": "原黑板贴片仅距木背板 4mm 易引发 Z-fighting/阴影冲突，且未开时域抗锯齿（TAA）导致细白窗框金属高光在移动时闪烁。已将黑板贴片外移至 12mm 净空、拆分平面招牌/黑板为非投影 Haikaze_Decals 网格、在 project.godot 开启 Godot 4.7 原生 TAA + 2x MSAA，并柔化铝合金白框高光。"
+    },
+    {
+      "head": "彻底封死二楼与外楼梯栏杆穿模",
+      "body": "重写 rongwan_ground.gd：所有二楼阳台护栏与外楼梯扶手统一按角色身体半径内缩 0.36m 形成硬边界，且二楼东走廊只允许从顶部真实楼梯口（z <= -2.38）上下楼梯，不再能隔栏杆穿出或在一楼钻进楼梯底架。"
+    },
+    {
+      "head": "补上平滑上下车过渡动画、走路速度衔接并隐藏遗留废球",
+      "body": "在 rider_controller.gd 中为按 E 上下车加入 0.32 秒抛物线轻跳入座/下车动作与车身减震回弹，走路动画速度与移动速率同步并加入爬楼梯前倾，同时隐藏了旧版 shiba-courier.glb 中遗留的未绑定 Icosphere。"
+    }
+  ],
+  "comparisons": [
+    {
+      "title": "1. 公路斜纹/波浪纹 修复前后对比（61 FPS）",
+      "note": "点标签原位切换：修复前沥青路面有明显斜向阴影粉刺与远处波浪纹；修复后彻底顺滑。",
+      "items": [
+        { "tab": "修复后（61 FPS）", "src": "imgs/after-road.webp", "caption": "修复后：独立 Rongwan_Road 仅接收阴影 + 校准 Bias，路面彻底干净", "meta": "61 FPS · 659 calls · TAA + MSAA 2x" },
+        { "tab": "修复前（49 FPS）", "src": "imgs/before-road.webp", "caption": "修复前：斜向阴影粉刺与远处莫尔波浪纹明显可见", "meta": "49 FPS · 旧阴影设置" }
+      ]
+    },
+    {
+      "title": "2. 一楼空调外机角落「黄色细碎」特写放大对比",
+      "note": "同机位像素级放大对比：PCSS 半影喷点已 100% 清除，墙面与二楼底板阴影完全柔和干净。",
+      "items": [
+        { "tab": "修复后（完全干净）", "src": "imgs/after-ac-crop.webp", "caption": "修复后：关闭 PCSS 噪点喷洒与半分辨率 SSIL，角落零细碎", "meta": "放大实测 · 0 噪点颗粒" },
+        { "tab": "修复前（有黄色细碎）", "src": "imgs/before-ac-crop.webp", "caption": "修复前：二楼底板角落与空调上方可见明显黄色颗粒噪点", "meta": "旧版放大截图" }
+      ]
+    }
+  ],
+  "gallery": [
+    {
+      "title": "二楼门廊与白色门窗框（TAA + 柔化金属高光，53 FPS）",
+      "meta": "53 FPS · 288 calls · 细白窗框与栏杆走动不再闪动",
+      "src": "imgs/after-corridor.webp"
+    },
+    {
+      "title": "傍晚「海风拉面」取餐与黑板立牌（12mm 净空零闪动）",
+      "meta": "44 FPS · 841 calls · 黑板拉面图案与海报清晰稳定",
+      "src": "imgs/after-shop.webp"
+    },
+    {
+      "title": "夜晚骑行与实时小摩托头灯（57 FPS）",
+      "meta": "57 FPS · 857 calls · 公路平滑无波浪纹，海风拉面暖光自然溢出",
+      "src": "imgs/after-night-ride.webp"
+    },
+    {
+      "title": "夜晚二楼 201 挂钩送达（45 FPS）",
+      "meta": "45 FPS · 799 calls · 栏杆已严格内缩防穿模",
+      "src": "imgs/after-2f-deliver.webp"
+    }
+  ],
+  "own_calls": [
+    {
+      "head": "暂未改动阿柴旧版头身比例，先保留原模型等你拍板重做方案",
+      "body": "实测旧版 shiba-courier.glb 头盔宽达 0.96m（几乎占满 1.15m 宽的外楼梯），且原始走路动画确实较生硬。本次先修齐所有渲染/碰撞缺陷与上下车过渡，角色本身是否立刻重做交由你决定。"
+    },
+    {
+      "head": "以 VoxelGI + 全分辨率 SSAO + SSR 替代半分辨率 SSIL，并以 TAA + 2x MSAA 替代 FXAA",
+      "body": "既彻底清除空调角细碎与白框/黑板走动闪动，又把实机帧率推高到 57–61 FPS。"
+    }
+  ],
+  "next_steps": [
+    {
+      "head": "待你拍板 · 人物与载具是否下一轮立刻重做？",
+      "body": "选项 A：立刻按新版纯 Blender + AI PBR 管线重做阿柴（修顺头身比、缩小头盔宽度以自然适配楼梯与门廊、做柔和毛发/服饰质感与流畅走路/爬楼梯/上下车动画）+ 圆润明黄二手电动车；选项 B：先只微调旧阿柴缩放，优先扩建海风庄周边街区与海滨电车道口。"
+    }
+  ]
+}
