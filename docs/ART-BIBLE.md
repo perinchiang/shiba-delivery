@@ -39,7 +39,7 @@
   - ❌ 禁止用纯顶点色假装材质，或用 `onBeforeCompile` 程序化着色器给素模“假装贴砖纹/瓦楞”（旧补丁随新资产替换一并退役）；
   - ❌ 禁止用前端 Canvas / Pillow 简笔画直接糊核心招牌、菜单、海报或墙面肌理（如已归档的 `src/morning/coastal-detail-atlas.js`）。
 - **纯 Blender + AI 贴图负责什么**：全部玩家可见 3D 美术资产——建筑主体与模块化构件、门窗/楼梯/屋顶细节、全游戏共享公模道具、载具、主角与 NPC 材质贴图。
-- **Three.js 代码只负责什么**：地形高度场与路网碰撞、建筑与公模的批量拼装与 `InstancedMesh` 实例化/运行时换色、动态光影与 4 时段切换、水面/云影/暖帘微风/拉面热气等轻特效、手机 HUD 与动态多语言界面。
+- **Godot 4.7 Forward+ 代码与场景负责什么**：原生 `.blend` 导入与合批实例化（`MultiMeshInstance3D`）、坡道地形与碰撞体、实时 `AgX + VoxelGI / SDFGI + SSIL + SSAO + SSR` 光影与 4 时段切换、广角软阴影实用灯与夜间自发光驱动、水面/微风/拉面热气等轻特效、骑行物理与桌面 HUD/手机界面。
 
 ### 2.2 Blender 建模标准（微缩手办级真实结构）
 
@@ -95,10 +95,10 @@
    - 在独立目录产出可编辑 `.blend`、高精 `.glb` 与全套共享公模/贴图；
    - 使用 Cycles（Metal GPU）渲染标准 **5 张验收图**（`output/blender-qa/<asset>/`）：① 日景 3/4 全景、② 门面近景特写、③ 关键交互区特写（如 201/202 门钩与走廊）、④ 俯视楼梯与天台结构、⑤ **暖光夜景 3/4 全景**（另附公模展示图与 AI 贴图总览）；
    - 先在 Blender 里打磨细节，**直到目视审图过关（90+ 分）再进入 Gate 2**。
-2. **Gate 2 · 游戏运行版优化与 Three.js 实机验收（保证 60 FPS 不掉画质）**
-   - 从过关的 `.blend` 母版导出**游戏运行版 `.glb`**：对超高细分件做合理减面、按共享材质合批、贴图按 `512`–`1024` 压缩（WebP/PNG 视透明需求而定，支持打包共享图集）、必要时烘焙环境光遮蔽（AO）与静态光照贴图；
-   - 接入 Three.js 场景，同步校准游戏内天空/阳光/阴影/PMREM 环境反射与暖光溢出，保活精确碰撞与交互锚点；
-   - 运行 [`shiba-visual-qa`](../.agents/skills/shiba-visual-qa/SKILL.md) 实机截屏核验 4 时段画面、Console 零报错、Draw Calls 与 60 FPS。
+2. **Gate 2 · Godot 4.7 原生 `.blend` 直导与 Forward+ 实机验收（95%+ Cycles 还原 + 流畅帧率）**
+   - 通过 [`tools/sync_blender_to_godot.py`](../tools/sync_blender_to_godot.py) 从过关的 `.blend` 母版生成 Godot 规范 `.blend`（将 Cycles 专属 `AmbientOcclusion`/`BOX` 节点转为标准 UV `Principled BSDF` 并把静态不透明件合并为多材质网格，保留 100% 原始倒角几何与 PBR 材质，无需激进减面或 2K 烘培光图降质）；
+   - 由 Godot 4.7 内置 Blender 导入器直导进 `game/assets/`，重烘 `VoxelGI` 并校准 `AgX + SSIL + SSAO + SSR + 广角软阴影 SpotLight3D` 与 13 组动态自发光材质；
+   - 运行 `./game/run.sh -- --capture-qa output/qa/<slug>` 核验 4 时段实机截图、0 报错与稳态帧率，并发布 GitHub Pages HTML 图文对比报告供 Patrick 远程审图。
 
 ---
 
@@ -112,25 +112,25 @@
   2. **建筑构件物理合理**：遮阳棚必须从墙面向外**下方**自然倾斜，不做违和的多余圆弧装饰；外挂铁楼梯必须**紧贴墙体收口**（仅外侧单扶手）**或**在留缝时**双侧配齐扶手**，杜绝悬空缝隙与单边无护栏隐患。
   3. **招牌清晰与店名统一**：同一店铺所有招牌/暖帘/竖牌文字一致，主店招拒绝糊成一团的细长平面贴图。
   4. **通道克制与留白**：二楼走廊、门口、人行道摆件克制（例如二楼植物精简至 1–2 盆点缀），保持清爽动线与视觉呼吸感。
-- **自然植被基线**：树木（[`src/morning/stylized-trees.js`](../src/morning/stylized-trees.js)）与草坡野花（[`src/morning/stylized-meadow.js`](../src/morning/stylized-meadow.js)）保持现有柔和叶卡与 GPU 实例化方案，与新建筑的暖明媚色调一致。
+- **自然植被基线**：后续在 Godot 4.7 中以 Blender 柔和圆润团簇树冠与 `MultiMeshInstance3D` 实例化草坡野花重建，保持与海风庄一致的暖明媚色调（不复刻纯代码简陋草片）。
 
 ---
 
-## 6. 性能与渲染硬预算
+## 6. 性能与渲染硬预算（Godot 4.7 Desktop Forward+）
 
-基线环境：Mac M2 / 中端笔记本 Chrome Metal，`1280×800`，`DPR 1`，目标稳定 **60 FPS**（参考 [`FIRST-ROAD.md`](FIRST-ROAD.md)）。
+基线环境：Mac M2 Air（Metal 4.0） / 中端 PC（Vulkan），`1280×800` 及 `1920×1080`，目标流畅 **45–60 FPS**。
 
 | 指标 | 预算 / 约束 | 核验方式 |
 |---|---|---|
-| 全帧 Draw Calls（含阴影） | 全部主城箱庭与机位严格控制 **≤ 250 calls**（单栋地标运行版合批后目标 ≤ 10–15 calls） | Debug 面板 `#scene-perf` / `capture-scenes.mjs` |
-| 全帧三角形数 | 目标 **≤ 100 万**（单栋地标运行版减面后目标 ~4–8 万面，高精母版单独保留在 `.blend`） | Blender 导出统计 + 实机性能核验 |
-| 合批与实例化 | 建筑壳体按共享材质合批；公模道具（贩卖机、空调、饮料筐、花盆、单车、灯笼、门钩、路灯、电杆等）与植被**优先 `InstancedMesh` 实例化** | 代码与资产审计 |
-| 贴图体积与防坑 | 共享贴图按 2 的幂次控制（`512`–`1024`，大海报/主图集上限 `2048`），游戏运行版启用压缩（Draco / WebP）；禁止共面贴片导致 Z-fighting，动态对象按需 `dispose` | 资产审计 + 多角度近景截图 |
+| 静态建筑合批 | 建筑通过 `sync_blender_to_godot.py` 合并为 3 个多材质完整网格（不透明/玻璃/背景），避免上千个零散节点爆掉阴影 Pass | Godot 实机 Debug 面板 / `metrics.json` |
+| 实用光源阴影 | 夜景实用灯优先使用广角 `SpotLight3D`（1 张阴影图替代 6 面立方体阴影），每块街区控制核心投影灯数量 | `./game/run.sh -- --capture-qa` |
+| 实例化复用 | 通用街具公模（贩卖机、空调、饮料筐、单车、花盆、路灯）与植被使用 Godot `MultiMeshInstance3D` 或共享场景实例 | 代码与场景审计 |
+| 贴图与防坑 | 共享贴图按 `1024`（主海报上限 `2048`）打包进 `.blend` 由 Godot 自动生成 GPU Mipmaps；大水平路面/人行道顶面关闭平滑着色防止法线条纹；禁止共面 Z-fighting | 资产审计 + 多角度近景截图 |
 
 ---
 
-## 7. UI / HUD 视觉约束
+## 7. UI / HUD 与外网报告视觉约束
 
-- 对白框、卡片与标签沿用 [`animal-island-ui`](../package.json) 体系与 `Noto Sans SC` 字体，圆润温暖、底部居中不遮主角。
-- 所有新增或修改的 HUD / 手机 / 地图 / 对白界面，必须同时在 **PC 桌面（`1280×800`）** 和 **移动横屏（`844×390`）** 两个视口下截屏验证，确保无文字截断、按钮重叠、出屏或遮挡核心操作区。
-- Debug 控件仅在开发模式、GitHub Pages 预览（`VITE_SCENE_DEBUG=1`）或 `?debug=1` 下可见；普通构建默认隐藏。
+- 桌面端 HUD 采用暖奶油圆角卡片风格与清晰无衬线中文字体，信息分区不遮挡主角与招牌。
+- 开发期 Debug 面板（`Tab` / `F12`）**默认收起为左上角小标签**，正式 Steam 发行时默认隐藏。
+- 每次里程碑交付须同步生成移动友好的 **GitHub Pages HTML 进度报告**（`reports/YYYY-MM-DD-<slug>/` → `tools/build_report_site.py`），确保在手机竖屏下排版清晰、图片完整加载、点图可全屏放大。

@@ -1,6 +1,6 @@
 # 阿柴快送｜资产台账与公模复用目录（Art Catalog）
 
-> 本文是《阿柴快送》**全仓库唯一资产索引与公模复用台账**（2026-11-25 随美术管线彻底改版与 Clean Slate 重构同步更新：仅记录磁盘实测文件；全面定调「纯 Blender 精建 + AI 2D PBR 贴图 + 共享公模库」，所有早期纯代码过渡资产已从工作树彻底下线并归档至 Git 标签 `archive/early-prototype`）。相关规范见 [`docs/ART-BIBLE.md`](../docs/ART-BIBLE.md) 与 [`art/AGENTS.md`](AGENTS.md)。
+> 本文是《阿柴快送》**全仓库唯一资产索引与公模复用台账**（2026-11-25 随迁移至 **Godot 4.7 桌面端 Steam 路线** 同步更新：仅记录磁盘实测文件；全面定调「纯 Blender 精建 + AI 2D PBR 贴图 + 共享公模库 → Godot 4.7 原生 `.blend` 直导」；早期纯代码原型与 Three.js 网页版已分别归档至 Git 标签 `archive/early-prototype` 与 `archive/threejs-web-final`）。相关规范见 [`docs/ART-BIBLE.md`](../docs/ART-BIBLE.md) 与 [`art/AGENTS.md`](AGENTS.md)。
 
 ---
 
@@ -19,7 +19,7 @@
 - `art/shared/props/` — 全游戏唯一街头与室内公模道具库（**已落地首批 10 件微缩手办级公模**，见 §3.0）。
 - `art/shared/characters/` — 通用角色「布娃娃」素体公模 + 共享骨架（供后续小动物与居民 NPC 换头、换耳尾与换服饰贴图；当前待建立）。
 - `art/shared/textures/` — 真实 2D 风格化 PBR 贴图与独立招牌/海报 PNG 槽位（**已落地 10 张 `gpt-image-2.6-sunburst` AI 手绘原图 + 合成/衍生法线与招牌贴图**，见 §3.0；支持同名 `custom_<文件名>` 一键热覆盖；复用流程见 [`.agents/skills/shiba-blender-pipeline/SKILL.md`](../.agents/skills/shiba-blender-pipeline/SKILL.md)）。
-- `art/<zone>/` — 区域专属建筑壳体模块与少数英雄地标（当前已实装首栋 Gate 2 标杆建筑 [`art/town/haikaze-hero/`](town/haikaze-hero/haikaze-hero-game.glb)）。
+- `art/<zone>/` — 区域专属建筑壳体模块与少数英雄地标（当前已实装首栋 Gate 2 标杆建筑 [`art/town/haikaze-hero/Haikaze-Hero.blend`](town/haikaze-hero/Haikaze-Hero.blend)，经 [`tools/sync_blender_to_godot.py`](../tools/sync_blender_to_godot.py) 原生直导入 [`game/assets/buildings/Haikaze-Hero.blend`](../game/assets/buildings/Haikaze-Hero.blend)）。
 
 ---
 
@@ -49,14 +49,12 @@
   - AI 手绘海报、菜单与木竖牌（后期压印清晰中文排版，零乱码）：[`tex_menu_chalkboard.png`](shared/textures/tex_menu_chalkboard.png)、[`tex_poster_summer.png`](shared/textures/tex_poster_summer.png)、[`tex_vending_poster_white.png`](shared/textures/tex_vending_poster_white.png)、[`tex_vending_poster_pink.png`](shared/textures/tex_vending_poster_pink.png)、[`tex_plaque_vertical.png`](shared/textures/tex_plaque_vertical.png)（AI 雪松木底板「海风面馆」）
   - 清晰门牌与地垫平面图：[`tex_plaque_haikaze.png`](shared/textures/tex_plaque_haikaze.png)、[`tex_apt_plaque_201.png`](shared/textures/tex_apt_plaque_201.png)、[`tex_apt_plaque_202.png`](shared/textures/tex_apt_plaque_202.png)、[`tex_welcome_mat.png`](shared/textures/tex_welcome_mat.png)
 
-### 3.1 首栋标杆建筑 · 海风庄（`art/town/haikaze-hero/` — Gate 1 & Gate 2 均已实装上线！）
+### 3.1 首栋标杆建筑 · 海风庄（`art/town/haikaze-hero/` → Godot 4.7 原生 `.blend` 已实装！）
 
 | 文件 | 角色与规格（实测） | 用途 |
 |---|---|---|
 | [`town/haikaze-hero/Haikaze-Hero.blend`](town/haikaze-hero/Haikaze-Hero.blend) | `16M` · `423,108 tris` · 1,764 对象（源：[`build_haikaze_hero.py`](town/haikaze-hero/build_haikaze_hero.py)） | **Gate 1 Cycles 审图高精母版**（已通过终审，含 1F L 型贴墙楼梯、3D 立体字「海风拉面」、下倾直边遮阳棚、真牙盘链条单车、二楼精简绿植与全部共享公模引用） |
-| [`town/haikaze-hero/haikaze-hero-game.glb`](town/haikaze-hero/haikaze-hero-game.glb) | **`7.1M` · `185,303 tris` · `28 draw-call batches`**（Meshopt 压缩、内嵌 1024px WebP AI PBR 贴图 + 雕琢转角人行道底座 + 双 UV `UVMap`/`UVMap_LM`，源：[`export_game_ready.py`](town/haikaze-hero/export_game_ready.py)） | **Gate 2 Three.js 实机运行资产**（已实装于 [`src/morning/coastal-town.js`](../src/morning/coastal-town.js)，与原生 `AgX` 色调映射和 2K Cycles 日/夜光图联动实现实机微缩手办级 GI 与零穿墙夜景） |
-| [`town/haikaze-hero/haikaze-lm-day.webp`](town/haikaze-hero/haikaze-lm-day.webp) & [`haikaze-lm-night.webp`](town/haikaze-hero/haikaze-lm-night.webp) | **`803K` + `645K` · `2048×2048` 线性平方根编码 HDR WebP**（单通道 Cycles CPU + OIDN 离线烘培，源：[`export_game_ready.py`](town/haikaze-hero/export_game_ready.py)） | 海风庄日/夜真实 Cycles 直接+间接光图（通过 `TEXCOORD_1` / `UVMap_LM` 注入 `coastal-town.js`，由 `time-of-day.js` 按清晨/中午/傍晚/夜晚无缝混合） |
-| [`town/haikaze-hero/haikaze-hero.glb`](town/haikaze-hero/haikaze-hero.glb) | `14M` · Draco 高精母版导出 | Blender 母版归档参考（运行时不使用） |
+| [`../game/assets/buildings/Haikaze-Hero.blend`](../game/assets/buildings/Haikaze-Hero.blend) | **`23.4M` · `436,648 tris` · `3 multi-material meshes` · `106 PBR materials`**（源：[`tools/sync_blender_to_godot.py`](../tools/sync_blender_to_godot.py)） | **Gate 2 Godot 4.7 原生直导资产**（已实装于 [`game/scenes/RongwanCorner.tscn`](../game/scenes/RongwanCorner.tscn)，零减面、零光图花斑，在 Forward+ Metal 下配合 AgX + VoxelGI + SSIL + SSAO + SSR 实现 95%+ Cycles 实机画质） |
 
 ### 3.2 角色与车辆（`art/morning/`）
 

@@ -75,11 +75,11 @@ description: >-
 
 ---
 
-## 五、Step 4 · Gate 2 游戏运行版导出与 Three.js 实机验收
+## 五、Step 4 · Gate 2 Godot 4.7 原生 `.blend` 直导与 Forward+ 实机验收
 
-**严禁直接把未转换的十几 MB Cycles `.blend` 母版裸导进游戏！** 必须运行运行版导出器完成以下 4 项转化（参考 [`art/town/haikaze-hero/export_game_ready.py`](../../../art/town/haikaze-hero/export_game_ready.py)）：
+**严禁直接把含 Cycles 专属 `AmbientOcclusion`/`BOX` 节点的母版裸塞进 Godot！** 运行同步器 [`tools/sync_blender_to_godot.py`](../../../tools/sync_blender_to_godot.py) 完成以下 4 步（零暴损减面、零 2K 光图花斑）：
 
-1. **Box 投射转真实 UV + HSV 暖色预烘焙**：glTF 2.0 不支持 Blender `BOX` 投射、`HueSaturation` 与 `AmbientOcclusion` 节点；导出脚本必须为建筑大面写入世界尺度 Box-UV、将 AgX 校准色预烘焙进压缩 WebP/PNG 贴图、并把法线贴图规范接到 `Normal Map → Principled BSDF.Normal`。
-2. **合理减面与按材质合批**：合并同材质静态网格（将千级小物体压至 ~20–30 个共享材质网格），压低超高细分小件面数（单栋英雄楼运行版目标 ~5–9 万面、无 Draco 压缩即可压在 ~2–4 MB，100% 兼容离线单文件构建 `dist/index.html` 与 GitHub Pages）。
-3. **暖光夜景联动命名**：保留 `Arch_Room_Interior`、`Arch_Shop_Interior`、`Arch_Curtain_*`、`Arch_Porch_Lamp`、`Arch_Sign_Board_Cream`、`Prop_Lantern_Paper`、`Prop_Showcase_Glow` 等标准自发光材质名，由 Three.js `time-of-day.js` 按时段动态调节自发光强度并搭配少量关键暖光池与 PMREM 环境反射。
-4. **实机 QA**：运行 `npm test`、`npm run build` 与 [`shiba-visual-qa`](../shiba-visual-qa/SKILL.md) 核验晨/昏/夜全时段实机截图、零报错、Draw Calls ≤ 250 与 60 FPS，推送 `shiba-delivery-update` 后在 GitHub Pages 复检。
+1. **Box 投射转规范 UV + AgX 暖色校准**：为 AI PBR 建筑表面写入世界尺度 Cubic UV、打包无损校准 PNG 贴图，并将 `AmbientOcclusion` 节点解包为标准 `Principled BSDF`（保留全部 Clearcoat / Metallic / Roughness / Alpha Glass / Emission）。
+2. **静态多材质合批（保留 100% 几何面数）**：将上千个零散静态建筑与街具部件合批为 3 个多材质完整网格（不透明主建筑 / 透明玻璃 / 天海背景），供 Godot 4.7 内置 Blender 导入器 1.3 秒自动重导。
+3. **重烘 `VoxelGI` 与 4 时段动态发光联动**：执行 `./game/run.sh --headless --import --quit && ./game/run.sh -- --bake-voxelgi`，保持 13 组标准自发光材质命名与 6 盏广角 `SpotLight3D` 夜景实用灯零穿墙联动。
+4. **实机 QA 与外网 HTML 报告发布**：执行 `./game/run.sh -- --capture-qa output/qa/<slug>`，用 `read_file` 逐张核验清晨/傍晚/夜晚与可玩视角的实机截图和 FPS/Draw Calls，将 WebP 截图与 `report.json` 写入 `reports/YYYY-MM-DD-<slug>/`，跑通 `python3 tools/build_report_site.py --out dist` 并推送 `shiba-delivery-update` 在 GitHub Pages 复检。

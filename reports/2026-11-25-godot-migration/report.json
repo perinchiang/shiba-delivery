@@ -1,0 +1,126 @@
+{
+  "date": "2026-11-25",
+  "short_title": "G0 · 迁移 Godot 4.7 桌面版",
+  "title": "里程碑 G0｜正式迁入 Godot 4.7 桌面端（Steam 路线）+ 首个可玩送单闭环上线",
+  "summary": "已将早期 Three.js 网页原型完整归档至 Git 标签 archive/threejs-web-final，项目正式迁入 Godot 4.7 Forward+（Steam 桌面优先），打通 Blender .blend 原生无损直导、首个可骑行/爬外楼梯/送单闭环，并把 GitHub Pages 改版为手机外网可随时查看的图文进度报告门户。",
+  "metrics": [
+    { "value": "Godot 4.7.2", "label": "Forward+ · Metal 4.0" },
+    { "value": "46–49 FPS", "label": "可玩骑行实机帧率 (M2)" },
+    { "value": "436k 原面", "label": "零减面 · 106 PBR 材质" },
+    { "value": "0 报错", "label": "8 机位实机自动化验收" },
+    { "value": "AgX + VoxelGI", "label": "SSIL · SSAO · SSR 实时光影" }
+  ],
+  "changes": [
+    {
+      "head": "安全归档旧 Three.js 网页版，主干彻底切换至 Godot 4.7 桌面工程（game/）",
+      "body": "原 Three.js 完整版本已打上永久归档标签 archive/threejs-web-final（026cd7e），移除了 src/、Vite、2K 烘培光图等 WebGL 妥协代码；正式建立模块化 Godot 4.7 工程 game/（含环境光照、地形碰撞、骑行步行控制、送单循环、桌面 HUD 五大模块）。"
+    },
+    {
+      "head": "打通 Blender → Godot 原生 .blend 无损直导管线（tools/sync_blender_to_godot.py）",
+      "body": "保留全部 43.6 万原始倒角面与 106 个 PBR 材质（零暴损减面、零 2K 光图花斑），将 1,796 个零散静态件合批为 3 个多材质完整网格，Godot 内置 Blender 导入器 1.3 秒即可重导；同步把路面扩展为 34×30m 可骑行海滨转角道路与观海护栏。"
+    },
+    {
+      "head": "首个可玩垂直切片：骑行 + 下车步行爬 14 级外楼梯 + 1F→2F 送单闭环",
+      "body": "支持 WASD 骑行压弯与 360° 拖动环视、夜晚小摩托头灯、按 E 停车下车沿外挂铁楼梯走上 2F 走廊，并可在 1F「海风拉面」取餐 → 挂到 2F 201/202 室门口黄铜挂钩或送到海滨护栏完成结算（余额由初始 ¥3000.00 累加）。左上角调试面板默认收起（按 Tab 展开），保持清爽 Steam 桌面画面。"
+    },
+    {
+      "head": "全新外网 HTML 进度报告门户（你现在看到的这个网页）",
+      "body": "重构 GitHub Actions 与 tools/build_report_site.py：以后每次推进并推送到 shiba-delivery-update，自动生成手机友好的最新一期图文报告（支持标签原位对比、点击全屏放大与历史归档），在外面跑外卖随时打开手机就能一眼验收。"
+    },
+    {
+      "head": "全仓库现行文档与 AI 技能同步改版",
+      "body": "同步更新 AGENTS.md、README.md、docs/GAME.md、docs/ROADMAP.md、docs/ART-BIBLE.md、art/AGENTS.md、art/CATALOG.md 以及 shiba-blender-pipeline / shiba-visual-qa 技能，全仓库口径彻底统一为 Godot 4.7 Steam 桌面路线。"
+    }
+  ],
+  "comparisons": [
+    {
+      "title": "1. 白天 3/4 微缩全景（同 38mm 镜头）",
+      "note": "点标签原位切换对比：Godot 4.7 原生直导彻底消除 Three.js 2K 光图的奶油墙灰斑，几乎 1:1 还原 Blender Cycles 的柔和微缩手办质感。",
+      "items": [
+        { "tab": "Godot 4.7 桌面实机", "src": "imgs/godot-day-hero.webp", "caption": "Godot 4.7 Forward+（Metal 4.0 · 原生 .blend 436k 面）", "meta": "47 FPS · 304 calls · AgX + VoxelGI + SSIL + SSAO + SSR" },
+        { "tab": "Blender Cycles 参考", "src": "imgs/cycles-day-hero.webp", "caption": "Blender Cycles 离线路径追踪（参考标杆）", "meta": "离线 ~28 秒/帧 · 423k 面" },
+        { "tab": "旧 Three.js 网页版", "src": "imgs/threejs-day-hero.webp", "caption": "旧 Three.js WebGL（2K 烘培光图，已归档）", "meta": "58 FPS · 185k 减面 · 墙面可见烘培降噪灰斑" }
+      ]
+    },
+    {
+      "title": "2. 夜晚 3/4 微缩全景（“有人居住”的暖光氛围）",
+      "note": "对比深邃夜空反差、无穿墙泛光、二楼窗帘与拉面店暖光溢出，以及贩卖机内 3D 饮料瓶清晰度。",
+      "items": [
+        { "tab": "Godot 4.7 桌面实机", "src": "imgs/godot-night-hero.webp", "caption": "Godot 4.7 Forward+ 实时夜景（广角软阴影 + VoxelGI 零穿墙）", "meta": "47 FPS · 304 calls · 13 组实时自发光材质" },
+        { "tab": "Blender Cycles 参考", "src": "imgs/cycles-night-hero.webp", "caption": "Blender Cycles 离线夜景参考", "meta": "离线 ~28 秒/帧 · 路径追踪" },
+        { "tab": "旧 Three.js 网页版", "src": "imgs/threejs-night-hero.webp", "caption": "旧 Three.js WebGL 夜景（已归档）", "meta": "58 FPS · 静态光图 · 整体偏灰平" }
+      ]
+    },
+    {
+      "title": "3. 一楼「海风拉面」店面近景特写",
+      "note": "对比 3D 立体字招牌、复古单车辐条与牙盘链条、下倾直边遮阳棚软影与雪松木质感。",
+      "items": [
+        { "tab": "Godot 4.7 桌面实机", "src": "imgs/godot-day-shop.webp", "caption": "Godot 4.7 桌面实时近景", "meta": "37 FPS · 304 calls · 零贴图压缩糊边" },
+        { "tab": "Blender Cycles 参考", "src": "imgs/cycles-day-shop.webp", "caption": "Blender Cycles 离线店面特写", "meta": "离线路径追踪" },
+        { "tab": "旧 Three.js 网页版", "src": "imgs/threejs-day-shop.webp", "caption": "旧 Three.js 网页近景（已归档）", "meta": "58 FPS · 168 calls" }
+      ]
+    },
+    {
+      "title": "4. 二楼门廊 · 黄铜外卖挂钩特写",
+      "note": "对比白墙细腻程度、201/202 烤漆钢门、黄铜圆形外卖挂钩金属反光与栏杆软影。",
+      "items": [
+        { "tab": "Godot 4.7 桌面实机", "src": "imgs/godot-day-2f.webp", "caption": "Godot 4.7 二楼走廊白天实机", "meta": "42 FPS · 304 calls · AgX + SSR" },
+        { "tab": "Blender Cycles 参考", "src": "imgs/cycles-day-2f.webp", "caption": "Blender Cycles 二楼走廊参考", "meta": "离线路径追踪" }
+      ]
+    }
+  ],
+  "gallery": [
+    {
+      "title": "可玩实机 · 清晨骑行出发（默认收起调试栏）",
+      "meta": "49 FPS · 675 calls · WASD 骑行压弯 + 左下骑手手机卡片 + 底部 [E] 提示",
+      "src": "imgs/godot-play-ride-day.webp"
+    },
+    {
+      "title": "可玩实机 · 夜晚骑行（实时小摩托头灯光束）",
+      "meta": "46 FPS · 881 calls · 夜晚头灯自动亮起 + 海风拉面暖光溢出",
+      "src": "imgs/godot-play-ride-night.webp"
+    },
+    {
+      "title": "可玩实机 · 傍晚黄金时刻「海风拉面」门口取餐",
+      "meta": "36 FPS · 873 calls · 停车按 E 下车走进金色光环即可取餐",
+      "src": "imgs/godot-play-shop-pickup.webp"
+    },
+    {
+      "title": "可玩实机 · 夜晚爬外楼梯送到 2F 201 室黄铜挂钩",
+      "meta": "36 FPS · 839 calls · 阿柴实时吃满二楼门灯暖光与护目镜高光，按 E 挂袋结算 +¥12.50",
+      "src": "imgs/godot-play-2f-deliver.webp"
+    }
+  ],
+  "own_calls": [
+    {
+      "head": "调试面板默认收起为左上角小标签（Tab / F12 展开）",
+      "body": "避免大块黑色调试窗遮挡「海风拉面」招牌，平时打开即见干净 Steam 桌面画面，需要切 4 时段/瞬移机位时随时一键展开。"
+    },
+    {
+      "head": "将海风庄底座扩为 34×30m 可骑行海滨转角道路与观海护栏",
+      "body": "保持纯 Cycles 风格和谐度（未引入之前违和的纯代码绿草地），同时让阿柴可以顺畅绕海风庄整圈骑行、刹车停车再下车爬楼梯。"
+    },
+    {
+      "head": "性能优化策略（实机骑行拉升至 46–49 FPS）",
+      "body": "静态建筑合并为 3 个多材质完整网格（保留全部 43.6 万面）；6 盏夜景灯改用广角 SpotLight3D（仅 3 盏核心灯开实时阴影避免 6 面立方体重复绘制）；阿柴与小摩托跳过逐帧动态 VoxelGI 探针重算（保留实时阳光/门灯/SSAO/SSIL）。"
+    },
+    {
+      "head": "16MB VoxelGI 烘焙缓存不进 Git，首次拉库支持 SDFGI 自动兜底",
+      "body": "game/assets/gi/ 已加入 .gitignore 防止仓库膨胀；本机运行 ./game/run.sh -- --bake-voxelgi 约 2 秒即可重新烘焙。"
+    }
+  ],
+  "next_steps": [
+    {
+      "head": "方向 1（推荐优先）· 扩建 1 号箱庭「榕湾海滨坡道镇」周边街区",
+      "body": "沿用这套 Blender .blend 原生直导 + 共享公模库，在海风庄旁边陆续建出坡上杂居楼、传统木构老铺、2.5m 穿楼窄巷与坡底海滨电车道口（踏切），让骑行送单路线真正连成片。"
+    },
+    {
+      "head": "方向 2 · 按新版 Blender + AI PBR 管线重做圆润明黄二手电动车",
+      "body": "替换当前旧版临时小摩托，把主角载具的材质精度与建模细致度统一到和「海风庄」同一档次，并合批角色/载具网格把骑行帧率进一步稳在 60 FPS。"
+    },
+    {
+      "head": "方向 3 · 接入第一版黑色幽默打工循环与骑手手机 UI",
+      "body": "在 Godot 中落地开机扣 ¥3 安心险、多单选择与 GPS 漂移找门牌、电量消耗与每日收支账单。"
+    }
+  ]
+}

@@ -11,3 +11,9 @@ output/
 .env.*.local
 *.blend1
 **/__pycache__/
+
+# Godot 4.7 generated caches & extracted import intermediates
+game/.godot/
+game/assets/gi/
+game/assets/textures/
+game/assets/**/*.import

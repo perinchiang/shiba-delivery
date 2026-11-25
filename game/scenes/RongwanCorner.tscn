@@ -1,0 +1,76 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/game_main.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://assets/buildings/Haikaze-Hero.blend" id="2_blend"]
+[ext_resource type="PackedScene" path="res://assets/characters/shiba-courier.glb" id="3_shiba"]
+[ext_resource type="PackedScene" path="res://assets/vehicles/monkey-delivery.glb" id="4_scooter"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
+sky_top_color = Color(0.086, 0.471, 0.886, 1)
+sky_horizon_color = Color(0.643, 0.878, 0.988, 1)
+sky_curve = 0.22
+ground_bottom_color = Color(0.227, 0.604, 0.835, 1)
+ground_horizon_color = Color(0.518, 0.824, 0.961, 1)
+ground_curve = 0.08
+sun_angle_max = 18.0
+
+[sub_resource type="Sky" id="Sky_1"]
+sky_material = SubResource("ProceduralSkyMaterial_1")
+radiance_size = 3
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 2
+sky = SubResource("Sky_1")
+ambient_light_source = 3
+ambient_light_sky_contribution = 0.85
+reflected_light_source = 2
+tonemap_mode = 4
+tonemap_exposure = 1.02
+ssr_enabled = true
+ssr_max_steps = 48
+ssr_fade_in = 0.15
+ssr_fade_out = 2.0
+ssr_depth_tolerance = 0.25
+ssao_enabled = true
+ssao_radius = 0.42
+ssao_intensity = 1.35
+ssao_power = 1.45
+ssao_detail = 0.6
+ssil_enabled = true
+ssil_radius = 2.6
+ssil_intensity = 0.85
+ssil_sharpness = 0.85
+glow_enabled = true
+glow_normalized = true
+glow_intensity = 0.24
+glow_strength = 0.72
+glow_bloom = 0.04
+glow_blend_mode = 1
+glow_hdr_threshold = 1.08
+
+[node name="RongwanCorner" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="HaikazeHero" parent="." instance=ExtResource("2_blend")]
+
+[node name="VoxelGI" type="VoxelGI" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 4.2, 0.0)
+subdiv = 2
+size = Vector3(26, 15, 26)
+
+[node name="ActorGroup" type="Node3D" parent="."]
+
+[node name="Scooter" parent="ActorGroup" instance=ExtResource("4_scooter")]
+transform = Transform3D(-0.77, 0, -0.638, 0, 1, 0, 0.638, 0, -0.77, 7.6, -0.04, 8.8)
+
+[node name="Shiba" parent="ActorGroup" instance=ExtResource("3_shiba")]
+transform = Transform3D(-0.647, 0, -0.536, 0, 0.84, 0, 0.536, 0, -0.647, 7.6, 0.18, 8.8)
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(0.744, -0.181, 0.643, 0, 0.963, 0.271, -0.668, -0.201, 0.716, 14.8, 7.6, 16.5)
+fov = 33.0
+near = 0.1
+far = 400.0
