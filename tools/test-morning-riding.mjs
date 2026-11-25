@@ -7,8 +7,7 @@ import { readFile } from 'node:fs/promises';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createScooter, createShiba, parcel } from '../src/morning/rider.js';
-import { createRideMotion } from '../src/morning/ride-motion.js';
-import { bridgeJointXs } from '../src/morning/country-route.js';
+import { createRideMotion, roadBumpCoords } from '../src/morning/ride-motion.js';
 import { standFrame, beginSequence, boxFrame, positionParcel } from '../src/morning/sequence.js';
 import { frameRide, resizeRideCamera } from '../src/morning/ride-camera.js';
 
@@ -518,7 +517,7 @@ assert.ok(maxSeam < .010, 'the jacket and trousers meet at the tail base through
 // Check both the suspension's timing and the rig contacts while the load moves.
 for (const dir of [-1, 1]) {
   const response = createRideMotion(scooter.frontZ, scooter.rearZ);
-  const dt = 1/60, speed = 50/3.6, joint = bridgeJointXs[0];
+  const dt = 1/60, speed = 50/3.6, joint = roadBumpCoords[0];
   const state = { bikeX: joint - 4*dir, bikeYaw: dir*Math.PI/2, speed };
   let frontHit, rearHit, helmetMoves = false;
   scooter.setStand(0);

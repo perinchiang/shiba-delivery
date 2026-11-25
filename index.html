@@ -24,12 +24,12 @@
     <div id="hud" hidden>
       <div id="street-controls">
         <details id="scene-debug" hidden>
-          <summary>场景瞬移</summary>
+          <summary>调试面板</summary>
           <span id="scene-perf">正在采样…</span>
           <div role="group" aria-label="选择测试地点"></div>
           <button type="button" id="test-speed" hidden>切换试骑限速</button>
         </details>
-        <div id="keys" class="keys">W/S 油门刹车　A/D 转向　拖动转视角　E 互动</div>
+        <div id="keys" class="keys">W/S 油门刹车　A/D 转向　拖动转视角　E 下车互动</div>
         <div class="street-tools"><button id="map-open" type="button" aria-haspopup="dialog" aria-controls="street-map"><kbd>M</kbd>地图</button>
         <button id="look" type="button" aria-pressed="false"><kbd>V</kbd><span>近看阿柴</span></button></div>
         <span id="directions" hidden></span>
@@ -40,7 +40,6 @@
         </div>
         <div class="interaction">
           <aside id="dialogue" hidden aria-live="polite"><strong id="speaker"></strong><p id="line"></p></aside>
-          <aside id="bun-dialogue" hidden></aside>
           <button id="action" type="button"><kbd>E</kbd><span id="action-text"></span></button>
         </div>
       </div>
@@ -48,56 +47,56 @@
       <div id="phone" role="region" aria-label="骑手手机" data-expanded="false">
         <button id="phone-toggle" type="button" aria-expanded="false" aria-controls="phone-details"
                 aria-label="展开骑手手机" aria-describedby="clock order-kind phase goal order-summary">
-          <span class="phone-status"><span class="receiver" aria-hidden="true"></span><span id="order-kind">附近来单</span>
-            <time id="clock">07:12</time><span id="phase">待接单</span><i class="battery" aria-hidden="true"></i></span>
+          <span class="phone-status"><span class="receiver" aria-hidden="true"></span><span id="order-kind">海风街角</span>
+            <time id="clock">海风清晨</time><span id="phase">探索</span><i class="battery" aria-hidden="true"></i></span>
           <span class="phone-task">
-            <span class="task-heading"><strong id="goal">便民药店</strong><i class="fold-arrow" aria-hidden="true"></i></span>
-            <span class="phone-guidance"><span id="order-summary">送往榕树里 3 号</span><span id="place">榕湾老街</span></span>
+            <span class="task-heading"><strong id="goal">榕湾海风街角</strong><i class="fold-arrow" aria-hidden="true"></i></span>
+            <span class="phone-guidance"><span id="order-summary">0 km/h · 自由骑行</span><span id="place">榕湾海风街角</span></span>
           </span>
         </button>
         <div id="phone-details" aria-hidden="true" inert>
           <div class="phone-scroll">
             <section id="order-screen" aria-label="订单明细">
-              <div class="order-pay"><span><span class="service-name">阿柴快送 · </span>配送费</span><strong id="order-fee">¥3.10</strong></div>
-              <button type="button" id="switch-order">换成包子单</button>
+              <div class="order-pay"><span><span class="service-name">阿柴快送 · </span>配送费</span><strong id="order-fee">¥4.20</strong></div>
+              <button type="button" id="switch-order">换成下一单</button>
               <ol class="stops">
-                <li><i>取</i><div><strong id="pickup-store">便民药店</strong><small id="pickup-person">榕湾老街 · 找兔药师</small></div></li>
-                <li><i>送</i><div><strong id="delivery-address">榕树里 3 号</strong><small id="delivery-person">猫婆婆在楼下等</small></div></li>
+                <li><i>取</i><div><strong id="pickup-store">海风拉面</strong><small id="pickup-person">海风庄 1F · 找拉面店老板</small></div></li>
+                <li><i>送</i><div><strong id="delivery-address">海风庄 2F · 201 室</strong><small id="delivery-person">走外挂铁楼梯上二楼，挂在 201 门口挂钩</small></div></li>
               </ol>
-              <p id="order-note" class="note">备注　药袋请当面交给猫婆婆。</p>
+              <p id="order-note" class="note">备注　热腾腾的海风拉面，走西侧外挂铁楼梯送到二楼 201 门口外卖挂钩。</p>
             </section>
             <section id="ride-info" hidden>
-              <h2>榕湾村道</h2><p>沿老街往东，在城市十字路口转进横街，或直行经稻田和石桥到村口。</p>
+              <h2>榕湾海风街角</h2><p>新版纯 Blender 精建 + AI 贴图街角，聚焦首栋标杆建筑「海风庄」。</p>
               <p id="ride-distance"></p>
             </section>
             <section id="receipt" aria-label="本单账单" hidden>
               <h2>本单账单</h2>
-              <dl><div><dt>配送费</dt><dd id="receipt-fee">+ ¥3.10</dd></div><div><dt>今日首单保险</dt><dd id="receipt-insurance">− ¥3.00</dd></div>
-                <div class="net"><dt>实际到手</dt><dd id="receipt-net">¥0.10</dd></div></dl>
-              <p id="receipt-note" class="note">“开张了，一毛也是热乎的。”</p>
+              <dl><div><dt>配送费</dt><dd id="receipt-fee">+ ¥4.20</dd></div><div><dt>平台保障</dt><dd id="receipt-insurance">− ¥0.00</dd></div>
+                <div class="net"><dt>实际到手</dt><dd id="receipt-net">¥4.20</dd></div></dl>
+              <p id="receipt-note" class="note">“热汤一点没洒，二楼的风吹着真舒服。”</p>
               <p id="shift-summary" class="shift-summary" hidden></p>
             </section>
             <button id="ride-sound" type="button" aria-pressed="true" style="width:100%;margin:8px 0 4px;padding:6px 12px;font-size:13px">声音已开启</button>
           </div>
           <footer class="phone-footer">
-            <button id="phone-main" type="button">接下第一单</button>
+            <button id="phone-main" type="button">接下海风拉面单</button>
             <button id="next-order" type="button" hidden>继续接下一单</button>
-            <button id="replay" type="button" hidden>再跑一趟 ↻</button>
+            <button id="replay" type="button" hidden>回到海风庄 ↻</button>
             <span class="home-line" aria-hidden="true"></span>
           </footer>
         </div>
       </div>
     </div>
     <dialog id="street-map" aria-labelledby="map-title">
-      <header><h2 id="map-title">榕湾老街</h2><button type="button" id="map-close" aria-label="关闭地图">关闭 ×</button></header>
-      <canvas id="street-plan" aria-label="老街平面图，显示阿柴与取送点"></canvas>
-      <footer><div class="map-stops" id="map-stops"><span><b>取</b><strong id="map-pickup"></strong></span><span><b>送</b><strong id="map-delivery">榕树里 3 号</strong></span></div><p id="map-location"></p></footer>
+      <header><h2 id="map-title">榕湾海风街角</h2><button type="button" id="map-close" aria-label="关闭地图">关闭 ×</button></header>
+      <canvas id="street-plan" aria-label="榕湾海风街角平面图，显示阿柴与海风庄"></canvas>
+      <footer><div class="map-stops" id="map-stops"><span><b>取</b><strong id="map-pickup">海风拉面</strong></span><span><b>送</b><strong id="map-delivery">海风庄 2F · 201 室</strong></span></div><p id="map-location"></p></footer>
     </dialog>
     <div id="loading" role="status" aria-live="polite">
       <div class="loading-card">
         <div class="loading-badge" aria-hidden="true">🛵</div>
         <strong class="loading-title">阿柴快送</strong>
-        <p id="loading-text">正在打开榕湾街区…</p>
+        <p id="loading-text">正在打开榕湾海风街角…</p>
         <div class="loading-bar" aria-hidden="true"><i id="loading-fill"></i></div>
       </div>
     </div>

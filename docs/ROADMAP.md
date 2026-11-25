@@ -47,10 +47,9 @@
   - 全新统一高度场 + 统一道路与碰撞网格（约 `180m × 180m` 方正网格，彻底告别断层与跨界卡顿）：北侧绿草山坡挡土墙 → 坡上住宅生活区与窄巷 → 顺坡下冲的商业老街与镇中心十字小广场 → 坡底定时驶过的绿白海滨电车与平交道口（踏切）→ 滨海大道与观海人行道 → 闪光蓝海与远岸市中心高楼剪影。
   - **美术管线已彻底定调（2026-11-25，90 分过关基准）**：全面淘汰纯代码方块建筑（旧 `coastal-town-kit.py` 与程序化 Canvas `coastal-detail-atlas.js` 冻结待替换删除），统一采用**「纯 Blender 微缩手办级真实建模 + AI 手绘 2D PBR 贴图 + 全游戏共享公模库（支持换色/换图变体）+ 暖光室内夜景」**与两关制验收（见 [`ART-BIBLE.md`](ART-BIBLE.md)）。
   - **当前进展与执行顺序**：
-    1. **[Gate 1 v4 精修完成，待终审]** 标杆建筑 **「海风庄」（[`art/town/haikaze-hero/`](../art/town/haikaze-hero/Haikaze-Hero.blend)）** 与首批 **10 件共享公模（[`art/shared/props/`](../art/shared/props/Shared-Props.blend)）+ 10 张 AI 手绘贴图** 已完成全部 5 处细节精修（单车真 24T 牙盘/链条/双法兰花鼓车圈 + 一键换色漆面槽、下倾无圆弧遮阳棚、3D 立体字「海风拉面」主招牌与全店统一店名、二楼精简 2 盆绿植、1F L 型墙体与外楼梯零缝贴墙收口；天台定位为俯视天际线景观）。
-    2. **[下一步 · Gate 2]** 导出减面合批 + 贴图压缩 + AO 烘焙的游戏运行版海风庄与共享公模，接入 Three.js 替换旧海风庄，同步校准全镇日景蓝天与“有人居住”的夜间室内/店面暖光溢出，并在实机核验 60 FPS / ≤ 250 Draw Calls。
-    3. **[整镇替换]** 按海风庄与共享公模同工艺，扩展方向 A 模块化建筑套件与公模换色/换图变体（不同颜色单车/饮料筐/瓶子、不同海报贩卖机/菜单/招牌），逐批替换整片 1 号箱庭建筑并彻底删除旧纯代码建筑与程序化贴图代码。
-  - 旧老街/旧十字路口暂留 Debug 瞬移对比；风车村样段（[`hillside-village.py`](../art/town/hillside-village.py)）归档为远郊村落参考。
+    1. **[已完成 · Gate 1 v4 过关 & 管线沉淀]** 标杆建筑 **「海风庄」（[`art/town/haikaze-hero/Haikaze-Hero.blend`](../art/town/haikaze-hero/Haikaze-Hero.blend)）** 与首批 **10 件共享公模（[`art/shared/props/Shared-Props.blend`](../art/shared/props/Shared-Props.blend)）+ 10 张 AI 手绘贴图** 已通过终审；可复用 AI 生图 + Blender 建模审查管线已沉淀为 Skill [`.agents/skills/shiba-blender-pipeline/`](../.agents/skills/shiba-blender-pipeline/SKILL.md)。
+    2. **[已完成 · Clean Slate 清场 & Gate 2 实机上线]** 已在标签 `archive/early-prototype` (`3fe7028`) 安全归档旧版原型并彻底移除全部旧老街/十字路口/乡道/风车村与纯代码建筑；完成 Gate 2 导出器（[`export_game_ready.py`](../art/town/haikaze-hero/export_game_ready.py) → `haikaze-hero-game.glb`，`6.1M` / `28 batches` / 零 Draco WASM / 内嵌 WebP + BVH 接触 AO），以干净的 `(0, 0)` 榕湾海风街角实机上线，同步实装日景蓝天与“有人居住”夜间暖光溢出及 1F 拉面取餐 → 外楼梯送 2F 201/202 挂钩 / 过铁道口送观海栈台试玩订单。
+    3. **[下一步 · 扩建 1 号箱庭建筑群与电车道口]** 按海风庄与共享公模同工艺，扩展周边杂居楼、传统木构老铺、坡上住宅与海滨电车/踏切，利用公模换色/换图变体（不同颜色单车/饮料筐/贩卖机海报）自然铺满 1 号海滨坡道箱庭。
 - **步骤 2 · 玩法接管与第一版黑色幽默打工循环**：
   - 接入清晰店招与数字/字母门牌（含外楼梯二楼门牌 201/202 与门旁黄铜圆形外卖挂钩挂袋交互），把取餐/送餐、找门玩法（GPS 漂移 + 门牌号 + 捷径窄巷 + 爬外楼梯上二楼敲门/挂袋）迁移进 1 号箱庭，完成后删除旧老街/旧十字路口历史代码。
   - 主角坡上便宜小屋室内（起点/终点、充电、睡觉、看账单）与第一版黑色幽默打工循环（上线扣 ¥3 安心险、超时按比例扣钱、电量消耗与推车焦虑）。

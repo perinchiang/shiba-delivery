@@ -34,11 +34,9 @@ import { join, resolve } from 'node:path';
 import { chromium } from 'playwright-core';
 
 const PRESETS = {
-  smoke: ['street', 'crossing', 'riceBend'],
-  street: ['street', 'banyan', 'bark', 'pharmacy', 'counter', 'home'],
-  city: ['crossing', 'cityEdge', 'cityAvenue', 'cityIce', 'cityTea'],
-  country: ['openPaddy', 'riceBend', 'harvestView', 'riceClose', 'sampleRide', 'sampleEdge', 'sampleWalk', 'willow'],
-  buns: ['buns', 'steamers', 'bunCounter'],
+  smoke: ['haikazeHero', 'haikazeShopClose', 'haikazeStairs2F', 'coastalSlope'],
+  haikaze: ['haikazeHero', 'haikazeShopClose', 'haikazeStairs2F', 'coastalSlope', 'seawall'],
+  shiba: ['shibaFront', 'shibaRide'],
 };
 PRESETS.all = [...new Set(Object.values(PRESETS).flat())];
 

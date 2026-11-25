@@ -1,20 +1,17 @@
-// Hub #1: Rongwan Coastal Hillside Town (S2 Step 1 · Yakuza-style compact 3x3 grid)
-// North green hillside & stone retaining wall -> uphill walled residential street ->
-// downhill sunlit commercial slope & shortcut alleys -> central plaza w/ battery-swap
-// cabinets -> animated Enoden-style green/cream coastal tram & fumikiri level crossing ->
-// oceanfront boulevard, sparkling blue ocean & distant downtown skyline across the bay.
+// Clean-Slate Rongwan Coastal Corner World (centered cleanly at world origin 0, 0)
+// North green hillside & stone retaining wall -> sunlit downhill coastal slope ->
+// Hero Building "海风庄" (Gate 2 Pure-Blender + AI PBR asset with walkable exterior steel stairs
+// & 2F corridor) -> coastal railway bed -> oceanfront boulevard, seawall promenade & sparkling sea.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GeoBuilder } from '../core/geo.js';
 import { litMaterial } from '../core/materials.js';
 import { RNG } from '../core/rng.js';
 import { makeCanvas, canvasTexture, fbm2D } from '../core/textures.js';
 import { clamp, lerp, smoothstep } from '../core/mathx.js';
-import { SignKit } from './sign-kit.js';
-import { getCoastalDetailAtlas } from './coastal-detail-atlas.js';
 import {
   MEADOW_COMMON_GLSL,
   meadowUniforms,
+  updateMeadowEnv,
   getTerrainMaterial,
   getGrassMaterial,
   getGrassGeometry,
@@ -24,45 +21,54 @@ import {
 } from './stylized-meadow.js';
 import { placeStylizedTrees } from './stylized-trees.js';
 
-export const COASTAL_TOWN = { x: -420, z: -260 };
-const CX = COASTAL_TOWN.x;
-const CZ = COASTAL_TOWN.z;
+export const WORLD_BOUNDS = Object.freeze({
+  minX: -66,
+  maxX: 66,
+  minZ: -54,
+  maxZ: 54.4,
+});
 
-const HALF_X = 128;
-const HALF_Z = 112;
-const OCEAN_Y = -1.65;
-const RAIL_Z = 48.0;
-const BLVD_Z = 60.0;
-const SEAWALL_Z = 69.2;
-const UPPER_Z = -58.0;
-const PLAZA_Z = 25.0;
+export const OCEAN_Y = -1.65;
+export const PLAZA_Z = 10.5;
+export const RAIL_Z = 37.0;
+export const BLVD_Z = 47.0;
+export const SEAWALL_Z = 55.5;
+const HALF_X = 96;
+const HALF_Z_NORTH = -92;
 
-// ==============================================================================
-// Unified Continuous Elevation & Street Layout Functions (Zero Seams)
-// ==============================================================================
-export function townSlopeY(dz) {
-  if (dz <= -46) return 11.40;
-  if (dz <= 15) return lerp(11.40, 1.85, smoothstep(-46, 15, dz));
-  if (dz <= 38.5) return 1.85;
-  if (dz <= 46.5) return lerp(1.85, 1.25, smoothstep(38.5, 46.5, dz));
-  if (dz <= 52) return 1.25;
-  if (dz <= 57) return lerp(1.25, 1.05, smoothstep(52, 57, dz));
-  return 1.05;
-}
-
-// Direction A Benchmark Hero Building ("海风庄" · 2.5F flat-roofed zakkyo with walkable exterior steel stairs)
+// Hero Building "海风庄" (Gate 2 Pure-Blender + AI PBR v4) anchored at the sunlit SE corner.
+// Local Blender (bx, by, bz) maps to world via:
+//   x = HERO_HAIKAZE.x - bx,  y = HERO_HAIKAZE.baseY + bz,  z = HERO_HAIKAZE.z + by  (rotY = PI).
 export const HERO_HAIKAZE = Object.freeze({
-  dx: 12.2,
-  dz: 34.4,
+  x: 10.6,
+  z: 21.0,
   rotY: Math.PI,
   baseY: 1.85 + 0.145,
 });
 
-// Single-valued walkable elevation on the Hero Building's exterior staircase & recessed 2F corridor.
-// Local Blender coordinates (bx, by) map to world via dx = HERO.dx - bx, dz = HERO.dz + by (rotY = PI).
-function heroHaikazeElevation(dx, dz) {
-  const bx = HERO_HAIKAZE.dx - dx;
-  const by = dz - HERO_HAIKAZE.dz;
+export function heroLocalToWorld(bx, by, bz = 0) {
+  return {
+    x: HERO_HAIKAZE.x - bx,
+    y: HERO_HAIKAZE.baseY + bz,
+    z: HERO_HAIKAZE.z + by,
+  };
+}
+
+// Unified continuous slope elevation along Z (zero seams between road, plaza & seafront).
+export function townSlopeY(z) {
+  if (z <= -48) return 10.40;
+  if (z <= 0) return lerp(10.40, 1.85, smoothstep(-48, 0, z));
+  if (z <= 29.0) return 1.85;
+  if (z <= 35.0) return lerp(1.85, 1.25, smoothstep(29.0, 35.0, z));
+  if (z <= 40.0) return 1.25;
+  if (z <= 44.5) return lerp(1.25, 1.05, smoothstep(40.0, 44.5, z));
+  return 1.05;
+}
+
+// Single-valued walkable elevation on Haikaze-so's 14-step exterior steel stairs & 2F open corridor.
+export function heroHaikazeElevation(x, z) {
+  const bx = HERO_HAIKAZE.x - x;
+  const by = z - HERO_HAIKAZE.z;
   const baseY = HERO_HAIKAZE.baseY;
   // Exterior steel staircase (bottom pad -> 14 steps -> top landing bridge)
   if (bx >= 4.22 && bx <= 5.62 && by >= -2.72 && by <= 3.84) {
@@ -71,167 +77,89 @@ function heroHaikazeElevation(dx, dz) {
     const t = (by - (-1.95)) / (2.35 - (-1.95));
     return baseY + lerp(0.12, 3.25, t);
   }
-  // Recessed 2F open-air L-shaped concrete corridor & front balcony (strictly outside 2F solid core)
+  // 2F open-air L-shaped concrete corridor & front balcony (outside 2F apartment core)
   if (bx >= -4.24 && bx <= 4.28 && by >= -3.94 && by <= 3.94) {
     if (bx >= 2.52 || by <= -2.18) return baseY + 3.25;
   }
   return null;
 }
 
-function isOnRoadCorridor(dx, dz) {
-  const onMain = Math.abs(dx) <= 6.6 && dz >= -62 && dz <= 65;
-  const onWest = Math.abs(dx + 44) <= 4.3 && dz >= -62 && dz <= 65;
-  const onEast = Math.abs(dx - 44) <= 4.7 && dz >= -62 && dz <= 65;
-  const onUpper = Math.abs(dz - UPPER_Z) <= 5.0 && Math.abs(dx) <= 56;
-  const onMidCross = Math.abs(dz - PLAZA_Z) <= 5.4 && Math.abs(dx) <= 56;
-  const onPlaza = Math.abs(dx) <= 17.0 && dz >= 14.5 && dz <= 34.5;
-  const onHeroAlley = dx >= 3.85 && dx <= 21.0 && dz >= 28.4 && dz <= 45.2;
-  const onBlvd = dz >= 53.5 && dz <= 69.5 && Math.abs(dx) <= 116;
-  return onMain || onWest || onEast || onUpper || onMidCross || onPlaza || onHeroAlley || onBlvd;
+function isOnRoadCorridor(x, z) {
+  const onMain = Math.abs(x) <= 6.2 && z >= -55 && z <= 52;
+  const onCross = Math.abs(z - PLAZA_Z) <= 5.2 && Math.abs(x) <= 54;
+  const onHeroPad = x >= 3.8 && x <= 19.2 && z >= 13.5 && z <= 27.6;
+  const onWestPlaza = x >= -16.0 && x <= -3.8 && z >= 13.5 && z <= 24.0;
+  const onBlvd = z >= 41.5 && z <= 56.0 && Math.abs(x) <= 84;
+  return onMain || onCross || onHeroPad || onWestPlaza || onBlvd;
 }
 
-function roadSurfaceOffset(dx, dz) {
-  // Slight 0.14m sidewalk step outside main asphalt lanes
-  const inMainAsphalt = Math.abs(dx) <= 3.85 && dz >= -61 && dz <= 64.5;
-  const inWestAsphalt = Math.abs(dx + 44) <= 2.60 && dz >= -61 && dz <= 64.5;
-  const inEastAsphalt = Math.abs(dx - 44) <= 2.90 && dz >= -61 && dz <= 64.5;
-  const inUpperAsphalt = Math.abs(dz - UPPER_Z) <= 3.0 && Math.abs(dx) <= 54;
-  const inMidAsphalt = Math.abs(dz - PLAZA_Z) <= 3.5 && Math.abs(dx) <= 54;
-  const inBlvdAsphalt = Math.abs(dz - BLVD_Z) <= 4.3 && Math.abs(dx) <= 116;
-  if (inMainAsphalt || inWestAsphalt || inEastAsphalt || inUpperAsphalt || inMidAsphalt || inBlvdAsphalt) {
-    return 0.03;
-  }
-  // Plaza & sidewalks sit slightly above asphalt
-  if (isOnRoadCorridor(dx, dz)) return 0.15;
+function roadSurfaceOffset(x, z) {
+  const inMainAsphalt = Math.abs(x) <= 3.85 && z >= -54 && z <= 51.5;
+  const inCrossAsphalt = Math.abs(z - PLAZA_Z) <= 3.45 && Math.abs(x) <= 52;
+  const inBlvdAsphalt = Math.abs(z - BLVD_Z) <= 4.25 && Math.abs(x) <= 82;
+  if (inMainAsphalt || inCrossAsphalt || inBlvdAsphalt) return 0.03;
+  if (isOnRoadCorridor(x, z)) return 0.145;
   return 0.0;
 }
 
 export function coastalTownTerrainHeight(x, z) {
-  const dx = x - CX;
-  const dz = z - CZ;
-  // Drop sharply past seawall into ocean bed
-  if (dz > SEAWALL_Z + 0.8) {
-    const seaT = smoothstep(SEAWALL_Z + 0.8, SEAWALL_Z + 9.0, dz);
+  if (z > SEAWALL_Z + 0.8) {
+    const seaT = smoothstep(SEAWALL_Z + 0.8, SEAWALL_Z + 9.0, z);
     return lerp(0.85, OCEAN_Y - 1.5, seaT);
   }
+  let y = townSlopeY(z);
 
-  let y = townSlopeY(dz);
-
-  // North green hillside rising gently behind the stone retaining wall (dz < -71)
-  if (dz < -69) {
-    const hillT = smoothstep(-69, -110, dz);
-    const wave = 0.5 + 0.5 * Math.sin(dx * 0.042 + 0.8) * Math.cos(dz * 0.035);
-    y += hillT * (14.5 + 6.5 * wave);
+  // North lush hillside rising softly behind the stone retaining wall (z < -60)
+  if (z < -58) {
+    const hillT = smoothstep(-58, -90, z);
+    const wave = 0.5 + 0.5 * Math.sin(x * 0.05 + 0.8) * Math.cos(z * 0.045);
+    y += hillT * (12.0 + 5.5 * wave);
   }
 
-  // Soft green flanking coastal ridges outside the square town blocks (|dx| > 64)
-  if (Math.abs(dx) > 62 && dz < 46) {
-    const flankT = smoothstep(62, 118, Math.abs(dx)) * smoothstep(46, 12, dz);
-    const swell = 0.5 + 0.5 * Math.sin(dz * 0.045 + dx * 0.025);
-    y += flankT * (9.5 + 5.5 * swell);
+  // Gentle coastal meadow swells flanking the corner blocks (keeps sightlines to Haikaze-so open!)
+  if (Math.abs(x) > 22 && z < 32) {
+    const flankT = smoothstep(22, 74, Math.abs(x)) * smoothstep(32, -8, z);
+    const swell = 0.5 + 0.5 * Math.sin(z * 0.05 + x * 0.03);
+    y += flankT * (7.5 + 4.5 * swell);
   }
 
-  // Keep road/plaza/rail corridors slightly recessed (-0.035m) beneath crisp paved meshes
-  if (isOnRoadCorridor(dx, dz) || (Math.abs(dz - RAIL_Z) <= 2.8 && Math.abs(dx) <= 116)) {
-    return townSlopeY(dz) - 0.035;
+  if (isOnRoadCorridor(x, z) || (Math.abs(z - RAIL_Z) <= 2.8 && Math.abs(x) <= 88)) {
+    return townSlopeY(z) - 0.035;
   }
   return y;
 }
 
 export function coastalTownSurfaceHeight(x, z, includeElevated = true) {
-  const dx = x - CX;
-  const dz = z - CZ;
   if (includeElevated) {
-    const heroY = heroHaikazeElevation(dx, dz);
+    const heroY = heroHaikazeElevation(x, z);
     if (heroY !== null) return heroY;
   }
-  if (isOnRoadCorridor(dx, dz)) {
-    return townSlopeY(dz) + roadSurfaceOffset(dx, dz);
+  if (isOnRoadCorridor(x, z)) {
+    return townSlopeY(z) + roadSurfaceOffset(x, z);
   }
-  if (Math.abs(dz - RAIL_Z) <= 2.6 && Math.abs(dx) <= 116) {
+  if (Math.abs(z - RAIL_Z) <= 2.6 && Math.abs(x) <= 88) {
     return townSlopeY(RAIL_Z) + 0.04;
   }
   return coastalTownTerrainHeight(x, z);
 }
 
-export function inCoastalTown(x, z) {
-  return Math.abs(x - CX) <= HALF_X + 6 && Math.abs(z - CZ) <= HALF_Z + 6;
+export function townPlace(x, z) {
+  const bx = HERO_HAIKAZE.x - x;
+  const by = z - HERO_HAIKAZE.z;
+  const elev = heroHaikazeElevation(x, z);
+  if (elev !== null) {
+    return elev > HERO_HAIKAZE.baseY + 2.6 ? '海风庄 · 二楼走廊' : '海风庄 · 外挂楼梯';
+  }
+  if (Math.abs(bx) < 7.2 && by >= -8.0 && by <= -3.5) return '海风拉面门前';
+  if (z < -10) return '榕湾观海坡道';
+  if (Math.abs(z - RAIL_Z) < 4.5) return '海岸铁道口';
+  if (z > 41) return '海滨观海大道';
+  return '榕湾海风街角';
 }
 
 // ==============================================================================
-// Modular Town Layout: 3x3 Compact Grid (36+ Beveled Blender Buildings)
+// Collision: Haikaze-so Flush-Wall 1F + Walkable Stairs + 2F Corridor + World Bounds
 // ==============================================================================
-// rotY convention: glTF front is +Z.
-//   0        -> faces +Z (South, toward ocean)
-//   PI       -> faces -Z (North, uphill)
-//   +PI/2    -> faces +X (East)
-//   -PI/2    -> faces -X (West)
-const BUILDINGS = [
-  // --- Central Slope Avenue · West Side (dx = -10.8, facing East +X) ---
-  { mesh: 'Town_Shop_Corner',  dx: -10.9, dz: -38.0, rotY:  Math.PI / 2, halfW: 3.6, halfD: 4.1 },
-  { mesh: 'Town_Shop_Tall',    dx: -10.7, dz: -26.5, rotY:  Math.PI / 2, halfW: 3.5, halfD: 3.8 },
-  { mesh: 'Town_Shop_Corner',  dx: -10.9, dz: -15.0, rotY:  Math.PI / 2, halfW: 3.6, halfD: 4.1 },
-  { mesh: 'Town_Shop_Tall',    dx: -10.7, dz:  -3.5, rotY:  Math.PI / 2, halfW: 3.5, halfD: 3.8 },
-  { mesh: 'Town_Shop_Konbini', dx: -11.0, dz:   8.0, rotY:  Math.PI / 2, halfW: 3.7, halfD: 4.8 },
-
-  // --- Central Slope Avenue · East Side (dx = +10.8, facing West -X) ---
-  { mesh: 'Town_Shop_Tall',    dx:  10.7, dz: -38.0, rotY: -Math.PI / 2, halfW: 3.5, halfD: 3.8 },
-  { mesh: 'Town_Shop_Corner',  dx:  10.9, dz: -26.5, rotY: -Math.PI / 2, halfW: 3.6, halfD: 4.1 },
-  { mesh: 'Town_Shop_Tall',    dx:  10.7, dz: -15.0, rotY: -Math.PI / 2, halfW: 3.5, halfD: 3.8 },
-  { mesh: 'Town_Shop_Corner',  dx:  10.9, dz:  -3.5, rotY: -Math.PI / 2, halfW: 3.6, halfD: 4.1 },
-  { mesh: 'Town_Shop_Tall',    dx:  10.7, dz:   8.0, rotY: -Math.PI / 2, halfW: 3.5, halfD: 3.8 },
-
-  // --- Central Plaza Flanking & Lower Block (facing Plaza / Cross Street) ---
-  { mesh: 'Town_Shop_Konbini', dx: -24.5, dz:  15.2, rotY: 0,           halfW: 4.8, halfD: 3.7 },
-  { mesh: 'Town_Shop_Corner',  dx:  24.5, dz:  15.2, rotY: 0,           halfW: 4.2, halfD: 3.6 },
-  { mesh: 'Town_Shop_Corner',  dx: -14.0, dz:  37.8, rotY: Math.PI,     halfW: 4.2, halfD: 3.6 },
-  { mesh: 'Town_Shop_Tall',    dx: -26.5, dz:  37.8, rotY: Math.PI,     halfW: 3.8, halfD: 3.5 },
-  // Direction A Hero Building ("海风庄") at iconic SE Plaza corner + 2.5m East cut-through side alley!
-  { mesh: 'Town_Hero_Haikaze', dx: HERO_HAIKAZE.dx, dz: HERO_HAIKAZE.dz, rotY: HERO_HAIKAZE.rotY, y: HERO_HAIKAZE.baseY, customCollision: true, multiMaterial: true, halfW: 4.32, halfD: 3.96 },
-  { mesh: 'Town_Shop_Corner',  dx:  23.1, dz:  35.4, rotY: Math.PI,     halfW: 4.2, halfD: 3.6 },
-  { mesh: 'Town_Shop_Tall',    dx:  33.6, dz:  36.4, rotY: Math.PI,     halfW: 3.8, halfD: 3.5 },
-
-  // --- Upper Residential Street · North Row (dx -48..+48, dz = -66.8, facing South +Z) ---
-  { mesh: 'Town_House_SlopeA', dx: -48.0, dz: -66.8, rotY: 0,           halfW: 4.0, halfD: 3.9 },
-  { mesh: 'Town_House_SlopeB', dx: -33.0, dz: -66.8, rotY: 0,           halfW: 4.4, halfD: 3.7 },
-  { mesh: 'Town_House_SlopeA', dx: -18.0, dz: -66.8, rotY: 0,           halfW: 4.0, halfD: 3.9 }, // A-Chai's rented room!
-  { mesh: 'Town_House_SlopeB', dx:  -3.0, dz: -66.8, rotY: 0,           halfW: 4.4, halfD: 3.7 },
-  { mesh: 'Town_House_SlopeA', dx:  12.0, dz: -66.8, rotY: 0,           halfW: 4.0, halfD: 3.9 },
-  { mesh: 'Town_House_SlopeB', dx:  27.5, dz: -66.8, rotY: 0,           halfW: 4.4, halfD: 3.7 },
-  { mesh: 'Town_House_SlopeA', dx:  43.0, dz: -66.8, rotY: 0,           halfW: 4.0, halfD: 3.9 },
-
-  // --- Upper Street South Side & Inner Residential Terraces (West & East Blocks) ---
-  { mesh: 'Town_House_SlopeB', dx: -28.0, dz: -47.2, rotY: Math.PI,     halfW: 4.4, halfD: 3.7 },
-  { mesh: 'Town_House_SlopeA', dx: -14.5, dz: -47.2, rotY: Math.PI,     halfW: 4.0, halfD: 3.9 },
-  { mesh: 'Town_House_SlopeA', dx:  14.5, dz: -47.2, rotY: Math.PI,     halfW: 4.0, halfD: 3.9 },
-  { mesh: 'Town_House_SlopeB', dx:  28.5, dz: -47.2, rotY: Math.PI,     halfW: 4.4, halfD: 3.7 },
-
-  // Inner West block houses (facing West Shortcut Alley dx = -44)
-  { mesh: 'Town_House_SlopeA', dx: -34.2, dz: -31.0, rotY: -Math.PI / 2, halfW: 3.9, halfD: 4.0 },
-  { mesh: 'Town_House_SlopeB', dx: -34.2, dz: -15.5, rotY: -Math.PI / 2, halfW: 3.7, halfD: 4.4 },
-  { mesh: 'Town_House_SlopeA', dx: -34.2, dz:   0.5, rotY: -Math.PI / 2, halfW: 3.9, halfD: 4.0 },
-
-  // Outer West side of West Alley (facing East +X onto West Alley)
-  { mesh: 'Town_House_SlopeB', dx: -53.8, dz: -35.0, rotY:  Math.PI / 2, halfW: 3.7, halfD: 4.4 },
-  { mesh: 'Town_Shop_Corner',  dx: -54.0, dz: -18.5, rotY:  Math.PI / 2, halfW: 3.6, halfD: 4.1 },
-  { mesh: 'Town_House_SlopeA', dx: -53.8, dz:  -2.0, rotY:  Math.PI / 2, halfW: 3.9, halfD: 4.0 },
-  { mesh: 'Town_Shop_Tall',    dx: -54.0, dz:  14.0, rotY:  Math.PI / 2, halfW: 3.5, halfD: 3.8 },
-  { mesh: 'Town_Shop_Corner',  dx: -54.0, dz:  37.5, rotY:  Math.PI / 2, halfW: 3.6, halfD: 4.1 },
-
-  // Inner East block houses (facing East Shop Lane dx = +44)
-  { mesh: 'Town_House_SlopeB', dx:  34.0, dz: -31.0, rotY:  Math.PI / 2, halfW: 3.7, halfD: 4.4 },
-  { mesh: 'Town_House_SlopeA', dx:  34.0, dz: -15.5, rotY:  Math.PI / 2, halfW: 3.9, halfD: 4.0 },
-  { mesh: 'Town_Shop_Corner',  dx:  34.2, dz:   0.5, rotY:  Math.PI / 2, halfW: 3.6, halfD: 4.1 },
-
-  // Outer East side of East Lane (facing West -X onto East Lane)
-  { mesh: 'Town_House_SlopeA', dx:  54.2, dz: -35.0, rotY: -Math.PI / 2, halfW: 3.9, halfD: 4.0 },
-  { mesh: 'Town_Shop_Tall',    dx:  54.2, dz: -18.5, rotY: -Math.PI / 2, halfW: 3.5, halfD: 3.8 },
-  { mesh: 'Town_House_SlopeB', dx:  54.2, dz:  -2.0, rotY: -Math.PI / 2, halfW: 3.7, halfD: 4.4 },
-  { mesh: 'Town_Shop_Konbini', dx:  54.6, dz:  14.0, rotY: -Math.PI / 2, halfW: 3.7, halfD: 4.8 },
-  { mesh: 'Town_Shop_Tall',    dx:  54.2, dz:  37.5, rotY: -Math.PI / 2, halfW: 3.5, halfD: 3.8 },
-];
-
-// Collision boxes (buildings + trackside embankment guard strips outside crossings)
 function pushOutAABB(pos, cx, cz, halfW, halfD, margin) {
   const lx = pos.x - cx;
   const lz = pos.z - cz;
@@ -244,170 +172,55 @@ function pushOutAABB(pos, cx, cz, halfW, halfD, margin) {
   else pos.z = cz + (lz >= 0 ? wz : -wz);
 }
 
-// Push a world position cleanly out of a Hero Building local Blender AABB [bx0, bx1] x [by0, by1]
 function pushOutHeroLocal(pos, bx0, bx1, by0, by1, margin) {
-  const cx = CX + HERO_HAIKAZE.dx - (bx0 + bx1) * 0.5;
-  const cz = CZ + HERO_HAIKAZE.dz + (by0 + by1) * 0.5;
+  const cx = HERO_HAIKAZE.x - (bx0 + bx1) * 0.5;
+  const cz = HERO_HAIKAZE.z + (by0 + by1) * 0.5;
   pushOutAABB(pos, cx, cz, (bx1 - bx0) * 0.5, (by1 - by0) * 0.5, margin);
 }
 
 export function constrainCoastalTown(x, z, walking) {
-  const margin = walking ? 0.45 : 0.80;
+  const margin = walking ? 0.42 : 0.78;
   const pos = {
-    x: clamp(x, CX - 102, CX + 102),
-    z: clamp(z, CZ - 63.0, CZ + SEAWALL_Z - (walking ? 0.75 : 1.15)),
+    x: clamp(x, WORLD_BOUNDS.minX, WORLD_BOUNDS.maxX),
+    z: clamp(z, WORLD_BOUNDS.minZ, SEAWALL_Z - (walking ? 0.75 : 1.15)),
   };
 
-  // Push cleanly out of all standard town buildings
-  for (const b of BUILDINGS) {
-    if (b.customCollision) continue;
-    pushOutAABB(pos, CX + b.dx, CZ + b.dz, b.halfW, b.halfD, margin);
-  }
-
-  // Hero Building ("海风庄") multi-level walkable exterior stairs & 2F corridor collision
   if (!walking) {
-    // Riding: keep scooter strictly outside both main building body & exterior staircase footprint
+    // Riding: keep scooter strictly outside Haikaze-so main body & exterior staircase footprint
     pushOutHeroLocal(pos, -4.32, 4.32, -3.96, 3.96, margin);
-    pushOutHeroLocal(pos, 4.25, 5.65, -2.75, 3.85, 0.65);
+    pushOutHeroLocal(pos, 4.25, 5.65, -2.75, 3.85, 0.62);
   } else {
-    // Walking: solid 2F apartment core + perimeter walls/railings with ONLY 2 openings:
+    // Walking: solid 1F/2F core + perimeter rails with 2 clean openings:
     //   1) Staircase bottom entry (by = -2.70, bx in [4.25..5.60])
     //   2) Staircase top landing -> 2F corridor doorway (bx = 4.25, by in [2.35..3.80])
-    const r = 0.28;
-    // W0: 2F solid apartment core (also seals 1F interior from east/south)
+    const r = 0.24;
+    // W0: 2F solid apartment core (also seals 1F interior)
     pushOutHeroLocal(pos, -4.20, 2.55, -2.20, 3.90, r);
-    // W1: Front 1F wall & 2F front balcony railing (prevents ground-to-2F jump AND falling off 2F front)
+    // W1: Front 1F wall & 2F front balcony rail
     pushOutHeroLocal(pos, -4.25, 4.25, -3.98, -3.82, r);
-    // W2: Stair-side 1F wall/vending + 2F corridor railing (stops at by=+2.30 for top landing opening!)
-    pushOutHeroLocal(pos, 4.17, 4.33, -3.90, 2.30, r);
-    // W3: 2F corridor rear railing
+    // W2: Flush stair-side 1F wall & 2F corridor rail (stops at by=+2.30 for top doorway!)
+    pushOutHeroLocal(pos, 4.18, 4.32, -3.90, 2.30, r);
+    // W3: 2F corridor rear rail
     pushOutHeroLocal(pos, 2.55, 4.33, 3.82, 3.98, r);
-    // W4: Staircase top landing rear railing
+    // W4: Staircase top landing rear rail
     pushOutHeroLocal(pos, 4.25, 5.66, 3.72, 3.88, r);
     // W5: Staircase outer railing & steel stringer
     pushOutHeroLocal(pos, 5.52, 5.68, -2.70, 3.88, r);
-    // W6: Alley-side end railing of 2F front balcony
+    // W6: East end railing of 2F front balcony
     pushOutHeroLocal(pos, -4.28, -4.12, -3.98, -2.20, r);
   }
 
-  // Prevent riding straight onto the fenced railway ballast away from the 3 level crossings
-  const dx = pos.x - CX;
-  const dz = pos.z - CZ;
-  const nearCrossing = Math.abs(dx) < 5.6 || Math.abs(dx + 44) < 4.2 || Math.abs(dx - 44) < 4.5;
-  if (!nearCrossing && Math.abs(dz - RAIL_Z) < 2.2 + margin * 0.5) {
-    pos.z = CZ + RAIL_Z + (dz >= RAIL_Z ? 2.2 + margin * 0.5 : -(2.2 + margin * 0.5));
+  // Keep riders off the fenced railway track away from the main avenue level crossing
+  if (Math.abs(pos.x) > 5.4 && Math.abs(pos.z - RAIL_Z) < 2.2 + margin * 0.45) {
+    pos.z = RAIL_Z + (pos.z >= RAIL_Z ? 2.2 + margin * 0.45 : -(2.2 + margin * 0.45));
   }
 
   return pos;
 }
 
 // ==============================================================================
-// Stylized PBR Shaders: Architecture, Asphalt, Ocean & Cloud Shadows
+// Stylized Surface Materials: Coastal Asphalt, Warm Masonry & Animated Ocean
 // ==============================================================================
-function createCoastalTownArchMaterial({ allowStone = true } = {}) {
-  const mat = litMaterial({ vertexColors: true, grid: false, roughness: 0.89 });
-  const prev = mat.onBeforeCompile;
-  const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-  mat.onBeforeCompile = (shader, renderer) => {
-    if (prev) prev(shader, renderer);
-    shader.uniforms.uMeadowTime = meadowUniforms.uMeadowTime;
-
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>
-        varying vec3 vTownWorld;
-        varying vec3 vTownLocal;
-        varying vec3 vTownNormW;
-        varying vec3 vTownNormL;`)
-      .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vTownLocal = position;
-        vTownNormL = normal;
-        vTownWorld = (modelMatrix * vec4(position, 1.0)).xyz;
-        vTownNormW = normalize(mat3(modelMatrix) * normal);`);
-
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>
-        varying vec3 vTownWorld;
-        varying vec3 vTownLocal;
-        varying vec3 vTownNormW;
-        varying vec3 vTownNormL;
-        ` + MEADOW_COMMON_GLSL)
-      .replace('#include <color_fragment>', `#include <color_fragment>
-        vec3 wPos = vTownWorld;
-        vec3 lPos = vTownLocal;
-        vec3 wN = normalize(vTownNormW);
-        vec3 lN = normalize(vTownNormL);
-        vec3 c = diffuseColor.rgb;
-
-        // Detect window glass (exact 0x527a78 blue-teal) for sunlit daytime sky glint
-        float isGlass = smoothstep(0.18, 0.08, c.r)
-                      * smoothstep(1.30, 1.80, c.g / max(c.r, 0.01))
-                      * smoothstep(1.22, 1.72, c.b / max(c.r, 0.01))
-                      * (1.0 - smoothstep(0.25, 0.55, abs(wN.y)));
-
-        // Detect sloped roof surfaces (terracotta, coastal blue, or sage tile)
-        float isSlope = smoothstep(0.20, 0.38, wN.y) * (1.0 - smoothstep(0.90, 0.97, wN.y));
-        float chroma = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
-        float isRoofTile = isSlope * smoothstep(0.06, 0.14, chroma);
-
-        // Detect concrete/stone plinths & retaining bases (disabled for Hero_Plaster so shadowed stucco stays clean!)
-        float luma = dot(c, vec3(0.299, 0.587, 0.114));
-        float isStone = ${allowStone ? `(1.0 - isGlass) * (1.0 - isRoofTile)
-                      * smoothstep(0.11, 0.04, chroma)
-                      * smoothstep(0.46, 0.34, luma)
-                      * smoothstep(0.75, 0.35, wN.y)` : '0.0'};
-
-        float isPlaster = (1.0 - isGlass) * (1.0 - isRoofTile) * (1.0 - isStone);
-
-        if (isRoofTile > 0.01) {
-          vec2 slopeDir = length(lN.xz) > 0.05 ? normalize(lN.xz) : vec2(0.0, 1.0);
-          vec2 acrossDir = vec2(-slopeDir.y, slopeDir.x);
-          float uA = dot(lPos.xz, acrossDir);
-          float vD = lPos.y * 1.45 + dot(lPos.xz, slopeDir) * 0.78;
-          float colIdx = floor(uA / 0.28);
-          float rowIdx = floor(vD / 0.34);
-          float rib = sin(fract(uA / 0.28) * 6.28318);
-          float lap = smoothstep(0.0, 0.18, fract(vD / 0.34));
-          float tileRand = mHash(vec2(colIdx, rowIdx));
-          vec3 tileTint = mix(vec3(0.92, 0.94, 0.98), vec3(1.08, 1.03, 0.97), tileRand);
-          float shade = (0.92 + 0.08 * rib) * mix(0.86, 1.04, lap);
-          c = mix(c, c * tileTint * shade, isRoofTile);
-        }
-
-        if (isStone > 0.01) {
-          float sx = wPos.x + wPos.z;
-          float row = floor(wPos.y * 2.2);
-          float stagger = mod(row, 2.0) * 0.5;
-          float fx = fract(sx * 0.95 + stagger);
-          float fy = fract(wPos.y * 2.2);
-          float mortar = smoothstep(0.0, 0.08, fx) * smoothstep(0.0, 0.08, 1.0 - fx)
-                       * smoothstep(0.0, 0.11, fy) * smoothstep(0.0, 0.11, 1.0 - fy);
-          float blockTone = 0.93 + 0.12 * mHash(vec2(floor(sx * 0.95 + stagger), row));
-          c = mix(c, c * blockTone * mix(0.84, 1.02, mortar), isStone * 0.65);
-        }
-
-        if (isPlaster > 0.01) {
-          float pMacro = mNoise(vec2(wPos.x + wPos.z, wPos.y * 1.15) * 0.40);
-          float pFine  = mNoise(vec2(wPos.x - wPos.z, wPos.y * 1.50) * 2.4);
-          vec3 gouache = mix(vec3(0.96, 0.97, 1.00), vec3(1.04, 1.02, 0.97), pMacro)
-                       * mix(0.97, 1.03, pFine);
-          c = mix(c, c * gouache, isPlaster * 0.80);
-        }
-
-        if (isGlass > 0.01) {
-          float diag = fract((lPos.x + lPos.z) * 0.42 + lPos.y * 0.62);
-          float sheen = smoothstep(0.32, 0.50, diag) * (1.0 - smoothstep(0.54, 0.72, diag));
-          float topGrad = smoothstep(0.4, 6.0, lPos.y);
-          vec3 skyGlass = c * mix(0.92, 1.24, topGrad * 0.45 + sheen * 0.65);
-          c = mix(c, skyGlass, isGlass);
-        }
-
-        vec3 cloud = mix(vec3(1.0), meadowCloudShadow(wPos.xz, uMeadowTime), 0.28);
-        diffuseColor.rgb = c * cloud;`);
-  };
-  mat.customProgramCacheKey = () => prevKey() + (allowStone ? '|coastal-town-arch-v1' : '|coastal-town-arch-plaster-v1');
-  return mat;
-}
-
 function makeAsphaltTexture() {
   const { canvas, ctx, w, h } = makeCanvas(256, 256);
   const img = ctx.createImageData(w, h);
@@ -419,11 +232,10 @@ function makeAsphaltTexture() {
       const v = y / h;
       const macro = fbm2D(u * 4, v * 4, 3, 17, 4);
       const grain = fbm2D(u * 32, v * 32, 2, 83, 32);
-      // Clean sunlit coastal Japanese slate-blue-grey asphalt
       const s = 0.88 + macro * 0.11 + grain * 0.09;
-      d[i++] = Math.min(255, Math.round(108 * s));
-      d[i++] = Math.min(255, Math.round(115 * s));
-      d[i++] = Math.min(255, Math.round(123 * s));
+      d[i++] = Math.min(255, Math.round(112 * s));
+      d[i++] = Math.min(255, Math.round(119 * s));
+      d[i++] = Math.min(255, Math.round(127 * s));
       d[i++] = 255;
     }
   }
@@ -431,14 +243,39 @@ function makeAsphaltTexture() {
   return canvasTexture(canvas, { repeat: true, aniso: 4 });
 }
 
-function createOceanMaterial() {
-  const mat = litMaterial({ color: 0x3f9ec4, roughness: 0.24, grid: false });
+function createCivilMaterial() {
+  const mat = litMaterial({ vertexColors: true, grid: false, roughness: 0.90 });
   const prev = mat.onBeforeCompile;
   const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
   mat.onBeforeCompile = (shader, renderer) => {
     if (prev) prev(shader, renderer);
     shader.uniforms.uMeadowTime = meadowUniforms.uMeadowTime;
-    shader.uniforms.uCoastZ = { value: CZ + SEAWALL_Z };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCivilW;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vCivilW = (modelMatrix * vec4(position, 1.0)).xyz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCivilW;\n' + MEADOW_COMMON_GLSL)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float grain = mNoise(vCivilW.xz * 1.15 + vCivilW.y * 0.8);
+        vec3 cloud = mix(vec3(1.0), meadowCloudShadow(vCivilW.xz, uMeadowTime), 0.24);
+        diffuseColor.rgb *= mix(0.96, 1.04, grain) * cloud;`);
+  };
+  mat.customProgramCacheKey = () => prevKey() + '|rongwan-civil-v2';
+  return mat;
+}
+
+function createOceanMaterial() {
+  const mat = litMaterial({ color: 0x3f9ec4, roughness: 0.24, grid: false });
+  const prev = mat.onBeforeCompile;
+  const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
+  const waterTintUniform = { value: new THREE.Color(0xffffff) };
+  mat.userData.waterTintUniform = waterTintUniform;
+  mat.onBeforeCompile = (shader, renderer) => {
+    if (prev) prev(shader, renderer);
+    shader.uniforms.uMeadowTime = meadowUniforms.uMeadowTime;
+    shader.uniforms.uCoastZ = { value: SEAWALL_Z };
+    shader.uniforms.uWaterTint = waterTintUniform;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec2 vOceanXZ;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -446,6 +283,7 @@ function createOceanMaterial() {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         uniform float uCoastZ;
+        uniform vec3 uWaterTint;
         varying vec2 vOceanXZ;
         ` + MEADOW_COMMON_GLSL)
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -455,12 +293,10 @@ function createOceanMaterial() {
         float glint = smoothstep(0.62, 0.96, 0.5 + 0.5 * w1 * w2);
         float sparkle = smoothstep(0.84, 0.98, mNoise(vOceanXZ * 0.72 + vec2(uMeadowTime * 0.6, -uMeadowTime * 0.45)));
 
-        // Shallow turquoise near seawall -> rich Kamakura cobalt-azure offshore
         vec3 shallow = vec3(0.14, 0.54, 0.66);
         vec3 deep = vec3(0.08, 0.34, 0.58);
         vec3 sea = mix(shallow, deep, smoothstep(6.0, 95.0, distShore));
 
-        // Animated shoreline foam ribbons near seawall
         float foamWave = sin(distShore * 1.4 - uMeadowTime * 2.1 + mNoise(vOceanXZ * 0.22) * 2.2);
         float foamMask = (1.0 - smoothstep(0.0, 8.5, distShore)) * smoothstep(0.28, 0.78, foamWave);
         float edgeFoam = (1.0 - smoothstep(0.0, 2.2, distShore)) * 0.75;
@@ -468,22 +304,22 @@ function createOceanMaterial() {
         sea = mix(sea, vec3(0.68, 0.88, 0.96), glint * 0.32 + sparkle * 0.38);
         sea = mix(sea, vec3(0.92, 0.96, 0.98), clamp(foamMask * 0.65 + edgeFoam, 0.0, 0.85));
 
-        vec3 cs = mix(vec3(1.0), meadowCloudShadow(vOceanXZ, uMeadowTime), 0.22);
-        diffuseColor.rgb = sea * cs;`);
+        vec3 cs = mix(vec3(1.0), meadowCloudShadow(vOceanXZ, uMeadowTime), 0.20);
+        diffuseColor.rgb = sea * cs * uWaterTint;`);
   };
-  mat.customProgramCacheKey = () => prevKey() + '|coastal-town-ocean-v1';
+  mat.customProgramCacheKey = () => prevKey() + '|rongwan-ocean-v2';
   return mat;
 }
 
 // ==============================================================================
-// Unified Terrain, Sloped Asphalt Roads, Crosswalks, Railway, Seawall & Skyline
+// Terrain, Sloped Roads, Corner Terrace, Railway Bed & Seawall Promenade
 // ==============================================================================
 function buildTownTerrain(root) {
   const step = 4.0;
   const xs = [];
   const zs = [];
-  for (let dx = -HALF_X; dx <= HALF_X + 0.01; dx += step) xs.push(dx);
-  for (let dz = -HALF_Z; dz <= 80 + 0.01; dz += step) zs.push(dz);
+  for (let x = -HALF_X; x <= HALF_X + 0.01; x += step) xs.push(x);
+  for (let z = HALF_Z_NORTH; z <= 68 + 0.01; z += step) zs.push(z);
   const nx = xs.length;
   const nz = zs.length;
   const eps = 0.8;
@@ -493,9 +329,9 @@ function buildTownTerrain(root) {
   const indices = [];
 
   for (let ix = 0; ix < nx; ix++) {
-    const x = CX + xs[ix];
+    const x = xs[ix];
     for (let iz = 0; iz < nz; iz++) {
-      const z = CZ + zs[iz];
+      const z = zs[iz];
       const y = coastalTownTerrainHeight(x, z);
       const hx = (coastalTownTerrainHeight(x + eps, z) - coastalTownTerrainHeight(x - eps, z)) / (2 * eps);
       const hz = (coastalTownTerrainHeight(x, z + eps) - coastalTownTerrainHeight(x, z - eps)) / (2 * eps);
@@ -509,7 +345,6 @@ function buildTownTerrain(root) {
       nor[v + 2] = -hz / len;
     }
   }
-
   for (let ix = 0; ix < nx - 1; ix++) {
     for (let iz = 0; iz < nz - 1; iz++) {
       const a = ix * nz + iz;
@@ -535,267 +370,157 @@ function buildTownTerrain(root) {
   return geo;
 }
 
-// Helper: add a sloped asphalt or sidewalk ribbon along Z (constant X, varying Z)
 function addSlopedRibbonZ(builder, xCenter, halfW, zStart, zEnd, steps, yOff, color, uvScale = 0.14) {
   for (let i = 0; i < steps; i++) {
     const z0 = lerp(zStart, zEnd, i / steps);
     const z1 = lerp(zStart, zEnd, (i + 1) / steps);
     const y0 = townSlopeY(z0) + yOff;
     const y1 = townSlopeY(z1) + yOff;
-    const xL = CX + xCenter - halfW;
-    const xR = CX + xCenter + halfW;
-    const vz0 = CZ + z0;
-    const vz1 = CZ + z1;
+    const xL = xCenter - halfW;
+    const xR = xCenter + halfW;
     const dy = y1 - y0;
     const dz = z1 - z0;
     const len = Math.hypot(dy, dz) || 1;
     const n = [0, dz / len, -dy / len];
     builder.quad(
-      [xL, y0, vz0], [xL, y1, vz1], [xR, y1, vz1], [xR, y0, vz0],
-      {
-        color,
-        normal: n,
-        uvs: [[0, z0 * uvScale], [0, z1 * uvScale], [1, z1 * uvScale], [1, z0 * uvScale]],
-      },
+      [xL, y0, z0], [xL, y1, z1], [xR, y1, z1], [xR, y0, z0],
+      { color, normal: n, uvs: [[0, z0 * uvScale], [0, z1 * uvScale], [1, z1 * uvScale], [1, z0 * uvScale]] },
     );
   }
 }
 
-// Helper: add a flat horizontal road ribbon along X (constant Z)
 function addFlatRibbonX(builder, xStart, xEnd, zCenter, halfD, yOff, color, uvScale = 0.14) {
   const y = townSlopeY(zCenter) + yOff;
-  const x0 = CX + xStart;
-  const x1 = CX + xEnd;
-  const z0 = CZ + zCenter - halfD;
-  const z1 = CZ + zCenter + halfD;
+  const z0 = zCenter - halfD;
+  const z1 = zCenter + halfD;
   builder.quad(
-    [x0, y, z0], [x0, y, z1], [x1, y, z1], [x1, y, z0],
-    {
-      color,
-      normal: [0, 1, 0],
-      uvs: [[xStart * uvScale, 0], [xStart * uvScale, 1], [xEnd * uvScale, 1], [xEnd * uvScale, 0]],
-    },
+    [xStart, y, z0], [xStart, y, z1], [xEnd, y, z1], [xEnd, y, z0],
+    { color, normal: [0, 1, 0], uvs: [[xStart * uvScale, 0], [xStart * uvScale, 1], [xEnd * uvScale, 1], [xEnd * uvScale, 0]] },
   );
 }
 
-function buildTownRoadsAndCivil(root, trackTex, trackMat) {
-  const asphaltTex = trackTex(makeAsphaltTexture());
-  const asphaltMat = trackMat(litMaterial({ map: asphaltTex, vertexColors: true, roughness: 0.92, grid: false }));
-  const civilMat = trackMat(createCoastalTownArchMaterial());
+function buildRoadsAndCivil(root) {
+  const asphaltTex = makeAsphaltTexture();
+  const asphaltMat = litMaterial({ map: asphaltTex, vertexColors: true, roughness: 0.92, grid: false });
+  const civilMat = createCivilMaterial();
 
   const asphalt = new GeoBuilder({ uv: true, color: true });
   const civil = new GeoBuilder({ color: true });
 
-  // 1) Three North-South sloped avenues (+0.28m overlap under curbs so zero grass seam leaks!)
-  addSlopedRibbonZ(asphalt,   0.0, 4.15, -61.5, 64.5, 36, 0.03, 0xffffff);
-  addSlopedRibbonZ(asphalt, -44.0, 2.88, -61.5, 64.5, 36, 0.03, 0xf2f2f2);
-  addSlopedRibbonZ(asphalt,  44.0, 3.18, -61.5, 64.5, 36, 0.03, 0xf5f5f5);
+  // 1) Main Coastal Slope Avenue (North-South, x = 0)
+  addSlopedRibbonZ(asphalt, 0.0, 4.10, -54.5, 51.5, 34, 0.03, 0xffffff);
+  // 2) Cross Street running past Haikaze-so shopfront (z = PLAZA_Z = 10.5)
+  addFlatRibbonX(asphalt, -52, 52, PLAZA_Z, 3.65, 0.036, 0xffffff);
+  // 3) Oceanfront Boulevard (z = BLVD_Z = 47.0)
+  addFlatRibbonX(asphalt, -86, 86, BLVD_Z, 4.45, 0.036, 0xfafafa);
 
-  // 2) Three East-West horizontal streets (Upper Street, Central Cross Street, Coastal Boulevard)
-  addFlatRibbonX(asphalt, -55,  55, UPPER_Z, 3.25, 0.036, 0xffffff);
-  addFlatRibbonX(asphalt, -56,  56, PLAZA_Z, 3.72, 0.038, 0xffffff);
-  addFlatRibbonX(asphalt, -124, 124, BLVD_Z, 4.55, 0.036, 0xfafafa);
-
-  // 3) Sidewalks along all avenues (clean warm cream-grey coastal concrete)
-  const sideCol = 0xe4dcc8;
+  // 4) Sidewalks & Curbs along Main Avenue
+  const sideCol = 0xe5ddc9;
   const curbCol = 0xc5bca9;
-  for (const [cx, roadH, walkW] of [[0, 3.85, 2.75], [-44, 2.60, 1.65], [44, 2.90, 1.80]]) {
-    for (const s of [-1, 1]) {
-      // Split around Upper Street (-58), Plaza (+25), Rail (+48), and Blvd (+60)
-      const spans = cx === 0
-        ? [[-54.8, 14.5], [34.5, 45.2], [50.8, 55.6]]
-        : [[-54.8, 21.4], [28.6, 45.2], [50.8, 55.6]];
-      for (const [za, zb] of spans) {
-        const segs = Math.max(4, Math.round((zb - za) / 4));
-        addSlopedRibbonZ(civil, cx + s * (roadH + walkW * 0.5), walkW * 0.5, za, zb, segs, 0.145, sideCol);
-        // Curb vertical step face
-        for (let i = 0; i < segs; i++) {
-          const z0 = lerp(za, zb, i / segs);
-          const z1 = lerp(za, zb, (i + 1) / segs);
-          const y0 = townSlopeY(z0);
-          const y1 = townSlopeY(z1);
-          const edgeX = CX + cx + s * roadH;
-          if (s > 0) {
-            civil.quad(
-              [edgeX, y0 + 0.02, CZ + z0], [edgeX, y0 + 0.145, CZ + z0],
-              [edgeX, y1 + 0.145, CZ + z1], [edgeX, y1 + 0.02, CZ + z1],
-              { color: curbCol, normal: [-1, 0, 0] },
-            );
-          } else {
-            civil.quad(
-              [edgeX, y0 + 0.145, CZ + z0], [edgeX, y0 + 0.02, CZ + z0],
-              [edgeX, y1 + 0.02, CZ + z1], [edgeX, y1 + 0.145, CZ + z1],
-              { color: curbCol, normal: [1, 0, 0] },
-            );
-          }
+  for (const s of [-1, 1]) {
+    const spans = [[-53.5, 6.8], [14.2, 34.4], [39.6, 42.6]];
+    for (const [za, zb] of spans) {
+      const segs = Math.max(4, Math.round((zb - za) / 4));
+      addSlopedRibbonZ(civil, s * (3.85 + 1.25), 1.25, za, zb, segs, 0.145, sideCol);
+      for (let i = 0; i < segs; i++) {
+        const z0 = lerp(za, zb, i / segs);
+        const z1 = lerp(za, zb, (i + 1) / segs);
+        const y0 = townSlopeY(z0);
+        const y1 = townSlopeY(z1);
+        const edgeX = s * 3.85;
+        if (s > 0) {
+          civil.quad(
+            [edgeX, y0 + 0.02, z0], [edgeX, y0 + 0.145, z0],
+            [edgeX, y1 + 0.145, z1], [edgeX, y1 + 0.02, z1],
+            { color: curbCol, normal: [-1, 0, 0] },
+          );
+        } else {
+          civil.quad(
+            [edgeX, y0 + 0.145, z0], [edgeX, y0 + 0.02, z0],
+            [edgeX, y1 + 0.02, z1], [edgeX, y1 + 0.145, z1],
+            { color: curbCol, normal: [1, 0, 0] },
+          );
         }
       }
     }
   }
 
-  // Upper Residential Street sidewalks (North & South edges)
-  addFlatRibbonX(civil, -55, 55, UPPER_Z - 4.05, 1.10, 0.15, sideCol);
-  for (const [xa, xb] of [[-41.2, -6.6], [6.6, 41.0]]) {
-    addFlatRibbonX(civil, xa, xb, UPPER_Z + 4.05, 1.10, 0.15, sideCol);
+  // Cross Street north & south sidewalks
+  for (const [xa, xb] of [[-52, -6.2], [6.2, 52]]) {
+    addFlatRibbonX(civil, xa, xb, PLAZA_Z - 4.45, 1.0, 0.145, sideCol);
+    addFlatRibbonX(civil, xa, xb, PLAZA_Z + 4.45, 1.0, 0.145, sideCol);
   }
 
-  // Central Town Plaza paved warm sandstone terrace & flanking commercial lot aprons
-  const plazaCol = 0xe8d9bc;
-  const lotApronCol = 0xd6cfc0;
-  for (const sx of [-1, 1]) {
-    for (const [za, zb] of [[12.5, 21.6], [28.4, 44.8]]) {
-      const xm = sx * 22.5;
-      const zm = (za + zb) * 0.5;
-      civil.box(CX + xm, townSlopeY(zm) + 0.02, CZ + zm, 37.2, 0.25, zb - za, { color: Math.abs(xm) < 20 ? plazaCol : lotApronCol });
-    }
-    // Warm sandstone corner pads right around the central intersection (extends cleanly under SE Hero Building)
-    for (const [za, zb] of [[14.5, 21.6], [28.4, sx > 0 ? 38.6 : 34.5]]) {
-      const xm = sx * 10.6;
-      const zm = (za + zb) * 0.5;
-      civil.box(CX + xm, townSlopeY(zm) + 0.035, CZ + zm, 13.4, 0.25, zb - za, { color: plazaCol });
-    }
-    // Cozy wood-and-iron plaza benches + brick tree planter rings on the 4 plaza corners
-    const bY = townSlopeY(17.8) + 0.16;
-    civil.box(CX + sx * 10.2, bY + 0.34, CZ + 18.2, 1.9, 0.10, 0.52, { color: 0xa4744c });
-    civil.box(CX + sx * 10.2, bY + 0.62, CZ + 17.98, 1.9, 0.34, 0.08, { color: 0xa4744c });
-    civil.box(CX + sx * 15.5, townSlopeY(16.0) + 0.28, CZ + 16.0, 2.2, 0.34, 2.2, { color: 0xbf8060 });
-    civil.box(CX + sx * 15.5, townSlopeY(16.0) + 0.38, CZ + 16.0, 1.8, 0.18, 1.8, { color: 0x6e5a46 });
-  }
-  // Sloped paved yards behind the Main Avenue shops so blocks look like lived-in coastal town lots
-  for (const sx of [-1, 1]) {
-    addSlopedRibbonZ(civil, sx * 23.0, 17.5, -54.0, 13.0, 16, 0.06, lotApronCol);
-  }
-  // Upper Residential Street paved yard apron
-  addFlatRibbonX(civil, -56, 56, UPPER_Z - 9.0, 6.2, 0.08, lotApronCol);
-  // Oceanfront Promenade & Seawall Parapet (dz = 64.25..69.6)
-  const blvdY = townSlopeY(BLVD_Z);
-  civil.box(CX, blvdY + 0.06, CZ + 66.8, 232, 0.24, 5.2, { color: 0xe2dac7 });
-  // Concrete seawall face plunging down below water
-  civil.box(CX, -0.35, CZ + SEAWALL_Z, 232, 3.65, 0.72, { color: 0xb0a99a });
-  civil.box(CX, blvdY + 0.62, CZ + SEAWALL_Z, 232, 0.22, 0.84, { color: 0xd5cebf });
-  // Coastal blue-steel promenade railing posts & rails
-  for (let rx = -108; rx <= 108; rx += 4.0) {
-    civil.box(CX + rx, blvdY + 0.96, CZ + SEAWALL_Z - 0.18, 0.08, 0.64, 0.08, { color: 0x4b748f });
-  }
-  civil.box(CX, blvdY + 1.26, CZ + SEAWALL_Z - 0.18, 224, 0.07, 0.07, { color: 0x5c89a6 });
-  civil.box(CX, blvdY + 0.96, CZ + SEAWALL_Z - 0.18, 224, 0.05, 0.05, { color: 0x5c89a6 });
+  // Warm sandstone hero terrace pad directly beneath & framing Haikaze-so (zero floating edges!)
+  const plazaCol = 0xeadbc0;
+  civil.box(11.4, 1.85 + 0.02, 20.8, 15.2, 0.25, 13.8, { color: plazaCol });
+  // Subtle warm stone curb border around Haikaze-so's corner pad
+  civil.box(11.4, 1.85 + 0.075, 13.92, 15.3, 0.14, 0.24, { color: curbCol });
+  // Cozy corner bench & planter pocket across the street on the west plaza corner
+  civil.box(-10.0, 1.85 + 0.02, 18.8, 12.2, 0.25, 9.6, { color: 0xe2d5bb });
+  civil.box(-8.4, 1.85 + 0.44, 16.5, 2.0, 0.10, 0.54, { color: 0xa6744c });
+  civil.box(-8.4, 1.85 + 0.72, 16.74, 2.0, 0.32, 0.08, { color: 0xa6744c });
+  civil.box(-12.5, 1.85 + 0.30, 17.5, 2.3, 0.36, 2.3, { color: 0xbf8060 });
+  civil.box(-12.5, 1.85 + 0.40, 17.5, 1.9, 0.18, 1.9, { color: 0x6e5a46 });
 
-  // North hillside stone retaining wall behind upper residential houses (dz = -72.8)
-  civil.box(CX, 13.0, CZ - 72.8, 126, 4.6, 1.2, { color: 0x9c9586 });
-  civil.box(CX, 15.38, CZ - 72.8, 126.4, 0.24, 1.38, { color: 0xc5bcaa });
-
-  // 4) Crisp Japanese Road Markings: dashed center lines, edge lines & crosswalks
+  // 5) Crisp Japanese Road Markings: dashed center lines, edge lines & crosswalks
   const paintCol = 0xf7f2e4;
-  // Main slope dashed centerline + white edge lines
-  for (let z = -52; z <= 52; z += 5.2) {
-    if ((z > 19 && z < 30) || (z > 44 && z < 52)) continue;
-    addSlopedRibbonZ(civil, 0.0, 0.09, z, z + 2.4, 2, 0.052, paintCol);
+  for (let z = -48; z <= 33; z += 5.2) {
+    if (z > 5.0 && z < 15.5) continue;
+    addSlopedRibbonZ(civil, 0.0, 0.09, z, Math.min(34, z + 2.4), 2, 0.052, paintCol);
   }
   for (const s of [-1, 1]) {
-    addSlopedRibbonZ(civil, s * 3.55, 0.07, -54, 19.5, 16, 0.050, paintCol);
-    addSlopedRibbonZ(civil, s * 3.55, 0.07, 30.5, 45.0, 5, 0.050, paintCol);
+    addSlopedRibbonZ(civil, s * 3.55, 0.07, -50, 6.2, 16, 0.050, paintCol);
+    addSlopedRibbonZ(civil, s * 3.55, 0.07, 15.0, 34.4, 6, 0.050, paintCol);
   }
-  // Coastal Boulevard double-dashed yellow/white centerline
-  for (let x = -108; x <= 108; x += 6.0) {
-    if (Math.abs(x) < 6 || Math.abs(x + 44) < 5 || Math.abs(x - 44) < 5) continue;
-    civil.box(CX + x, blvdY + 0.048, CZ + BLVD_Z, 2.8, 0.015, 0.16, { color: 0xf2c54b });
+  const blvdY = townSlopeY(BLVD_Z);
+  for (let x = -78; x <= 78; x += 6.0) {
+    if (Math.abs(x) < 6) continue;
+    civil.box(x, blvdY + 0.048, BLVD_Z, 2.8, 0.015, 0.16, { color: 0xf2c54b });
   }
-  // Zebra crosswalks at Plaza & Railway Approach & Boulevard T-junction
-  for (const cz of [19.8, 30.2, 43.2, 54.4]) {
+  // Zebra crosswalks around Haikaze-so intersection & railway crossing
+  for (const cz of [5.8, 15.2, 33.4, 41.8]) {
     const wy = townSlopeY(cz) + 0.052;
     for (let k = -3; k <= 3; k++) {
-      civil.box(CX + k * 0.96, wy, CZ + cz, 0.44, 0.015, 2.15, { color: paintCol });
+      civil.box(k * 0.96, wy, cz, 0.44, 0.015, 2.1, { color: paintCol });
     }
   }
-  // Yellow-black fumikiri stop line & warning box ahead of tracks
-  civil.box(CX, townSlopeY(44.8) + 0.052, CZ + 44.8, 7.2, 0.015, 0.36, { color: 0xf4c430 });
-  civil.box(CX, townSlopeY(51.2) + 0.052, CZ + 51.2, 7.2, 0.015, 0.36, { color: 0xf4c430 });
+  // Yellow crossing stop lines
+  civil.box(0, townSlopeY(34.8) + 0.052, 34.8, 7.2, 0.015, 0.34, { color: 0xf4c430 });
+  civil.box(0, townSlopeY(39.4) + 0.052, 39.4, 7.2, 0.015, 0.34, { color: 0xf4c430 });
 
-  // 5) Iconic Single-Track Enoden Coastal Railway (dz = +48, x = -120..+120)
+  // 6) Coastal Single-Track Railway Bed (ready for upcoming Blender Enoden tram & fumikiri kit)
   const railY = townSlopeY(RAIL_Z);
-  // Crushed gravel ballast bed
-  civil.box(CX, railY - 0.02, CZ + RAIL_Z, 240, 0.22, 4.4, { color: 0x9b9487 });
-  // Wooden sleepers along entire track
-  for (let tx = -116; tx <= 116; tx += 0.92) {
-    civil.box(CX + tx, railY + 0.08, CZ + RAIL_Z, 0.24, 0.09, 2.25, { color: 0x6b523e });
+  civil.box(0, railY - 0.02, RAIL_Z, 180, 0.22, 4.4, { color: 0x9b9487 });
+  for (let tx = -84; tx <= 84; tx += 0.94) {
+    civil.box(tx, railY + 0.08, RAIL_Z, 0.24, 0.09, 2.25, { color: 0x6b523e });
   }
-  // Twin steel rails
   for (const rz of [-0.62, 0.62]) {
-    civil.box(CX, railY + 0.145, CZ + RAIL_Z + rz, 240, 0.09, 0.08, { color: 0x6f7b82 });
+    civil.box(0, railY + 0.145, RAIL_Z + rz, 180, 0.09, 0.08, { color: 0x6f7b82 });
   }
-  // Flush concrete level crossing decks at all 3 avenues
-  for (const [cx, wDeck] of [[0, 10.6], [-44, 7.2], [44, 7.8]]) {
-    civil.box(CX + cx, railY + 0.095, CZ + RAIL_Z, wDeck, 0.14, 3.6, { color: 0xd0c9ba });
-  }
-  // Low railway concrete post-and-rail fence between crossings
-  for (const [xa, xb] of [[-112, -48.5], [-39.5, -6.4], [6.4, 39.2], [48.8, 112]]) {
+  civil.box(0, railY + 0.095, RAIL_Z, 10.6, 0.14, 3.6, { color: 0xd0c9ba });
+  for (const [xa, xb] of [[-82, -6.2], [6.2, 82]]) {
     for (const sideZ of [RAIL_Z - 2.25, RAIL_Z + 2.25]) {
-      for (let fx = xa; fx <= xb; fx += 3.2) {
-        civil.box(CX + fx, railY + 0.45, CZ + sideZ, 0.11, 0.90, 0.11, { color: 0xc8c2b4 });
+      for (let fx = xa; fx <= xb; fx += 3.4) {
+        civil.box(fx, railY + 0.44, sideZ, 0.11, 0.88, 0.11, { color: 0xc8c2b4 });
       }
-      civil.box(CX + (xa + xb) * 0.5, railY + 0.72, CZ + sideZ, xb - xa, 0.07, 0.07, { color: 0x455154 });
+      civil.box((xa + xb) * 0.5, railY + 0.72, sideZ, xb - xa, 0.07, 0.07, { color: 0x455154 });
     }
   }
 
-  // 6) Overhead Catenary Power Lines strung between main avenue & boulevard utility poles
-  const addWire = (p0, p1, sag = 0.36) => {
-    const segs = 6;
-    const wireCol = 0x2c3235;
-    for (let i = 0; i < segs; i++) {
-      const t0 = i / segs;
-      const t1 = (i + 1) / segs;
-      const x0 = lerp(p0[0], p1[0], t0);
-      const z0 = lerp(p0[2], p1[2], t0);
-      const y0 = lerp(p0[1], p1[1], t0) - Math.sin(Math.PI * t0) * sag;
-      const x1 = lerp(p0[0], p1[0], t1);
-      const z1 = lerp(p0[2], p1[2], t1);
-      const y1 = lerp(p0[1], p1[1], t1) - Math.sin(Math.PI * t1) * sag;
-      const dx = x1 - x0;
-      const dy = y1 - y0;
-      const dz = z1 - z0;
-      const len = Math.hypot(dx, dy, dz) || 0.01;
-      const r = 0.024;
-      // Thin ribbon facing up & sideways
-      civil.quad(
-        [x0, y0 - r, z0], [x1, y1 - r, z1], [x1, y1 + r, z1], [x0, y0 + r, z0],
-        { color: wireCol, normal: [dz / len, 0, -dx / len] },
-      );
-      civil.quad(
-        [x0 - r, y0, z0], [x1 - r, y1, z1], [x1 + r, y1, z1], [x0 + r, y0, z0],
-        { color: wireCol, normal: [0, 1, 0] },
-      );
-    }
-  };
-  const poleZs = [-52, -32, -12, 8, 41.5, 54.5];
-  for (const s of [-1, 1]) {
-    const px = CX + s * 5.85;
-    for (let i = 0; i < poleZs.length - 1; i++) {
-      const z0 = poleZs[i];
-      const z1 = poleZs[i + 1];
-      const y0 = townSlopeY(z0) + 8.42;
-      const y1 = townSlopeY(z1) + 8.42;
-      addWire([px - 0.55, y0, CZ + z0], [px - 0.55, y1, CZ + z1], 0.34);
-      addWire([px + 0.55, y0, CZ + z0], [px + 0.55, y1, CZ + z1], 0.34);
-    }
+  // 7) Oceanfront Promenade, Seawall & Coastal Blue-Steel Railing (z = 51..56)
+  civil.box(0, blvdY + 0.06, 53.3, 174, 0.24, 4.8, { color: 0xe2dac7 });
+  civil.box(0, -0.35, SEAWALL_Z, 174, 3.65, 0.72, { color: 0xb0a99a });
+  civil.box(0, blvdY + 0.62, SEAWALL_Z, 174, 0.22, 0.84, { color: 0xd5cebf });
+  for (let rx = -80; rx <= 80; rx += 4.0) {
+    civil.box(rx, blvdY + 0.96, SEAWALL_Z - 0.18, 0.08, 0.64, 0.08, { color: 0x4b748f });
   }
-  // Railway overhead catenary wire above tracks
-  for (let rx = -105; rx < 105; rx += 35) {
-    addWire([CX + rx, railY + 5.15, CZ + RAIL_Z], [CX + rx + 35, railY + 5.15, CZ + RAIL_Z], 0.14);
-  }
+  civil.box(0, blvdY + 1.26, SEAWALL_Z - 0.18, 164, 0.07, 0.07, { color: 0x5c89a6 });
+  civil.box(0, blvdY + 0.96, SEAWALL_Z - 0.18, 164, 0.05, 0.05, { color: 0x5c89a6 });
 
-  // 7) Distant Cool-Toned Downtown Skyline on a wide coastal headland off to East-Southeast across the bay
-  const skyRng = new RNG('rongwan-downtown-skyline-v2');
-  civil.box(CX + 160, OCEAN_Y + 0.35, CZ + 298, 280, 2.0, 56, { color: 0x6f918f });
-  for (let i = 0; i < 16; i++) {
-    const sx = CX + 64 + i * 9.6 + skyRng.range(-1.8, 1.8);
-    const sz = CZ + 292 + skyRng.range(-7, 8);
-    const bw = skyRng.range(6.2, 11.0);
-    const bd = skyRng.range(6.0, 10.0);
-    const peak = 1.0 - smoothstep(10, 72, Math.abs(sx - (CX + 132)));
-    const bh = skyRng.range(10, 20) + peak * skyRng.range(8, 20);
-    const col = skyRng.pick([0x8fb0c7, 0x82a3bc, 0x99b8cc, 0x7a9bb5]);
-    civil.box(sx, OCEAN_Y + bh * 0.5 + 0.8, sz, bw, bh, bd, { color: col });
-  }
+  // 8) North Hillside Stone Retaining Wall crest (z = -58)
+  civil.box(0, 12.1, -58.5, 96, 4.0, 1.15, { color: 0x9e9788 });
+  civil.box(0, 14.2, -58.5, 96.4, 0.24, 1.35, { color: 0xc7beac });
 
   const asphaltGeo = asphalt.build();
   const asphaltMesh = new THREE.Mesh(asphaltGeo, asphaltMat);
@@ -812,58 +537,48 @@ function buildTownRoadsAndCivil(root, trackTex, trackMat) {
   civilMesh.matrixAutoUpdate = false;
   civilMesh.updateMatrix();
   root.add(civilMesh);
-
-  return [asphaltGeo, civilGeo];
 }
 
-// ==============================================================================
-// Sparkling Coastal Ocean Plane
-// ==============================================================================
-function buildTownOcean(root, trackMat) {
-  const oceanMat = trackMat(createOceanMaterial());
-  const geo = new THREE.PlaneGeometry(1100, 540, 1, 1);
+function buildOcean(root) {
+  const oceanMat = createOceanMaterial();
+  const geo = new THREE.PlaneGeometry(980, 520, 1, 1);
   geo.rotateX(-Math.PI / 2);
   const mesh = new THREE.Mesh(geo, oceanMat);
-  mesh.position.set(CX, OCEAN_Y, CZ + SEAWALL_Z + 266);
+  mesh.position.set(0, OCEAN_Y, SEAWALL_Z + 256);
   mesh.receiveShadow = false;
   mesh.castShadow = false;
   mesh.matrixAutoUpdate = false;
   mesh.updateMatrix();
   root.add(mesh);
-  return geo;
+  return oceanMat.userData.waterTintUniform;
 }
 
-// ==============================================================================
-// Hillside Backdrop Grass & Wildflowers (North hill & east/west green ridges)
-// ==============================================================================
-function buildTownBackdropFlora(root) {
-  const rng = new RNG('coastal-town-flora-v1');
+function buildBackdropFlora(root) {
+  const rng = new RNG('rongwan-corner-flora-v2');
   const dummy = new THREE.Object3D();
   const col = new THREE.Color();
 
-  const maxGrass = 14000;
+  const maxGrass = 11500;
   const gMat = new Float32Array(maxGrass * 16);
   const gCol = new Float32Array(maxGrass * 3);
   let gCount = 0;
 
-  for (let i = 0; i < 32000 && gCount < maxGrass; i++) {
-    const dx = rng.range(-115, 115);
-    const dz = rng.range(-108, 44);
-    // Only grow lush Ghibli meadow grass on the north green hill & outer coastal flanks (plus track verge)
-    const onNorthHill = dz < -73.8;
-    const onFlankHill = Math.abs(dx) > 61.5 && dz < 42;
-    const onTrackVerge = Math.abs(dz - RAIL_Z) > 2.4 && Math.abs(dz - RAIL_Z) < 5.2 && Math.abs(dx) > 9 && Math.abs(dx - 44) > 7 && Math.abs(dx + 44) > 7;
-    if (!onNorthHill && !onFlankHill && !onTrackVerge) continue;
+  for (let i = 0; i < 28000 && gCount < maxGrass; i++) {
+    const x = rng.range(-82, 82);
+    const z = rng.range(-84, 34);
+    if (isOnRoadCorridor(x, z)) continue;
+    // Leave a neat margin around Haikaze-so terrace & roads
+    if (x > 2.0 && x < 21.0 && z > 12.0 && z < 28.5) continue;
+    if (Math.abs(x) < 7.0 && z > -56 && z < 45) continue;
+    if (Math.abs(z - PLAZA_Z) < 6.0 && Math.abs(x) < 55) continue;
 
-    const x = CX + dx;
-    const z = CZ + dz;
     const y = coastalTownTerrainHeight(x, z);
     const p = patchNoise(x, z);
-    if (p < 0.25 && rng.next() > 0.65) continue;
+    if (p < 0.24 && rng.next() > 0.65) continue;
 
     dummy.position.set(x, y - 0.03, z);
     dummy.rotation.set(0, rng.range(0, Math.PI * 2), 0);
-    dummy.scale.set(rng.range(0.85, 1.25), lerp(0.75, 1.35, smoothstep(0.2, 0.85, p)), rng.range(0.88, 1.15));
+    dummy.scale.set(rng.range(0.85, 1.28), lerp(0.76, 1.38, smoothstep(0.2, 0.85, p)), rng.range(0.88, 1.18));
     dummy.updateMatrix();
     dummy.matrix.toArray(gMat, gCount * 16);
 
@@ -883,20 +598,22 @@ function buildTownBackdropFlora(root) {
   grassMesh.computeBoundingSphere();
   root.add(grassMesh);
 
-  // Subtle wildflower accents on north hillside & trackside verges
-  const maxF = 1100;
+  // Wildflower clusters on the sunlit hillside & meadow flanks
+  const maxF = 900;
   const fMat = new Float32Array(maxF * 16);
   const fCol = new Float32Array(maxF * 3);
   let fCount = 0;
-  for (let i = 0; i < 4000 && fCount < maxF; i++) {
-    const dx = rng.range(-100, 100);
-    const dz = rng.range(-104, -74.5);
-    const x = CX + dx;
-    const z = CZ + dz;
+  for (let i = 0; i < 3600 && fCount < maxF; i++) {
+    const x = rng.range(-68, 68);
+    const z = rng.range(-78, 28);
+    if (isOnRoadCorridor(x, z)) continue;
+    if (x > 1.0 && x < 22.0 && z > 10.0 && z < 30.0) continue;
+    if (Math.abs(x) < 8.5 || Math.abs(z - PLAZA_Z) < 6.8) continue;
+
     const y = coastalTownTerrainHeight(x, z);
     dummy.position.set(x, y - 0.02, z);
     dummy.rotation.set(0, rng.range(0, Math.PI * 2), 0);
-    dummy.scale.setScalar(rng.range(0.85, 1.25));
+    dummy.scale.setScalar(rng.range(0.85, 1.30));
     dummy.updateMatrix();
     dummy.matrix.toArray(fMat, fCount * 16);
     col.setHex(rng.pick([0xfff7dc, 0xffdf7a, 0xffb8a0, 0xd8eaff]));
@@ -905,486 +622,131 @@ function buildTownBackdropFlora(root) {
     fCol[fCount * 3 + 2] = col.b;
     fCount++;
   }
-  const flowerMesh = new THREE.InstancedMesh(getFlowerGeometry(), getFlowerMaterial(), fCount);
+  const fGeo = getFlowerGeometry().clone();
+  fGeo.setAttribute('aPetalTint', new THREE.InstancedBufferAttribute(fCol.subarray(0, fCount * 3), 3));
+  const flowerMesh = new THREE.InstancedMesh(fGeo, getFlowerMaterial(), fCount);
   flowerMesh.instanceMatrix.array.set(fMat.subarray(0, fCount * 16));
   flowerMesh.instanceMatrix.needsUpdate = true;
-  flowerMesh.instanceColor = new THREE.InstancedBufferAttribute(fCol.subarray(0, fCount * 3), 3);
   flowerMesh.castShadow = false;
   flowerMesh.receiveShadow = false;
   flowerMesh.computeBoundingSphere();
   root.add(flowerMesh);
 }
 
-// ==============================================================================
-// Multi-Language East-Asian Storefront Signs & Residential Door Plaques
-// ==============================================================================
-function buildTownSigns(root) {
-  const kit = new SignKit({
-    rng: new RNG('rongwan-coastal-town-signs-v1'),
-    density: 1,
-    mode: 'lit',
-    storybook: true,
-    glow: 1,
-    emit: 0.9,
-  });
-
-  // Main Slope Avenue & Plaza shops (mounted cleanly onto building fascias)
-  const shopSigns = [
-    // West side of Main Slope Avenue (facing +X, wall at dx = -7.3)
-    { text: '榕记包子铺', sub: '老面鲜肉 · 早市', bg: 0x306e66, fg: 0xfff0c8, accent: 0xf4c454, dx: -7.12, dz: -38.0, rotY: Math.PI / 2, w: 4.8, h: 0.92 },
-    { text: '潮声拉面 · ラーメン', sub: '豚骨拉面 · 饺子', bg: 0xb83b32, fg: 0xfff7df, accent: 0xffd85a, dx: -7.12, dz: -26.5, rotY: Math.PI / 2, w: 4.8, h: 0.92 },
-    { text: '便民药店', sub: '24H 社区药房', bg: 0x2c7865, fg: 0xffffff, accent: 0xd8f5d0, dx: -7.12, dz: -15.0, rotY: Math.PI / 2, w: 4.6, h: 0.90 },
-    { text: '南风奶茶烘焙', sub: '手打柠檬 · 菠萝包', bg: 0xd67c32, fg: 0xfff8e6, accent: 0xffe488, dx: -7.12, dz:  -3.5, rotY: Math.PI / 2, w: 4.8, h: 0.92 },
-    { text: '海风便利店 24H', sub: '便当 · 冰饮 · 快递', bg: 0x2e825e, fg: 0xffffff, accent: 0xffc64b, dx: -7.08, dz:   8.0, rotY: Math.PI / 2, w: 5.4, h: 0.92 },
-
-    // East side of Main Slope Avenue (facing -X, wall at dx = +7.3)
-    { text: '陈记石磨肠粉', sub: '现磨米浆 · 粥品', bg: 0xc44332, fg: 0xfff4d4, accent: 0xffd452, dx:  7.12, dz: -38.0, rotY: -Math.PI / 2, w: 4.8, h: 0.92 },
-    { text: '海街咖啡 COFFEE', sub: '手冲 · 轻食', bg: 0x3b5f78, fg: 0xfdf4df, accent: 0xf5be5b, dx:  7.12, dz: -26.5, rotY: -Math.PI / 2, w: 4.8, h: 0.92 },
-    { text: '阿强电动车换电', sub: '补胎 · 换电池', bg: 0x334756, fg: 0xffd54a, accent: 0xffffff, dx:  7.12, dz: -15.0, rotY: -Math.PI / 2, w: 4.8, h: 0.92 },
-    { text: '丸山鲜果杂货', sub: '蜜柑 · 日用百货', bg: 0x4b7d59, fg: 0xfff8e2, accent: 0xf8c34c, dx:  7.12, dz:  -3.5, rotY: -Math.PI / 2, w: 4.8, h: 0.92 },
-    { text: '海风书局', sub: '文具 · 报刊', bg: 0x456b7d, fg: 0xfff3d4, accent: 0xeec46d, dx:  7.12, dz:   8.0, rotY: -Math.PI / 2, w: 4.6, h: 0.90 },
-
-    // Central Plaza North & South shops
-    { text: '榕湾 24H 便利店', sub: '关东煮 · 咖啡', bg: 0x2e825e, fg: 0xffffff, accent: 0xf28d38, dx: -24.5, dz: 19.02, rotY: 0, w: 5.4, h: 0.92 },
-    { text: '浪花茶室 · カフェ', sub: '甜品 · 刨冰', bg: 0x3e718c, fg: 0xfff7e2, accent: 0xf7ca65, dx:  24.5, dz: 19.02, rotY: 0, w: 4.8, h: 0.92 },
-    { text: '坡底便当屋', sub: '热菜现炒 · 堂食外带', bg: 0xc24938, fg: 0xfff5db, accent: 0xffd55c, dx: -14.0, dz: 33.95, rotY: Math.PI, w: 4.8, h: 0.92 },
-    { text: '海滨医药', sub: '常备药品 · 口罩', bg: 0x2e7d63, fg: 0xffffff, accent: 0xdff5dc, dx:  23.1, dz: 31.65, rotY: Math.PI, w: 4.6, h: 0.90 },
-  ];
-
-  for (const s of shopSigns) {
-    const y = townSlopeY(s.dz) + 3.60;
-    kit.add({
-      kind: 'lightbox',
-      text: s.text,
-      sub: s.sub,
-      bg: s.bg,
-      fg: s.fg,
-      accent: s.accent,
-      w: s.w,
-      h: s.h,
-      layout: 'stack',
-      font: 'hei',
-      storybook: true,
-    }, { x: CX + s.dx, y, z: CZ + s.dz, rotY: s.rotY });
-  }
-
-  // Hero Building ("海风庄") bespoke low-profile wooden shop plaque, building sign & 2F apartment doors (201 / 202)
-  kit.add({
-    kind: 'plaque',
-    style: 'lit',
-    text: '海风拉面 · ラーメン',
-    bg: 0xf3e8ce,
-    fg: 0x4b2f1e,
-    accent: 0xc2382e,
-    casing: 0x68422b,
-    trimColor: 0x9b623d,
-    w: 2.35,
-    h: 0.36,
-    font: 'hei',
-    storybook: true,
-  }, { x: CX + 12.98, y: HERO_HAIKAZE.baseY + 2.74, z: CZ + 30.80, rotY: Math.PI });
-  kit.add({
-    kind: 'plaque',
-    style: 'wood',
-    text: '潮風麺処',
-    bg: 0xe9d8b4,
-    fg: 0x3b2618,
-    w: 0.28,
-    h: 0.72,
-    font: 'song',
-    storybook: true,
-  }, { x: CX + 11.70, y: HERO_HAIKAZE.baseY + 1.44, z: CZ + 30.82, rotY: Math.PI });
-  kit.add({
-    kind: 'plaque',
-    style: 'lit',
-    text: '海风庄',
-    bg: 0x3b6c67,
-    fg: 0xf7f0dc,
-    accent: 0xa4b995,
-    casing: 0x2e5a56,
-    trimColor: 0xa4b995,
-    w: 0.92,
-    h: 0.34,
-    font: 'hei',
-    storybook: true,
-  }, { x: CX + 9.20, y: HERO_HAIKAZE.baseY + 2.18, z: CZ + 30.86, rotY: Math.PI });
-  for (const [num, by] of [['201', -0.80], ['202', 1.35]]) {
-    kit.add({
-      kind: 'plaque',
-      style: 'door',
-      text: num,
-      bg: 0x2e5a56,
-      fg: 0xf8f3e3,
-      w: 0.34,
-      h: 0.17,
-      font: 'hei',
-      storybook: true,
-    }, { x: CX + HERO_HAIKAZE.dx - 2.665, y: HERO_HAIKAZE.baseY + 3.25 + 1.58, z: CZ + HERO_HAIKAZE.dz + by, rotY: -Math.PI / 2 });
-  }
-
-  // Vertical blade signs along Main Slope Avenue for authentic East-Asian depth
-  const blades = [
-    { text: '包子铺', bg: 0xc24232, fg: 0xfff2c9, dx: -6.95, dz: -35.4, rotY: 0 },
-    { text: '拉面', bg: 0x2e6b62, fg: 0xfff2c9, dx: -6.95, dz: -24.0, rotY: 0 },
-    { text: '药店', bg: 0x2c7865, fg: 0xffffff, dx: -6.95, dz: -12.6, rotY: 0 },
-    { text: '咖啡', bg: 0x3b5f78, fg: 0xfff3d4, dx:  6.95, dz: -24.0, rotY: 0 },
-    { text: '换电', bg: 0x334756, fg: 0xffd54a, dx:  6.95, dz: -12.6, rotY: 0 },
-    { text: '书局', bg: 0x456b7d, fg: 0xfff3d4, dx:  6.95, dz:  10.4, rotY: 0 },
-  ];
-  for (const b of blades) {
-    kit.add({
-      kind: 'vertical',
-      text: b.text,
-      bg: b.bg,
-      fg: b.fg,
-      w: 0.62,
-      h: 2.15,
-      font: 'hei',
-      storybook: true,
-    }, { x: CX + b.dx, y: townSlopeY(b.dz) + 5.45, z: CZ + b.dz, rotY: b.rotY });
-  }
-
-  // Residential Door Plaques on Upper Street gate pillars (ready for S2 Step 2 door-hunting!)
-  const plaques = [
-    { text: '海风坡 101', dx: -49.0, dz: -62.1 },
-    { text: '海风坡 102', dx: -34.0, dz: -62.1 },
-    { text: '海风坡 103 · 阿柴', dx: -19.0, dz: -62.1 },
-    { text: '海风坡 104', dx:  -4.0, dz: -62.1 },
-    { text: '海风坡 105', dx:  11.0, dz: -62.1 },
-    { text: '海风坡 106', dx:  26.5, dz: -62.1 },
-    { text: '海风坡 107', dx:  42.0, dz: -62.1 },
-  ];
-  for (const p of plaques) {
-    kit.add({
-      kind: 'plaque',
-      style: 'door',
-      text: p.text,
-      w: p.text.length > 8 ? 0.66 : 0.48,
-      h: 0.24,
-      bg: 0x2c5c8f,
-      fg: 0xffffff,
-      storybook: true,
-    }, { x: CX + p.dx, y: townSlopeY(UPPER_Z) + 1.32, z: CZ + p.dz, rotY: 0 });
-  }
-
-  const group = kit.build();
-  root.add(group);
-  return kit;
-}
-
-// ==============================================================================
-// Main Builder: Assemble Hub #1 Coastal Hillside Town
-// ==============================================================================
-export function createCoastalTown(townKitGltf) {
-  const root = new THREE.Group();
-  root.name = 'coastal-town-hub';
-  const trackedGeos = [];
-  const trackedMats = [];
-  const trackedTex = [];
-  const trackMat = m => (trackedMats.push(m), m);
-  const trackTex = t => (trackedTex.push(t), t);
-
-  const archMat = trackMat(createCoastalTownArchMaterial());
-
-  // Extract geometry templates from Blender coastal-town-kit.glb
-  const templates = {};
-  let heroTemplate = null;
-  if (townKitGltf?.scene) {
-    heroTemplate = townKitGltf.scene.getObjectByName('Town_Hero_Haikaze');
-    townKitGltf.scene.traverse(obj => {
-      if (obj.isMesh && obj.name && !obj.name.startsWith('Town_Hero_Haikaze')) {
-        templates[obj.name] = obj.geometry;
-      }
+function buildCoastalTrees(root) {
+  const rng = new RNG('rongwan-corner-trees-v2');
+  const entries = [];
+  const pushTree = (x, z, variant, s = 1.0) => {
+    const y = coastalTownTerrainHeight(x, z);
+    entries.push({
+      x, y, z,
+      rotY: rng.range(0, Math.PI * 2),
+      sx: s * rng.range(0.92, 1.10),
+      sy: s * rng.range(0.92, 1.12),
+      sz: s * rng.range(0.92, 1.10),
+      variant,
     });
-  }
-
-  // 1) Terrain, roads, sidewalks, plaza, railway tracks, seawall, power lines & distant skyline
-  trackedGeos.push(buildTownTerrain(root));
-  trackedGeos.push(...buildTownRoadsAndCivil(root, trackTex, trackMat));
-  trackedGeos.push(buildTownOcean(root, trackMat));
-
-  // 2) Merge all standard static Blender Buildings into 1 single baked world-space Mesh:
-  const dummy = new THREE.Object3D();
-  const buildingParts = [];
-  for (const b of BUILDINGS) {
-    if (b.multiMaterial) continue;
-    const src = templates[b.mesh];
-    if (!src) continue;
-    const g = src.clone();
-    dummy.position.set(CX + b.dx, b.y ?? (townSlopeY(b.dz) + 0.14), CZ + b.dz);
-    dummy.rotation.set(0, b.rotY, 0);
-    dummy.scale.set(1, 1, 1);
-    dummy.updateMatrix();
-    g.applyMatrix4(dummy.matrix);
-    buildingParts.push(g);
-  }
-  if (buildingParts.length) {
-    const mergedBuildings = mergeGeometries(buildingParts, false);
-    for (const g of buildingParts) g.dispose();
-    trackedGeos.push(mergedBuildings);
-    const buildingsMesh = new THREE.Mesh(mergedBuildings, archMat);
-    buildingsMesh.name = 'coastal-town-buildings';
-    buildingsMesh.castShadow = true;
-    buildingsMesh.receiveShadow = true;
-    buildingsMesh.matrixAutoUpdate = false;
-    buildingsMesh.updateMatrix();
-    root.add(buildingsMesh);
-  }
-
-  // 2b) Direction A Benchmark Hero Building ("海风庄") — 3 shared stylized PBR material slots:
-  //     Hero_Plaster (matte gouache stucco/concrete/foliage w/ localized BVH contact AO, never brick-masked),
-  //     Hero_Metal   (semi-gloss painted steel staircase/railings/doors/bike w/ upward sky-bounce sheen),
-  //     Hero_Atlas   (1024x1024 illustrated vending/AC/noren/mosaic/menu/windows w/ controlled night emissiveMap).
-  if (heroTemplate) {
-    const atlas = getCoastalDetailAtlas();
-    const heroPlasterMat = trackMat(createCoastalTownArchMaterial({ allowStone: false }));
-    const heroMetalMat = trackMat(litMaterial({
-      vertexColors: true,
-      grid: false,
-      roughness: 0.30,
-      metalness: 0.12,
-    }));
-    const prevMetal = heroMetalMat.onBeforeCompile;
-    const prevMetalKey = heroMetalMat.customProgramCacheKey ? heroMetalMat.customProgramCacheKey.bind(heroMetalMat) : () => '';
-    heroMetalMat.onBeforeCompile = (shader, renderer) => {
-      if (prevMetal) prevMetal(shader, renderer);
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vHeroMetalNW;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvHeroMetalNW = normalize(mat3(modelMatrix) * normal);');
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vHeroMetalNW;')
-        .replace('#include <color_fragment>', `#include <color_fragment>
-          float upSheen = smoothstep(-0.15, 0.85, normalize(vHeroMetalNW).y);
-          diffuseColor.rgb *= mix(vec3(0.98, 1.00, 1.02), vec3(1.08, 1.12, 1.13), upSheen);`);
-    };
-    heroMetalMat.customProgramCacheKey = () => prevMetalKey() + '|hero-painted-metal-v1';
-
-    const heroAtlasMat = trackMat(litMaterial({
-      map: atlas.colorTex,
-      roughnessMap: atlas.roughnessTex,
-      roughness: 1.0,
-      metalness: 0.05,
-      vertexColors: true,
-      grid: false,
-    }));
-    heroAtlasMat.emissive = new THREE.Color(0xffffff);
-    heroAtlasMat.emissiveMap = atlas.emissiveTex;
-    heroAtlasMat.emissiveIntensity = 0.08;
-    heroAtlasMat.userData = {
-      ...heroAtlasMat.userData,
-      dayEmissiveBase: 0.08,
-      nightEmissiveScale: 1.12,
-    };
-
-    const heroGroup = heroTemplate.clone(true);
-    heroGroup.position.set(CX + HERO_HAIKAZE.dx, HERO_HAIKAZE.baseY, CZ + HERO_HAIKAZE.dz);
-    heroGroup.rotation.set(0, HERO_HAIKAZE.rotY, 0);
-    heroGroup.traverse(obj => {
-      if (!obj.isMesh) return;
-      const mName = obj.material?.name || '';
-      if (mName.includes('Hero_Atlas')) {
-        obj.material = heroAtlasMat;
-        obj.castShadow = false;
-        obj.receiveShadow = true;
-      } else if (mName.includes('Hero_Metal')) {
-        obj.material = heroMetalMat;
-        obj.castShadow = true;
-        obj.receiveShadow = true;
-      } else {
-        obj.material = heroPlasterMat;
-        obj.castShadow = true;
-        obj.receiveShadow = true;
-      }
-      obj.matrixAutoUpdate = false;
-      obj.updateMatrix();
-    });
-    heroGroup.matrixAutoUpdate = false;
-    heroGroup.updateMatrix();
-    root.add(heroGroup);
-  }
-
-  // 3) Instanced Street Furniture: Utility Poles, Vending Machines, Battery Cabinets, Bus Stops
-  const addInstancedProps = (meshName, placements, castShadow = true) => {
-    const geo = templates[meshName];
-    if (!geo || !placements.length) return;
-    const inst = new THREE.InstancedMesh(geo, archMat, placements.length);
-    for (let i = 0; i < placements.length; i++) {
-      const p = placements[i];
-      const y = p.y ?? (townSlopeY(p.dz) + 0.14);
-      dummy.position.set(CX + p.dx, y, CZ + p.dz);
-      dummy.rotation.set(0, p.rotY || 0, 0);
-      dummy.scale.set(1, 1, 1);
-      dummy.updateMatrix();
-      inst.setMatrixAt(i, dummy.matrix);
-    }
-    inst.instanceMatrix.needsUpdate = true;
-    inst.castShadow = castShadow;
-    inst.receiveShadow = true;
-    inst.computeBoundingSphere();
-    root.add(inst);
   };
 
-  // Utility poles flanking Main Slope Avenue, Upper Street & Coastal Boulevard
-  const poles = [];
-  for (const dz of [-52, -32, -12, 8, 41.5, 54.5]) {
-    poles.push({ dx: -5.85, dz, rotY: Math.PI / 2 });
-    poles.push({ dx:  5.85, dz, rotY: -Math.PI / 2 });
+  // Curated hero-framing coastal trees (carefully clear of camera angles toward Haikaze-so!)
+  pushTree(21.2, 22.8, 'wide', 1.12);   // East garden backdrop behind Haikaze-so
+  pushTree(24.8, 17.5, 'tall', 1.02);   // Sunlit tree peeking behind east eaves
+  pushTree(19.5, 29.0, 'citrus', 1.05); // Warm coastal citrus near back corner
+  pushTree(-12.5, 17.5, 'compact', 0.92); // West plaza planter shade tree
+  pushTree(-17.8, 22.0, 'wide', 1.15);
+  pushTree(-22.0, 4.0, 'tall', 1.10);
+  pushTree(18.5, 3.0, 'compact', 0.95); // Distant NE corner framing
+  pushTree(26.0, 2.2, 'wide', 1.12);
+
+  // Slope avenue framing groves (west & east hillsides)
+  for (let z = -48; z <= -8; z += 11.5) {
+    pushTree(-13.5 - rng.range(0, 5.5), z + rng.range(-2, 2), rng.pick(['tall', 'wide', 'compact']), rng.range(0.96, 1.24));
+    pushTree(13.5 + rng.range(0, 5.5), z + rng.range(-2, 2), rng.pick(['tall', 'wide', 'compact']), rng.range(0.96, 1.24));
   }
-  for (const dx of [-34, -18, 18, 34]) {
-    poles.push({ dx, dz: UPPER_Z - 4.2, rotY: 0 });
+
+  // North ridge lush Ghibli backdrop woods
+  for (let i = 0; i < 34; i++) {
+    const x = rng.range(-72, 72);
+    const z = rng.range(-82, -61.5);
+    pushTree(x, z, rng.pick(['wide', 'tall', 'compact']), rng.range(1.05, 1.45));
   }
-  for (const dx of [-76, -34, 34, 76]) {
-    poles.push({ dx, dz: BLVD_Z - 5.2, rotY: 0 });
-  }
-  addInstancedProps('Town_Utility_Pole', poles, false);
 
-  // Courier Battery-Swap Cabinets at Central Plaza & Konbini
-  addInstancedProps('Town_Battery_Cabinet', [
-    { dx: -13.2, dz: 19.2, rotY: 0 },
-    { dx: -13.2, dz: 31.2, rotY: Math.PI },
-    { dx: -39.5, dz: 29.8, rotY: Math.PI / 2 },
-  ], true);
-
-  // Japanese Vending Machines
-  addInstancedProps('Town_Vending', [
-    { dx: -6.2, dz:  11.8, rotY: Math.PI / 2 },
-    { dx:  6.2, dz: -20.5, rotY: -Math.PI / 2 },
-    { dx: -15.6, dz: 19.2, rotY: 0 },
-    { dx:  18.5, dz: 35.0, rotY: -Math.PI / 2 },
-    { dx:  40.2, dz: 12.0, rotY: -Math.PI / 2 },
-  ], false);
-
-  // Oceanfront Bus / Tram Stop Shelters
-  addInstancedProps('Town_Bus_Stop', [
-    { dx: -16.5, dz: 54.6, rotY: 0 },
-    { dx:  17.5, dz: 54.6, rotY: 0 },
-  ], true);
-
-  // 4) Main & Secondary Railway Level Crossings (Fumikiri Posts + Animated Gates)
-  //    Offset 3.1m from rail center so lowered barrier bars clear the 2.58m-wide tram cleanly!
-  const railY = townSlopeY(RAIL_Z) + 0.04;
-  addInstancedProps('Town_Crossing_Post', [
-    { dx: -5.4, dz: RAIL_Z - 3.1, y: railY, rotY: 0 },
-    { dx:  5.4, dz: RAIL_Z + 3.1, y: railY, rotY: Math.PI },
-    { dx: -47.6, dz: RAIL_Z - 3.1, y: railY, rotY: 0 },
-    { dx:  47.6, dz: RAIL_Z - 3.1, y: railY, rotY: 0 },
-  ], false);
-
-  const gateBars = [];
-  if (templates.Town_Crossing_Bar) {
-    const barDefs = [
-      { dx: -5.15, dz: RAIL_Z - 3.1, rotY: 0 },
-      { dx:  5.15, dz: RAIL_Z + 3.1, rotY: Math.PI },
-    ];
-    for (const d of barDefs) {
-      const bar = new THREE.Mesh(templates.Town_Crossing_Bar, archMat);
-      bar.position.set(CX + d.dx, railY + 1.05, CZ + d.dz);
-      bar.rotation.y = d.rotY;
-      bar.castShadow = false;
-      bar.receiveShadow = true;
-      root.add(bar);
-      gateBars.push(bar);
+  // Outer coastal flank woods
+  for (const sx of [-1, 1]) {
+    for (let i = 0; i < 12; i++) {
+      const x = sx * rng.range(28, 70);
+      const z = rng.range(-46, 30);
+      if (Math.abs(z - PLAZA_Z) < 7.5) continue;
+      pushTree(x, z, rng.pick(['wide', 'tall', 'compact', 'citrus']), rng.range(0.95, 1.32));
     }
   }
 
-  // 5) Animated 2-Car Green & Cream Enoden Coastal Tram!
-  const tramGroup = new THREE.Group();
-  tramGroup.name = 'coastal-enoden-tram';
-  if (templates.Town_Tram_Car) {
-    for (const offset of [-6.5, 6.5]) {
-      const car = new THREE.Mesh(templates.Town_Tram_Car, archMat);
-      car.position.set(offset, 0, 0);
-      car.castShadow = true;
-      car.receiveShadow = true;
-      tramGroup.add(car);
+  placeStylizedTrees(root, entries);
+}
+
+function mountHaikazeHero(root, haikazeGltf, maxAniso) {
+  const heroRoot = haikazeGltf.scene.clone(true);
+  heroRoot.name = 'hero-haikaze';
+  heroRoot.position.set(HERO_HAIKAZE.x, HERO_HAIKAZE.baseY, HERO_HAIKAZE.z);
+  heroRoot.rotation.y = HERO_HAIKAZE.rotY;
+
+  const aniso = Math.min(8, maxAniso || 4);
+  heroRoot.traverse(obj => {
+    if (!obj.isMesh) return;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    let isGlass = false;
+    let isTinyGlow = false;
+    for (const m of mats) {
+      if (!m) continue;
+      const mname = m.name || '';
+      m.userData.preservePbr = true;
+      for (const tex of [m.map, m.normalMap, m.roughnessMap, m.emissiveMap]) {
+        if (tex) {
+          tex.anisotropy = aniso;
+          tex.needsUpdate = true;
+        }
+      }
+      if (mname === 'Arch_Window_Glass') {
+        isGlass = true;
+        m.transparent = true;
+        m.opacity = 0.28;
+        m.depthWrite = false;
+        m.roughness = 0.08;
+        m.metalness = 0.12;
+        m.envMapIntensity = 1.35;
+      } else if (mname === 'Game_Solid_Metal') {
+        m.envMapIntensity = 1.15;
+      } else if (mname === 'Arch_Mosaic_Tiles') {
+        m.envMapIntensity = 0.95;
+      } else if (mname === 'Emissive_Vending' || mname === 'Arch_Porch_Lamp' || mname === 'Prop_Lantern_Paper') {
+        isTinyGlow = true;
+      }
     }
-  }
-  tramGroup.position.set(CX - 3.5, railY + 0.14, CZ + RAIL_Z);
-  root.add(tramGroup);
+    obj.castShadow = !isGlass && !isTinyGlow;
+    obj.receiveShadow = !isGlass;
+  });
 
-  // 6) Multi-language Shop Signs & Door Plaques (1–2 draw calls via SignKit)
-  const signKit = buildTownSigns(root);
+  root.add(heroRoot);
+  return heroRoot;
+}
 
-  // 7) Lush Ghibli Hillside Grass, Wildflowers & Clustered Leaf-Card Trees
-  buildTownBackdropFlora(root);
+export function createCoastalTown(haikazeGltf, maxAniso = 4) {
+  const root = new THREE.Group();
+  root.name = 'rongwan-coastal-corner';
 
-  const treeSpecs = [
-    // North green hill canopy clusters crowning the skyline behind residential roofs
-    { dx: -68, dz: -78, variant: 'tall', scale: 1.25 },
-    { dx: -58, dz: -82, variant: 'wide', scale: 1.18 },
-    { dx: -44, dz: -77, variant: 'tall', scale: 1.15 },
-    { dx: -36, dz: -84, variant: 'wide', scale: 1.28 },
-    { dx: -22, dz: -79, variant: 'tall', scale: 1.22 },
-    { dx: -10, dz: -85, variant: 'wide', scale: 1.32 },
-    { dx:   4, dz: -78, variant: 'tall', scale: 1.18 },
-    { dx:  18, dz: -83, variant: 'wide', scale: 1.26 },
-    { dx:  34, dz: -79, variant: 'tall', scale: 1.20 },
-    { dx:  48, dz: -84, variant: 'wide', scale: 1.24 },
-    { dx:  64, dz: -78, variant: 'tall', scale: 1.22 },
-    // East & West coastal ridge trees framing the square town borders
-    { dx: -70, dz: -46, variant: 'wide', scale: 1.12 },
-    { dx: -68, dz: -24, variant: 'tall', scale: 1.16 },
-    { dx: -72, dz:  -4, variant: 'wide', scale: 1.15 },
-    { dx: -68, dz:  20, variant: 'tall', scale: 1.10 },
-    { dx:  70, dz: -46, variant: 'tall', scale: 1.14 },
-    { dx:  68, dz: -22, variant: 'wide', scale: 1.18 },
-    { dx:  72, dz:   2, variant: 'tall', scale: 1.12 },
-    { dx:  68, dz:  24, variant: 'wide', scale: 1.10 },
-    // Pocket greenery inside town: Plaza corners & uphill gardens (compact & citrus)
-    { dx: -15.5, dz: 15.8, variant: 'compact', scale: 0.92 },
-    { dx:  15.5, dz: 15.8, variant: 'compact', scale: 0.95 },
-    { dx: -24.5, dz: -38.5, variant: 'citrus', scale: 0.95 },
-    { dx:  24.5, dz: -38.5, variant: 'citrus', scale: 0.95 },
-    { dx: -23.5, dz:  -8.0, variant: 'compact', scale: 0.88 },
-    { dx:  23.5, dz:  -8.0, variant: 'compact', scale: 0.88 },
-    // Coastal promenade accent trees outside main slope sightline
-    { dx: -30.0, dz: 53.5, variant: 'compact', scale: 0.94 },
-    { dx:  30.0, dz: 53.5, variant: 'compact', scale: 0.94 },
-  ];
-  const treePositions = treeSpecs.map(t => ({
-    x: CX + t.dx,
-    y: (Math.abs(t.dx) < 35 && t.dz > -50 && t.dz < 56 ? townSlopeY(t.dz) + 0.22 : coastalTownTerrainHeight(CX + t.dx, CZ + t.dz)) - 0.04,
-    z: CZ + t.dz,
-    variant: t.variant,
-    sx: t.scale,
-    sy: t.scale,
-    sz: t.scale,
-    rotY: ((Math.abs(t.dx) * 13 + Math.abs(t.dz) * 7) % 628) / 100,
-  }));
-  placeStylizedTrees(root, treePositions);
-
-  // Animation loop: Enoden tram loops across the coast & crossing gates lower smoothly
-  function update(time) {
-    // At time=0..2s, tram is gliding right across the iconic main slope crossing (dx ~ -3 -> +12)
-    // Full loop period = 32 seconds (-118m -> +118m)
-    const span = 236;
-    const speed = 7.4;
-    const raw = (((time * speed) + 114.5) % span + span) % span;
-    const tramDx = raw - 118;
-    tramGroup.position.x = CX + tramDx;
-
-    // Lower fumikiri crossing bars when tram is approaching or crossing main avenue
-    const approaching = 1.0 - smoothstep(22.0, 38.0, Math.abs(tramDx));
-    const barAngle = lerp(1.32, 0.0, approaching); // 1.32 rad = raised, 0 = lowered horizontally
-    for (const bar of gateBars) {
-      bar.rotation.z = barAngle;
-    }
-
-    signKit.update(1 / 60, time);
-  }
-
-  // Initialize frame 0 so screenshots immediately show the tram gliding across the crossing
-  update(0);
+  buildTownTerrain(root);
+  buildRoadsAndCivil(root);
+  const waterTintUniform = buildOcean(root);
+  buildBackdropFlora(root);
+  buildCoastalTrees(root);
+  const heroRoot = mountHaikazeHero(root, haikazeGltf, maxAniso);
 
   return {
     root,
-    signKit,
-    update,
-    dispose() {
-      signKit?.dispose?.();
-      for (const g of trackedGeos) g.dispose();
-      for (const m of trackedMats) m.dispose();
-      for (const t of trackedTex) t.dispose();
+    heroRoot,
+    waterTintUniform,
+    update(time) {
+      updateMeadowEnv(time);
     },
   };
 }

@@ -33,11 +33,11 @@
 
 自本版规范生效起，**全面废除早期过渡期的纯代码美术路线**，所有新做与重做资产严格执行以下边界：
 
-- **禁止再做（旧代码资产仅冻结待逐批替换删除）**：
+- **禁止再做（早期旧代码资产已彻底下线并归档于 `archive/early-prototype`）**：
   - ❌ 禁止用 Three.js 代码手拼建筑或街头道具；
-  - ❌ 禁止用 `BoxBuilder` 式百块方块硬拼建筑脚本（如已废弃的旧版 [`art/town/coastal-town-kit.py`](../art/town/coastal-town-kit.py)）；
+  - ❌ 禁止用 `BoxBuilder` 式百块方块硬拼建筑脚本（如已归档的旧版 `art/town/coastal-town-kit.py`）；
   - ❌ 禁止用纯顶点色假装材质，或用 `onBeforeCompile` 程序化着色器给素模“假装贴砖纹/瓦楞”（旧补丁随新资产替换一并退役）；
-  - ❌ 禁止用前端 Canvas / Pillow 简笔画直接糊核心招牌、菜单、海报或墙面肌理（如已废弃的 [`src/morning/coastal-detail-atlas.js`](../src/morning/coastal-detail-atlas.js)）。
+  - ❌ 禁止用前端 Canvas / Pillow 简笔画直接糊核心招牌、菜单、海报或墙面肌理（如已归档的 `src/morning/coastal-detail-atlas.js`）。
 - **纯 Blender + AI 贴图负责什么**：全部玩家可见 3D 美术资产——建筑主体与模块化构件、门窗/楼梯/屋顶细节、全游戏共享公模道具、载具、主角与 NPC 材质贴图。
 - **Three.js 代码只负责什么**：地形高度场与路网碰撞、建筑与公模的批量拼装与 `InstancedMesh` 实例化/运行时换色、动态光影与 4 时段切换、水面/云影/暖帘微风/拉面热气等轻特效、手机 HUD 与动态多语言界面。
 
@@ -77,7 +77,7 @@
 
 ## 3. 色彩、光影与“有人居住”的 4 时段氛围
 
-- **色板事实源**：[`src/morning/city-palette.js`](../src/morning/city-palette.js) 中的 `CITY_PALETTE`。新增建筑、街具与 AI 贴图色彩校准（AgX 下避免强光发白或暗部死灰）均与该色板协调，按区域扩展，不另建平行色板。
+- **色板事实源**：本节下表与 [`art/town/haikaze-hero/build_haikaze_hero.py`](../art/town/haikaze-hero/build_haikaze_hero.py) 中的校准色板。新增建筑、街具与 AI 贴图色彩校准（AgX / ACES 下避免强光发白或暗部死灰）均与该色板协调，按区域扩展，不另建平行色板。
 - **材质反差法则**：用有限共享材质槽拉开触感反差——**哑光手涂灰泥**（Roughness `0.75–0.82`）vs **半光烤漆墨绿铁件**（Roughness `0.30` + Clearcoat）vs **高光糖果釉面瓷砖**（Roughness `0.16`）vs **拉丝黄铜五金**（挂钩/门把）vs **温润雪松木** vs **次表面暖光灯笼/窗帘**。
 - **4 个时段（早晨 / 中午 / 傍晚 / 夜晚）**：数据驱动平滑过渡（太阳方向与色温、天空渐变、冷蓝阴影填充、远景轻雾、自发光与辉光），**所有核心建筑必须在日景与暖光夜景下同时通过审图**。
 - **“有人居住”的暖光夜景标准【核心卖点】**：

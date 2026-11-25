@@ -1,241 +1,109 @@
 import { rideTuning, trialLimitsKmh } from './free-ride.js';
-import { centerZ, roadYaw, landmarks } from './country-route.js';
-import { COASTAL_SAMPLE, hillRoadPoint } from './coastal-sample.js';
-import { COASTAL_TOWN, HERO_HAIKAZE } from './coastal-town.js';
-import { streetTreeXs, treePitZ } from './street-layout.js';
-import { orders, start, bunFacade } from './orders.js';
+import { HERO_HAIKAZE, heroLocalToWorld } from './coastal-town.js';
+import { orders, start } from './orders.js';
 import { TOD_ORDER, TOD_PRESETS } from './time-of-day.js';
 import { STYLE_ORDER, STYLE_LABELS, getRendererControls } from './render-style.js';
 
-const pharmacy = orders.find(order => order.id === 'pharmacy');
-const buns = orders.find(order => order.id === 'buns');
-const parked = x => ({ bikeX: x, bikeZ: start.z, yaw: Math.PI });
-const atCounter = order => ({
-  order, mode: 'shop', phase: 'pickup', x: order.room.counter.x, z: .42, ...parked(order.door.x),
-});
-const bakeryFront = {
-  order: buns, mode: 'walk', phase: 'pickup', x: bunFacade.x + 1.55, z: .16, ...parked(buns.door.x + 1),
-};
-
-function onCountryRoad(x, laneOffset = 0) {
-  const z = centerZ(x) + laneOffset, yaw = roadYaw(x);
-  return { phase: 'free', mode: 'ride', x, z, bikeX: x, bikeZ: z, yaw, bikeYaw: yaw };
-}
-
-function onHillRoad(s) {
-  const pt = hillRoadPoint(s);
-  return { phase: 'free', mode: 'ride', x: pt.x, z: pt.z, bikeX: pt.x, bikeZ: pt.z, yaw: pt.yaw, bikeYaw: pt.yaw };
-}
-
-const coastalStart = onHillRoad(10);
-const coastalPlaza = onHillRoad(170);
-
-function inHub(dx, dz, yaw = 0, extra = {}) {
-  const x = COASTAL_TOWN.x + dx;
-  const z = COASTAL_TOWN.z + dz;
+function rideAt(x, z, yaw = 0, extra = {}) {
   return { phase: 'free', mode: 'ride', x, z, bikeX: x, bikeZ: z, yaw, bikeYaw: yaw, ...extra };
 }
 
-// State overrides are applied to a fresh delivery. Optional camera presets are cleared on movement.
+const shopWalkPt = heroLocalToWorld(1.8, -5.2);
+const stairs2FPt = heroLocalToWorld(3.35, -0.80);
+
 export const sceneJumps = {
-  hubSlope: {
-    title: '榕湾坡道镇·下坡看海',
-    state: inHub(0.9, -26.0, 0),
-  },
-  heroHaikaze: {
-    title: '标杆建筑·海风庄全景',
-    state: inHub(4.4, 29.0, -0.32, { stand: 1 }),
+  haikazeHero: {
+    title: '海风庄·全景街角',
+    state: rideAt(2.4, 14.0, 0.42, { stand: 1 }),
     camera: {
-      fov: 48,
-      focus: [COASTAL_TOWN.x + 7.6, 4.9, COASTAL_TOWN.z + 34.4],
-      offset: [-4.4, 0.55, -16.2],
+      fov: 44,
+      focus: [8.6, 5.1, 19.8],
+      offset: [-11.8, 1.35, -14.6],
     },
   },
-  heroStairs: {
-    title: '标杆建筑·外楼梯上二楼',
+  haikazePlay: {
+    title: '海风庄·立即骑行',
+    state: rideAt(start.x, start.z, start.yaw, { stand: 1 }),
+  },
+  haikazeShopClose: {
+    title: '海风拉面·1F 门面近景',
     state: {
       phase: 'free',
       mode: 'walk',
-      x: COASTAL_TOWN.x + HERO_HAIKAZE.dx - 3.35,
-      z: COASTAL_TOWN.z + HERO_HAIKAZE.dz - 0.55,
-      yaw: -Math.PI * 0.65,
-      bikeX: COASTAL_TOWN.x + 4.8,
-      bikeZ: COASTAL_TOWN.z + 29.2,
-      bikeYaw: -0.25,
+      x: shopWalkPt.x,
+      z: shopWalkPt.z,
+      yaw: 0.22,
+      bikeX: 2.4,
+      bikeZ: 14.0,
+      bikeYaw: 0.42,
       stand: 1,
     },
     camera: {
-      fov: 45,
-      focus: [COASTAL_TOWN.x + 9.1, 6.2, COASTAL_TOWN.z + 34.6],
-      offset: [-5.4, 1.0, -4.6],
+      fov: 42,
+      focus: [HERO_HAIKAZE.x - 0.2, 3.85, HERO_HAIKAZE.z - 3.6],
+      offset: [-2.0, 0.25, -8.8],
     },
   },
-  heroShopClose: {
-    title: '标杆建筑·一楼门面近景',
+  haikazeStairs2F: {
+    title: '海风庄·外挂铁楼梯与 2F 走廊',
     state: {
       phase: 'free',
       mode: 'walk',
-      x: COASTAL_TOWN.x + 11.45,
-      z: COASTAL_TOWN.z + 29.15,
-      yaw: 0.18,
-      bikeX: COASTAL_TOWN.x + 5.2,
-      bikeZ: COASTAL_TOWN.z + 29.2,
-      bikeYaw: 0.2,
+      x: stairs2FPt.x,
+      z: stairs2FPt.z,
+      yaw: -Math.PI * 0.65,
+      bikeX: 2.4,
+      bikeZ: 14.0,
+      bikeYaw: 0.42,
       stand: 1,
     },
     camera: {
       fov: 44,
-      focus: [COASTAL_TOWN.x + 11.6, 3.65, COASTAL_TOWN.z + 31.2],
-      offset: [-1.4, 0.15, -8.2],
+      focus: [HERO_HAIKAZE.x - 3.6, 5.4, HERO_HAIKAZE.z - 0.2],
+      offset: [-6.8, 1.35, -6.2],
     },
   },
-  hubCrossing: {
-    title: '榕湾坡道镇·电车道口',
-    state: inHub(1.2, 37.5, 0),
+  coastalSlope: {
+    title: '榕湾观海坡道·下坡看海',
+    state: rideAt(0.8, -19.0, 0),
   },
-  hubPlaza: {
-    title: '榕湾坡道镇·十字小广场',
-    state: inHub(-4.5, 25.0, Math.PI * 0.36),
+  seawall: {
+    title: '海滨观海大道·海岸栈台',
+    state: rideAt(2.5, 47.0, Math.PI * 0.46),
   },
-  hubUphill: {
-    title: '榕湾坡道镇·坡上住宅巷',
-    state: inHub(-14.0, -58.0, Math.PI * 0.35),
-  },
-  hubOverview: {
-    title: '榕湾坡道镇·全景鸟瞰',
-    state: inHub(0.9, -12.0, 0),
-    camera: {
-      fov: 46,
-      focus: [COASTAL_TOWN.x, 4.5, COASTAL_TOWN.z + 10],
-      offset: [-68, 56, -82],
+  ramenOrder: {
+    title: '试玩派单·海风拉面送 201 室',
+    state: {
+      ...rideAt(2.4, 14.0, 0.42, { stand: 1 }),
+      order: orders[0],
+      phase: 'pickup',
+      mode: 'walk',
+      x: shopWalkPt.x,
+      z: shopWalkPt.z,
+      yaw: 0.1,
     },
   },
-  street: { title: '旧老街起点（历史）' },
   shibaFront: {
     title: '阿柴正面·站姿',
-    state: { phase: 'free', mode: 'walk', x: 2.0, z: 0.4, yaw: 0, bikeX: -2.2, bikeZ: start.z, bikeYaw: Math.PI / 2, stand: 1 },
-    camera: { fov: 36, focus: [2.0, 0.78, 0.4], offset: [0.18, 0.22, 2.75] },
-  },
-  shibaSide: {
-    title: '阿柴侧面·斜视',
-    state: { phase: 'free', mode: 'walk', x: 2.0, z: 0.4, yaw: 0, bikeX: -2.2, bikeZ: start.z, bikeYaw: Math.PI / 2, stand: 1 },
-    camera: { fov: 36, focus: [2.0, 0.78, 0.4], offset: [2.45, 0.28, 1.35] },
-  },
-  shibaBack: {
-    title: '阿柴背面·站姿',
-    state: { phase: 'free', mode: 'walk', x: 2.0, z: 0.4, yaw: Math.PI, bikeX: -2.2, bikeZ: start.z, bikeYaw: Math.PI / 2, stand: 1 },
-    camera: { fov: 36, focus: [2.0, 0.78, 0.4], offset: [0.18, 0.24, 2.75] },
+    state: {
+      phase: 'free',
+      mode: 'walk',
+      x: 1.5,
+      z: 14.8,
+      yaw: Math.PI,
+      bikeX: -2.0,
+      bikeZ: 14.5,
+      bikeYaw: 0.25,
+      stand: 1,
+    },
+    camera: { fov: 36, focus: [1.5, 2.72, 14.8], offset: [0.18, 0.20, -2.75] },
   },
   shibaRide: {
     title: '阿柴骑姿·近景',
-    state: { phase: 'free', mode: 'ride', x: 2.0, z: start.z, yaw: Math.PI / 2, bikeX: 2.0, bikeZ: start.z, bikeYaw: Math.PI / 2, stand: 1 },
-    camera: { fov: 38, focus: [2.0, 0.92, start.z], offset: [2.25, 0.45, 2.35] },
-  },
-  banyan: { title: '街边小榕树', state: bakeryFront,
-    camera: { height: 4.9, width: 5.8, focus: [-2.4, 1.23, .86], offset: [2.2, 3.5, 8] } },
-  bark: { title: '近看树干', state: { ...bakeryFront, ...parked(bunFacade.x - 2) },
-    camera: { height: 1.9, width: 1.85, focus: [streetTreeXs[1], 1.02, treePitZ], offset: [-4.1, .65, 4.7] } },
-  willow: { title: '桥头阔叶树', state: onCountryRoad(892),
-    camera: { fov: 40, fitWidth: true, focus: [891.5, 3.6, centerZ(891.5) + 11.2], offset: [-10, 2.4, -13] } },
-  crossing: { title: '城市十字路口', state: onCountryRoad(70, 2.2) },
-  cityIce: { title: '城区单·冰室取茶', state: { ...onCountryRoad(68, 2.0), order: orders.find(o => o.id === 'ice'), phase: 'pickup', mode: 'ride' } },
-  cityTea: { title: '城区单·茶行送北街', state: { ...onCountryRoad(68, 2.0), order: orders.find(o => o.id === 'tea'), phase: 'pickup', mode: 'ride' } },
-  cityEdge: {
-    title: '城市边角·路缘细节', state: onCountryRoad(79, 2.5),
-    camera: { fov: 46, focus: [95.5, 1.4, 10.8], offset: [-14.2, 2.1, -4.8] },
-  },
-  cityAvenue: {
-    title: '城市大道·榕湾方向', state: onCountryRoad(89, 1.8),
-    camera: { fov: 50, focus: [112, 3.6, 4.17], offset: [-26, 2.2, 2.6] },
-  },
-  openPaddy: { title: '开阔水田', state: onCountryRoad(340) },
-  riceBend: { title: '稻浪到石桥', state: onCountryRoad(792) },
-  harvestView: {
-    title: '稻田风景', state: onCountryRoad(748),
-    camera: { fov: 46, focus: [767, 1.85, centerZ(767) + 12], offset: [-20, .28, -8] },
-  },
-  riceClose: {
-    title: '田埂看稻穗', state: onCountryRoad(835),
-    camera: { fov: 48, focus: [843, 0.92, centerZ(843) + 5.6], offset: [-4.6, 0.76, -2.5] },
-  },
-  sampleRide: {
-    title: '路肩样板·骑行', state: onCountryRoad(780),
-  },
-  sampleEdge: {
-    title: '路肩样板·斜视', state: onCountryRoad(780),
-    camera: { fov: 48, focus: [780, 0.15, centerZ(780) + 3.0], offset: [-6.4, 1.45, -3.6] },
-  },
-  sampleWalk: {
-    title: '路肩样板·田边下车',
-    state: { ...onCountryRoad(780), mode: 'walk', z: centerZ(780) + 3.05 },
-    camera: { fov: 46, focus: [780, 0.48, centerZ(780) + 2.55], offset: [-4.2, 1.1, -4.8] },
-  },
-  meadowRide: {
-    title: '草地小样·骑行', state: onCountryRoad(1118),
-  },
-  meadowWide: {
-    title: '草地小样·广角坡地', state: onCountryRoad(1130),
-    camera: { fov: 46, focus: [1148, 1.4, centerZ(1148) + 18], offset: [-24, 5.2, -16] },
-  },
-  meadowClose: {
-    title: '草地小样·草叶近景', state: onCountryRoad(1132),
-    camera: { fov: 44, focus: [1138, 0.35, centerZ(1138) + 7.2], offset: [-5.5, 0.95, -2.8] },
-  },
-  meadowTree: {
-    title: '树木小样·村口乔木', state: onCountryRoad(1124),
-    camera: { fov: 42, focus: [1131.5, 2.75, 5.91], offset: [-8.5, 0.85, -5.2] },
-  },
-  pharmacy: { title: '药店门口', state: { order: pharmacy, mode: 'walk', phase: 'pickup',
-    x: pharmacy.door.x, z: -.32, ...parked(pharmacy.door.x) } },
-  counter: { title: '药店柜台', state: atCounter(pharmacy) },
-  home: { title: '猫婆婆家', state: { order: pharmacy, mode: 'walk', phase: 'delivery', cargo: 'hand',
-    x: pharmacy.customer.point.x, z: -.25, ...parked(pharmacy.customer.point.x) } },
-  buns: { title: '包子铺门面', state: bakeryFront,
-    camera: { height: 4.9, width: 7.05, focus: [bunFacade.x, 2.26, -1.74], offset: [1.3, 2, 10] } },
-  signKit: {
-    title: '老街招牌·图集近景',
-    state: { phase: 'free', mode: 'walk', x: 5.5, z: 0.6, yaw: Math.PI, bikeX: -2.2, bikeZ: start.z, bikeYaw: Math.PI / 2, stand: 1 },
-    camera: { fov: 44, focus: [4.8, 3.25, -2.0], offset: [-2.4, 0.45, 9.8] },
-  },
-  bunCounter: { title: '包子铺柜台', state: atCounter(buns) },
-  steamers: { title: '包子铺蒸笼', state: bakeryFront,
-    camera: { height: 2.1, width: 3.65, focus: [bunFacade.x - 1.07, 1.54, -1.74], offset: [1.8, 4.8, 10] } },
-  coastalCorner: {
-    title: '海风坡道·谷底起骑',
-    state: coastalStart,
-  },
-  coastalGate: {
-    title: '海风坡道·民居近景',
-    state: { ...coastalPlaza, mode: 'walk', stand: 1 },
-    camera: {
-      fov: 40,
-      focus: [COASTAL_SAMPLE.x - 28, 14.3, COASTAL_SAMPLE.z - 42],
-      offset: [8.8, 1.9, 11.4],
-    },
-  },
-  coastalOverview: {
-    title: '海风坡道·全景鸟瞰',
-    state: coastalStart,
-    camera: {
-      fov: 46,
-      focus: [COASTAL_SAMPLE.x + 2, 7.5, COASTAL_SAMPLE.z - 12],
-      offset: [-48, 38, 92],
-    },
-  },
-  coastalHill: {
-    title: '海风坡道·坡顶风车村',
-    state: coastalPlaza,
-    camera: {
-      fov: 46,
-      focus: [COASTAL_SAMPLE.x - 16, 15.8, COASTAL_SAMPLE.z - 50],
-      offset: [26, 7.2, 34],
-    },
+    state: rideAt(2.4, 14.0, 0.42, { stand: 1 }),
+    camera: { fov: 38, focus: [2.4, 2.84, 14.0], offset: [-2.25, 0.45, -2.35] },
   },
 };
-
-for (const { id, name, x } of landmarks.slice(1)) {
-  sceneJumps[id] ??= { title: name, state: onCountryRoad(x) };
-}
 
 export function setupSceneDebug(reset, renderer, state) {
   const panel = document.getElementById('scene-debug');
@@ -247,7 +115,6 @@ export function setupSceneDebug(reset, renderer, state) {
   const renderStyle = controls?.renderStyle;
 
   if (enabled) {
-    // Inject minimal scoped styles for style/TOD controls inside #scene-debug.
     if (!document.getElementById('scene-debug-render-css')) {
       const styleEl = document.createElement('style');
       styleEl.id = 'scene-debug-render-css';
@@ -267,7 +134,7 @@ export function setupSceneDebug(reset, renderer, state) {
     if (renderStyle && timeOfDay) {
       const styleHeading = document.createElement('span');
       styleHeading.className = 'dbg-heading';
-      styleHeading.textContent = '渲染风格 (S1)';
+      styleHeading.textContent = '渲染风格';
       const styleRow = document.createElement('div');
       styleRow.className = 'dbg-row';
       styleRow.setAttribute('aria-label', '选择渲染风格');
@@ -284,7 +151,7 @@ export function setupSceneDebug(reset, renderer, state) {
 
       const todHeading = document.createElement('span');
       todHeading.className = 'dbg-heading';
-      todHeading.textContent = '时段光照 (0–1 可插值)';
+      todHeading.textContent = '时段光照 (日/夜实时切换)';
       const todRow = document.createElement('div');
       todRow.className = 'dbg-row cols-4';
       todRow.setAttribute('aria-label', '选择时段');
@@ -327,10 +194,8 @@ export function setupSceneDebug(reset, renderer, state) {
       const sceneHeading = document.createElement('span');
       sceneHeading.className = 'dbg-heading';
       sceneHeading.textContent = '场景瞬移';
-
       groupEl.before(styleHeading, styleRow, todHeading, todRow, sliderRow, sceneHeading);
 
-      // Apply URL query overrides when debug is enabled (?style=a|off&tod=morning|noon|dusk|night|0..1)
       const qStyle = params.get('style')?.toLowerCase();
       if (qStyle && STYLE_ORDER.includes(qStyle)) renderStyle.setStyle(qStyle);
       const qTod = params.get('tod')?.toLowerCase();
@@ -353,9 +218,14 @@ export function setupSceneDebug(reset, renderer, state) {
       });
       groupEl.append(button);
     }
+  } else if (timeOfDay) {
+    // Allow ?tod=night|dusk|noon|morning even in production preview links!
+    const qTod = params.get('tod')?.toLowerCase();
+    if (qTod && Object.hasOwn(TOD_PRESETS, qTod)) timeOfDay.setPreset(qTod);
   }
+
   const id = params.get('scene');
-  reset(enabled && Object.hasOwn(sceneJumps, id) ? sceneJumps[id] : sceneJumps.hubSlope);
+  reset(enabled && Object.hasOwn(sceneJumps, id) ? sceneJumps[id] : sceneJumps.haikazeHero);
 
   const speedButton = document.getElementById('test-speed');
   let speedIndex = 0;

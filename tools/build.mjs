@@ -25,9 +25,6 @@ assert.match(entry, styleTag);
 
 const notices = await Promise.all([
   ['Three.js', 'node_modules/three/LICENSE'],
-  ['Animal Island UI', 'node_modules/animal-island-ui/LICENSE'],
-  ['React, React DOM and Scheduler', 'node_modules/react/LICENSE'],
-  ['classnames', 'node_modules/classnames/LICENSE'],
   ['Noto Sans SC', 'src/morning/fonts/OFL-NotoSansSC.txt'],
 ].map(async ([name, path]) => name + '\n' + (await readFile(path, 'utf8')).trim()));
 const js = scripts[0].code.replace(/<\/script/gi, '<\\/script');

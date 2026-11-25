@@ -1,28 +1,20 @@
 import { $, write } from './dom.js';
 import { oscVoice } from '../audio/synth.js';
-import { clamp } from '../core/mathx.js';
-import { CURB_H, CURB_Z, rideMinZ, treeCrossingDirection } from './street-layout.js';
 import { isStandSequence } from './sequence.js';
 import { distance } from './delivery.js';
-import { formatPay, nextOrder, orders } from './orders.js';
-import { mountBunHandoff } from './bun-handoff.jsx';
-import { drawRouteMap } from './route-map.js';
-import { crossing, distanceAlong, roadEnd, roadPlace, routeDistances } from './country-route.js';
-import { inCoastalSample } from './coastal-sample.js';
-import { inCoastalTown } from './coastal-town.js';
-import { drawStreetMap } from './street-map.js';
+import { formatPay, nextOrder } from './orders.js';
+import { coastalTownSurfaceHeight, townPlace } from './coastal-town.js';
+import { drawTownMap } from './town-map.js';
 
-export function createHUD(state, delivery, view, { shiba, marker }, { input, stick, releaseStick }, reset, rideAudio) {
+export function createHUD(state, delivery, view, { shiba, marker, timeOfDay }, { input, stick, releaseStick }, reset, rideAudio) {
   const { availableAction, navigate } = delivery;
   const debug = $('scene-debug');
   const dialogue = $('dialogue');
-  const bunDialogue = $('bun-dialogue');
-  const interaction = dialogue.parentElement;
   const actionButton = $('action');
-  mountBunHandoff(bunDialogue, orders.find(order => order.id === 'buns'));
   let lastMode = '';
   let lastAudioActive = null;
   let audio;
+
   function bell(notes) {
     if (!window.AudioContext) return;
     audio ??= new AudioContext();
@@ -34,18 +26,13 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
 
   const phone = $('phone'), phoneToggle = $('phone-toggle');
   const map = $('street-map');
+
   function paintMap() {
     if (!map.open) return;
-    if (state.phase === 'free' || state.x > 130) {
-      drawRouteMap($('street-plan'), state);
-    } else {
-      const mapState = state.x > 45 && !state.order?.cityRoute
-        ? { ...state, order: { ...state.order, cityRoute: true } }
-        : state;
-      drawStreetMap($('street-plan'), mapState, navigate().point);
-    }
+    drawTownMap($('street-plan'), state, navigate().point);
   }
   new ResizeObserver(paintMap).observe($('street-plan'));
+
   function openMap() {
     if (map.open || phoneExpanded || state.sequence || state.dialog || state.braking) return;
     debug.open = false;
@@ -56,18 +43,17 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     write('map-pickup', state.order.name);
     write('map-delivery', state.order.customer.address);
     const free = state.phase === 'free';
-    const route = free || state.x > 130;
-    const city = !route && (!!state.order?.cityRoute || state.x > 45);
-    const where = state.mode === 'shop' ? state.order.room.name : state.x > 45 ? roadPlace(state.x, state.z) : '榕湾老街';
-    write('map-location', route
-      ? '当前位置 · ' + roadPlace(state.x, state.z) + '　全长 ' + (distanceAlong(roadEnd) / 1000).toFixed(2) + ' km'
+    const where = townPlace(state.x, state.z);
+    write('map-location', free
+      ? '当前位置 · ' + where + '　（在骑手手机中可随时接取海风拉面订单）'
       : '当前位置 · ' + where + '　　目标 · ' + navigate().name);
-    write('map-title', route ? '榕湾村道' : city ? '榕湾城区' : '榕湾老街');
-    $('map-stops').hidden = free || ((state.phase === 'offer' || state.phase === 'done') && route);
+    write('map-title', '榕湾海风街角');
+    $('map-stops').hidden = free;
     paintMap();
   }
   $('map-open').addEventListener('click', openMap);
   $('map-close').addEventListener('click', () => map.close());
+
   let phoneExpanded = false;
   function look() {
     if (!state.dialog && !state.sequence && !phoneExpanded && !map.open) {
@@ -75,6 +61,7 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     }
   }
   $('look').addEventListener('click', look);
+
   function setPhoneExpanded(expanded) {
     if (expanded === phoneExpanded || (expanded && (state.sequence || state.dialog || state.braking))) return;
     phoneExpanded = expanded;
@@ -88,7 +75,6 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     else phone.removeAttribute('aria-modal');
     phoneToggle.setAttribute('aria-expanded', String(expanded));
     phoneToggle.setAttribute('aria-label', expanded ? '收起手机' : '展开骑手手机');
-    // Move focus outside the details before they become inert.
     if (!expanded) phoneToggle.focus({ preventScroll: true });
     $('phone-details').inert = !expanded;
     $('phone-details').setAttribute('aria-hidden', String(!expanded));
@@ -125,13 +111,15 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
   });
   $('phone-shade').addEventListener('click', () => setPhoneExpanded(false));
   $('switch-order').addEventListener('click', () => {
-    if (state.phase !== 'offer') return;
+    if (state.phase !== 'offer' && state.phase !== 'free') return;
     state.order = nextOrder(state.order);
     syncHUD();
   });
   $('phone-main').addEventListener('click', () => {
-    if (state.phase === 'offer') {
+    if (state.phase === 'offer' || state.phase === 'free') {
       state.phase = 'pickup';
+      state.cargo = 'none';
+      state.returnToBike = false;
       shiba.greet();
       view.clearInspection();
       bell([659, 784]);
@@ -168,12 +156,11 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
       shiba.greet();
       write('announcement', '已签收，手机收到到账通知。');
     }
-    bell(action === 'sign' ? [523, 659, 784] : [action === 'enter' || action === 'exit' ? 740 : 587]);
+    bell(action === 'sign' ? [523, 659, 784] : [587]);
     syncHUD();
   }
   actionButton.addEventListener('click', perform);
-  // Some touch browsers only synthesize a click for the first finger. Let the
-  // other thumb tap a control while the stick still owns the first pointer.
+
   for (const button of [actionButton, phoneToggle]) {
     let secondaryTap = false;
     button.addEventListener('pointerdown', () => { secondaryTap = false; });
@@ -190,6 +177,7 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
       }
     }, true);
   }
+
   window.addEventListener('keydown', e => {
     if (map.open) {
       if (e.code === 'KeyM' && !e.repeat) { e.preventDefault(); map.close(); }
@@ -212,7 +200,7 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     if (phoneExpanded) {
       const primary = state.phase === 'done' ? $('replay') : $('phone-main');
       if (e.code === 'Escape') { e.preventDefault(); setPhoneExpanded(false); }
-      else if (e.code === 'KeyE' && state.phase === 'offer') { e.preventDefault(); primary.click(); }
+      else if (e.code === 'KeyE' && (state.phase === 'offer' || state.phase === 'free')) { e.preventDefault(); primary.click(); }
       else if (e.code === 'Tab' && ((!e.shiftKey && e.target === primary) || (e.shiftKey && e.target === phoneToggle))) {
         e.preventDefault();
         (e.shiftKey ? primary : phoneToggle).focus();
@@ -228,52 +216,29 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
   function guidance(target, action) {
     if (state.braking) return state.speed ? '正在减速停车' : '正在放下侧撑';
     if (state.sequence?.approaching) return '正在走到车旁';
-    if (isStandSequence(state.sequence)) return state.sequence.kind === 'park'
-      ? (state.sequence.hop > 0 ? '正在轻跳落地' : '正在跨座下车') : '正在跨座上车';
+    if (isStandSequence(state.sequence)) {
+      return state.sequence.kind === 'park'
+        ? (state.sequence.hop > 0 ? '正在轻跳落地' : '正在跨座下车') : '正在跨座上车';
+    }
     if (state.phase === 'done') return state.order.customer.name + '已签收';
-    const dx = target.point.x - state.x, dz = target.point.z - state.z;
+    const dist = distance(state, target.point);
     if (state.mode === 'ride') {
-      if (state.order?.cityRoute) {
-        const dist = distance(state, target.point);
-        if (dist < 4.8) return '到了，靠边停车';
-        const onSide = p => Math.abs(p.x - crossing.x) < 10 && Math.abs(p.z - crossing.z) > crossing.half + 2;
-        const riderOnSide = onSide(state);
-        const targetOnSide = onSide(target.point);
-        const oppositeArms = riderOnSide && targetOnSide && Math.sign(state.z - crossing.z) !== Math.sign(target.point.z - crossing.z);
-        const viaCrossing = (riderOnSide !== targetOnSide || oppositeArms) && distance(state, crossing) > 7.5;
-        const wp = viaCrossing ? crossing : target.point;
-        const bearing = Math.atan2(wp.x - state.x, wp.z - state.z);
-        const angle = Math.atan2(Math.sin(bearing - state.bikeYaw), Math.cos(bearing - state.bikeYaw));
-        const metres = Math.ceil(dist);
-        if (viaCrossing && !riderOnSide && targetOnSide && distance(state, crossing) < 24 && Math.abs(angle) < 0.6) {
-          const outBearing = Math.atan2(target.point.x - crossing.x, target.point.z - crossing.z);
-          const turnAngle = Math.atan2(Math.sin(outBearing - state.bikeYaw), Math.cos(outBearing - state.bikeYaw));
-          if (Math.abs(turnAngle) > 0.35) {
-            return (turnAngle > 0 ? '← 前方路口左转 · ' : '前方路口右转 → · ') + metres + ' m';
-          }
-        }
-        let turn = angle > 0 ? '← 向左转' : '向右转 →';
-        if (Math.abs(angle) < 0.24) turn = '↑ 沿街直行';
-        if (Math.abs(angle) > Math.PI * 0.8) turn = '↶ 掉头';
-        return turn + ' ' + metres + ' m';
-      }
-      if (Math.abs(dx) < 1.35) return '到了，靠边停车';
-      const bearing = Math.atan2(dx, clamp(state.z, rideMinZ, 5.8) - state.z);
+      if (dist < 4.5) return '到了，按 E 停车下车';
+      const bearing = Math.atan2(target.point.x - state.x, target.point.z - state.z);
       const angle = Math.atan2(Math.sin(bearing - state.bikeYaw), Math.cos(bearing - state.bikeYaw));
       let turn = angle > 0 ? '← 向左转' : '向右转 →';
-      if (Math.abs(angle) < 0.24) turn = '↑ 沿街直行';
-      if (Math.abs(angle) > Math.PI * .8) turn = '↶ 沿街掉头';
-      return turn + '　' + Math.ceil(Math.abs(dx)) + ' m';
+      if (Math.abs(angle) < 0.24) turn = '↑ 向前骑行';
+      if (Math.abs(angle) > Math.PI * 0.8) turn = '↶ 掉头';
+      return turn + ' ' + Math.ceil(dist) + ' m';
     }
-    if (state.sequence) return { enter: '正在进店', exit: '正在出门', pack: '正在装进保温箱', unpack: '正在取出' + state.order.item }[state.sequence.kind];
-    if (action === 'talk') return '已到柜台';
-    if (action && !['mount', 'exit', 'enter'].includes(action)) return state.order.actions[action];
-    if (action === 'enter' || (action === 'exit' && state.phase === 'delivery') ||
-        (action === 'mount' && target.name === state.order.actions.mount)) return state.order.actions[action];
-    const step = state.mode === 'walk' && treeCrossingDirection(state, target.point);
-    const x = step ? step.x : dx, z = step ? step.z : dz;
-    const arrow = Math.abs(x) > Math.abs(z) ? (x < 0 ? '← 往左走' : '往右走 →') : (z < 0 ? '↑ 往里走' : '↓ 往外走');
-    return arrow + '　' + Math.max(1, Math.ceil(distance(state, target.point))) + ' m';
+    if (state.sequence) return { pack: '正在装进保温箱', unpack: '正在取出' + state.order.item }[state.sequence.kind] || '';
+    if (action && action !== 'mount') return state.order.actions[action] || '';
+    if (state.order.customer.onUpperFloor && state.phase === 'delivery') {
+      return '走西侧外挂楼梯上二楼　' + Math.max(1, Math.ceil(dist)) + ' m';
+    }
+    const dx = target.point.x - state.x, dz = target.point.z - state.z;
+    const arrow = Math.abs(dx) > Math.abs(dz) ? (dx < 0 ? '← 往西走' : '往东走 →') : (dz < 0 ? '↑ 往北走' : '↓ 往南走');
+    return arrow + '　' + Math.max(1, Math.ceil(dist)) + ' m';
   }
 
   function syncHUD() {
@@ -281,28 +246,31 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     const free = state.phase === 'free', offer = state.phase === 'offer', done = state.phase === 'done', riding = state.mode === 'ride';
     $('stage').setAttribute('aria-busy', String(!!state.sequence || state.braking));
     if (phone.dataset.phase !== state.phase) phone.dataset.phase = state.phase;
-    write('order-kind', free ? '自由骑行' : offer ? '附近来单' : done ? '订单完成' : '当前订单');
-    $('switch-order').hidden = !offer;
+    write('order-kind', free ? '海风街角' : offer ? '附近来单' : done ? '订单完成' : '当前订单');
+    $('switch-order').hidden = !(offer || free);
     write('switch-order', '换成' + nextOrder(state.order).label);
     write('pickup-store', state.order.name);
-    write('pickup-person', (state.order.pickupArea || '榕湾老街') + ' · 找' + state.order.staff);
+    write('pickup-person', (state.order.pickupArea || '海风庄 1F') + ' · 找' + state.order.staff);
     write('order-note', '备注　' + state.order.note);
     $('ride-info').hidden = !free;
     if (free) {
-      const metres = routeDistances(state.x, state.z);
-      write('ride-distance', '距老街 ' + Math.round(metres.town) + ' m　距村口 ' + Math.round(metres.village) + ' m');
+      write('ride-distance', '可骑车逛海滨坡道，或按 E 下车走西侧铁楼梯上海风庄二楼；点击下方按钮即可开始派单。');
     }
-    const wantAudio = free || offer || done || !!state.order?.cityRoute || state.x > 45;
+
+    const wantAudio = true;
     if (wantAudio !== lastAudioActive) {
       lastAudioActive = wantAudio;
       rideAudio.setActive(wantAudio);
     }
-    write('phase', { free: '骑行', offer: '待接单', pickup: state.order.pickupPhase, delivery: '去送达', done: '已签收' }[state.phase]);
-    write('goal', free ? roadPlace(state.x, state.z) : done ? state.order.customer.name + '已签收' : task.name);
+
+    const place = townPlace(state.x, state.z);
+    write('phase', { free: '探索', offer: '待接单', pickup: state.order.pickupPhase, delivery: '去送达', done: '已签收' }[state.phase]);
+    write('goal', free ? place : done ? state.order.customer.name + '已签收' : task.name);
     const hint = offer || done || free ? '' : guidance(task, action);
     write('directions', hint);
-    $('directions').hidden = !riding || !hint || (!state.order?.cityRoute && hint.startsWith('↑')) || !!state.sequence || state.braking || phoneExpanded;
+    $('directions').hidden = !hint || !!state.sequence || state.braking || phoneExpanded;
     $('map-open').disabled = !!state.dialog || !!state.sequence || state.braking;
+
     const fee = formatPay(state.order.feeCents), net = formatPay(state.order.feeCents - state.order.insuranceCents);
     write('order-fee', fee);
     write('delivery-address', state.order.customer.address);
@@ -314,35 +282,34 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
     const hasShift = done && state.completedCount > 0;
     $('shift-summary').hidden = !hasShift;
     if (hasShift) write('shift-summary', '今日已完成 ' + state.completedCount + ' 单　·　累计到手 ' + formatPay(state.totalEarnedCents || 0));
-    write('order-summary', free ? Math.round(Math.abs(state.speed)*3.6) + (state.speed < 0 ? ' km/h · 倒车' : ' km/h · 自由骑行') : done ? '实际到账 ' + net : '送往' + state.order.customer.address);
-    write('place', free ? (inCoastalTown(state.x, state.z) ? '榕湾海滨坡道镇' : inCoastalSample(state.x, state.z) ? '边缘风车村' : '榕湾村道') : state.mode === 'shop' ? state.order.room.name : state.x > 45 ? roadPlace(state.x, state.z) : '榕湾老街');
-    write('clock', free ? '清晨' : state.order.clock[state.phase]);
+    write('order-summary', free
+      ? Math.round(Math.abs(state.speed) * 3.6) + (state.speed < 0 ? ' km/h · 倒车' : riding ? ' km/h · 自由骑行' : ' · 步行探索')
+      : done ? '实际到账 ' + net : '送往' + state.order.customer.address);
+    write('place', place);
+    const todT = timeOfDay?.current?.t ?? 0;
+    const todLabel = todT < 0.20 ? '海风清晨' : todT < 0.52 ? '海风正午' : todT < 0.84 ? '海风傍晚' : '海风夜晚';
+    write('clock', free ? todLabel : state.order.clock[state.phase]);
+
     actionButton.hidden = !action || action === 'phone' || action === 'statement' || phoneExpanded;
-    const bunHandoff = state.order.id === 'buns' && state.dialog === 'shopkeeper';
-    dialogue.hidden = !state.dialog || bunHandoff;
-    if (bunDialogue.hidden === bunHandoff) {
-      bunDialogue.hidden = !bunHandoff;
-      interaction.classList.toggle('bun-handoff', bunHandoff);
-      if (bunHandoff) actionButton.setAttribute('aria-describedby', bunDialogue.id);
-      else actionButton.removeAttribute('aria-describedby');
-    }
+    dialogue.hidden = !state.dialog;
     $('look').hidden = !!state.dialog || !!state.sequence || state.braking;
     phoneToggle.disabled = !!state.dialog || !!state.sequence || state.braking;
-    $('order-screen').hidden = done || free;
+    $('order-screen').hidden = done;
     $('receipt').hidden = !done;
     $('phone-main').hidden = done;
     $('next-order').hidden = !done;
     if (done) write('next-order', '继续接' + nextOrder(state.order).label);
     $('replay').hidden = !done;
-    write('phone-main', offer ? state.order.accept : '收起手机');
-    if (state.dialog && !bunHandoff) {
+    write('phone-main', offer || free ? state.order.accept : '收起手机');
+    if (state.dialog) {
       const fromShop = state.dialog === 'shopkeeper';
       write('speaker', fromShop ? state.order.staff : state.order.customer.name);
       write('line', fromShop ? state.order.line : state.order.customer.line);
     }
     write('action-text', state.order.actions[action] || '');
+
     if (state.mode !== lastMode) {
-      write('keys', riding ? 'W/S 油门刹车　A/D 转向　拖动转视角　E 互动' : 'WASD 步行　拖动转视角　R 回正　E 互动');
+      write('keys', riding ? 'W/S 油门刹车　A/D 转向　拖动转视角　E 下车互动' : 'WASD 步行上楼梯　拖动转视角　R 回正　E 互动');
       stick.setAttribute('aria-label', riding ? '骑行摇杆，上推加速，下拉刹车或倒车，左右转向' : '步行摇杆，向任意方向拖动');
       lastMode = state.mode;
     }
@@ -351,23 +318,26 @@ export function createHUD(state, delivery, view, { shiba, marker }, { input, sti
       stick.setAttribute('aria-disabled', String(stickDisabled));
       if (stickDisabled) releaseStick();
     }
+
     marker.visible = !free && !offer && !done && !state.dialog && !state.sequence;
-    const point = task.point;
-    const onOldSidewalk = point.x < 52 && point.z < CURB_Z;
-    const onCitySidewalk = Math.abs(point.x - crossing.x) < 32
-      && Math.abs(point.z - crossing.z) > crossing.half
-      && Math.abs(point.x - crossing.x) > crossing.half;
-    const onSidewalk = state.mode !== 'shop' && (onOldSidewalk || onCitySidewalk);
-    marker.position.set(point.x, onSidewalk ? CURB_H + 0.03 : 0.028, point.z);
+    if (marker.visible) {
+      const pt = task.point;
+      const my = coastalTownSurfaceHeight(pt.x, pt.z, true);
+      marker.position.set(pt.x, my + 0.04, pt.z);
+    }
     if (task.name !== $('announcement').dataset.target && !done) {
       $('announcement').dataset.target = task.name;
       write('announcement', (offer ? '附近来单，' : '目的地，') + task.name);
     }
   }
 
-  return { sync: syncHUD, get modalOpen() { return phoneExpanded || map.open; }, close() {
-    lastAudioActive = null;
-    setPhoneExpanded(false);
-    if (map.open) map.close();
-  } };
+  return {
+    sync: syncHUD,
+    get modalOpen() { return phoneExpanded || map.open; },
+    close() {
+      lastAudioActive = null;
+      setPhoneExpanded(false);
+      if (map.open) map.close();
+    },
+  };
 }

@@ -1,5 +1,6 @@
-import { CURB_Z } from './street-layout.js';
 import { clamp, lerp, smoothstep } from '../core/mathx.js';
+
+const CURB_Z = -0.36;
 
 export function resizeRideCamera(camera, aspect) {
   camera.aspect = aspect;
@@ -7,14 +8,12 @@ export function resizeRideCamera(camera, aspect) {
   camera.updateProjectionMatrix();
 }
 
-/** Keep a fixed-length boom about the rider, including turns against either row of storefronts. */
+/** Keep a fixed-length boom about the rider, including turns against street boundaries. */
 export function frameRide(camera, bike, yaw, focus) {
   const radius = 7.9, pivotHeight = 1.04, rise = 2.54;
   const bearing = yaw + 0.17 * Math.sin(yaw);
   const along = Math.sin(bearing), across = Math.cos(bearing);
   const dz = clamp(-across * radius, CURB_Z + .64 - bike.z, 8.18 - bike.z);
-  // Slide along the curb when the rear quarter is blocked. When crossing the road or
-  // turning all the way around, the boom arcs over the rider to reach the other side.
   const alongCurb = -Math.sign(along) * Math.sqrt(Math.max(0, radius * radius - dz * dz));
   const dx = lerp(-along * radius, alongCurb, smoothstep(0, 0.58, Math.abs(along)));
   const horizontal = Math.hypot(dx, dz);
@@ -27,7 +26,6 @@ export function frameRide(camera, bike, yaw, focus) {
   const behind = fx * hx + fz * hz;
   const open = smoothstep(0.45, 0.96, behind) * smoothstep(2.8, 6.9, horizontal);
   const lead = lerp(0.40, 2.60, open);
-  // Keep the look into a turn inside the available screen width, especially on a phone.
   const forward = behind * lead;
   const lateral = clamp((fz * hx - fx * hz) * lead, -camera.aspect, camera.aspect);
   focus.set(bike.x + fx * forward + fz * lateral, lerp(1.18, 1.43, open), bike.z + fz * forward - fx * lateral);

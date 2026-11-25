@@ -1,6 +1,7 @@
-// Render-style pipeline (locked to Style A: Soft Storybook; 'off' kept as Debug control).
-// - a:   Soft Storybook (matte PBR + cool shadows + non-gray fog + subtle bloom + LGG grade + night hero fill)
-// - off: baseline renderer (zero post passes, Debug comparison only)
+// Render-style pipeline (Style A: Soft Storybook; 'off' kept as Debug comparison).
+// Preserves authored PBR roughness & metallic/ceramic specular on Pure-Blender assets
+// marked `material.userData.preservePbr = true` while giving the whole world cohesive
+// cool storybook shadows, subtle bloom, warm LGG color grade, and night hero rim fill.
 import * as THREE from 'three';
 
 export const STYLE_ORDER = Object.freeze(['off', 'a']);
@@ -125,7 +126,6 @@ void main() {
 }
 `;
 
-// Fullscreen triangle (1 draw call, zero diagonal seam).
 function createFullscreenQuad() {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
@@ -146,16 +146,14 @@ function createFullscreenQuad() {
   };
 }
 
-export function createRenderStyle({ renderer, shiba, scooter, street, country, rooms, timeOfDay }) {
+export function createRenderStyle({ renderer, shiba, scooter, coastalTown, timeOfDay }) {
   let style = 'a';
   const listeners = new Set();
 
-  // Shared global shader uniforms toggled instantaneously (zero shader recompile on switch).
-  // uStyleMode: 0 = off, 1 = Style A (Soft Storybook)
   const sharedUniforms = {
     uStyleMode: { value: 1.0 },
     uShadowTint: { value: new THREE.Color(0x6280ad) },
-    uShadowTintStr: { value: 0.24 },
+    uShadowTintStr: { value: 0.22 },
     uSunRefMag: { value: 3.8 },
     uNightHeroLift: { value: 0.0 },
   };
@@ -179,15 +177,17 @@ export function createRenderStyle({ renderer, shiba, scooter, street, country, r
     if (!isStd && !isLamb) return;
     patchedMats.add(mat);
 
+    const preservePbr = Boolean(mat.userData?.preservePbr);
     const prevCompile = mat.onBeforeCompile;
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
     const heroUniform = { value: isHero ? 1.0 : 0.0 };
-    mat.userData.shibaStyleHero = heroUniform;
+    const pbrUniform = { value: preservePbr ? 1.0 : 0.0 };
 
     mat.onBeforeCompile = (shader, r) => {
       if (prevCompile) prevCompile(shader, r);
       Object.assign(shader.uniforms, sharedUniforms);
       shader.uniforms.uIsHero = heroUniform;
+      shader.uniforms.uPreservePbr = pbrUniform;
 
       const stylePars = /* glsl */ `
 uniform float uStyleMode;
@@ -196,13 +196,14 @@ uniform float uShadowTintStr;
 uniform float uSunRefMag;
 uniform float uNightHeroLift;
 uniform float uIsHero;
+uniform float uPreservePbr;
 `;
       shader.fragmentShader = shader.fragmentShader.replace(
         '#include <common>',
         '#include <common>\n' + stylePars,
       );
 
-      if (isStd && shader.fragmentShader.includes('#include <roughnessmap_fragment>')) {
+      if (isStd && !preservePbr && shader.fragmentShader.includes('#include <roughnessmap_fragment>')) {
         shader.fragmentShader = shader.fragmentShader.replace(
           '#include <roughnessmap_fragment>',
           '#include <roughnessmap_fragment>\n' +
@@ -222,17 +223,18 @@ if (uStyleMode > 0.5) {
   float stLitNorm = clamp(stLitLuma / max(uSunRefMag * 0.16, 0.06), 0.0, 1.0);
   vec3 stInd = reflectedLight.indirectDiffuse;
   float stIndLuma = dot(stInd, vec3(0.299, 0.587, 0.114));
-  // Pure chromatic shadow direction (unit luminance) so dark night shadowTint never crushes brightness.
   vec3 stCoolDir = uShadowTint / max(dot(uShadowTint, vec3(0.299, 0.587, 0.114)), 0.001);
-  // Keep hero (Shiba & Scooter) shadows warmer so courier yellow never turns gray-taupe.
-  float heroCoolScale = uIsHero > 0.5 ? 0.30 : 1.0;
+  float heroCoolScale = uIsHero > 0.5 ? 0.30 : (uPreservePbr > 0.5 ? 0.68 : 1.0);
 
-  // Style A (Soft Storybook): suppress harsh specular, paint soft cool shadows ONLY in shaded regions.
-  reflectedLight.directSpecular *= 0.22;
-  reflectedLight.indirectSpecular *= 0.30;
+  // Preserve rich PBR metallic/ceramic sheen on Pure-Blender assets; keep terrain softly matte.
+  float dirSpecMul = uPreservePbr > 0.5 ? 0.78 : 0.22;
+  float indSpecMul = uPreservePbr > 0.5 ? 0.82 : 0.30;
+  reflectedLight.directSpecular *= dirSpecMul;
+  reflectedLight.indirectSpecular *= indSpecMul;
+
   float stShade = 1.0 - smoothstep(0.02, 0.36, stLitNorm);
-  vec3 stCoolFill = stIndLuma * mix(vec3(1.0), stCoolDir, 0.54 * heroCoolScale) * (uIsHero > 0.5 ? 1.05 : 0.97);
-  reflectedLight.indirectDiffuse = mix(stInd, stCoolFill, stShade * clamp(uShadowTintStr * 1.10, 0.0, 0.65));
+  vec3 stCoolFill = stIndLuma * mix(vec3(1.0), stCoolDir, 0.50 * heroCoolScale) * (uIsHero > 0.5 ? 1.05 : 0.98);
+  reflectedLight.indirectDiffuse = mix(stInd, stCoolFill, stShade * clamp(uShadowTintStr * 1.05, 0.0, 0.60));
   if (uIsHero > 0.5) {
     float stNdv = clamp(dot(geometryNormal, geometryViewDir), 0.0, 1.0);
     float stRim = pow(1.0 - stNdv, 2.5) * 0.22;
@@ -240,7 +242,6 @@ if (uStyleMode > 0.5) {
   }
 }
 if (uIsHero > 0.5 && uNightHeroLift > 0.005) {
-  // Subtle cool-moonlight rim separation only (never blasts the rider's back bright at night).
   float hNdv = clamp(dot(geometryNormal, geometryViewDir), 0.0, 1.0);
   float hTop = clamp(geometryNormal.y * 0.5 + 0.5, 0.0, 1.0);
   float hRim = pow(1.0 - hNdv, 2.6) * 0.55;
@@ -251,7 +252,7 @@ if (uIsHero > 0.5 && uNightHeroLift > 0.005) {
         shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_end>', styleEnd);
       }
     };
-    mat.customProgramCacheKey = () => prevKey() + '|shibastyle-v3' + (isHero ? ':h' : '');
+    mat.customProgramCacheKey = () => prevKey() + '|shibastyle-v4' + (isHero ? ':h' : '') + (preservePbr ? ':p' : '');
     mat.needsUpdate = true;
   }
 
@@ -265,21 +266,13 @@ if (uIsHero > 0.5 && uNightHeroLift > 0.005) {
     });
   }
 
-  let lastCountryChildren = -1;
   let scannedOnce = false;
-
   function ensureScanned() {
-    if (!scannedOnce) {
-      scannedOnce = true;
-      scanMaterials(street.root);
-      scanMaterials(shiba.root);
-      scanMaterials(scooter.root);
-      for (const r of Object.values(rooms)) scanMaterials(r.root);
-    }
-    if (country.root.children.length !== lastCountryChildren) {
-      lastCountryChildren = country.root.children.length;
-      scanMaterials(country.root);
-    }
+    if (scannedOnce) return;
+    scannedOnce = true;
+    scanMaterials(shiba.root);
+    scanMaterials(scooter.root);
+    scanMaterials(coastalTown.root);
   }
 
   const quad = createFullscreenQuad();
@@ -328,8 +321,8 @@ if (uIsHero > 0.5 && uNightHeroLift > 0.005) {
       uGain: { value: new THREE.Vector3(1, 1, 1) },
       uSaturation: { value: 1.07 },
       uContrast: { value: 1.03 },
-      uVignette: { value: 0.14 },
-      uPaperGrain: { value: 0.014 },
+      uVignette: { value: 0.12 },
+      uPaperGrain: { value: 0.012 },
     },
   });
 
@@ -367,10 +360,6 @@ if (uIsHero > 0.5 && uNightHeroLift > 0.005) {
     extractMat.uniforms.uTexelSize.value.set(1 / bw, 1 / bh);
   }
 
-  function ensureTargets() {
-    if (!hdrTarget) allocateTargets(width, height);
-  }
-
   function setStyle(next) {
     if (!STYLE_ORDER.includes(next)) return false;
     style = next;
@@ -386,10 +375,6 @@ if (uIsHero > 0.5 && uNightHeroLift > 0.005) {
     if (hdrTarget) allocateTargets(width, height);
   }
 
-  function syncScene() {
-    if (style !== 'off') ensureScanned();
-  }
-
   function render(targetScene, activeCamera) {
     if (style === 'off') {
       sharedUniforms.uNightHeroLift.value = 0.0;
@@ -398,7 +383,7 @@ if (uIsHero > 0.5 && uNightHeroLift > 0.005) {
     }
 
     ensureScanned();
-    ensureTargets();
+    if (!hdrTarget) allocateTargets(width, height);
 
     const cur = timeOfDay.current;
     const sunCol = timeOfDay.sun.color;
@@ -410,20 +395,17 @@ if (uIsHero > 0.5 && uNightHeroLift > 0.005) {
     const nightFill = THREE.MathUtils.smoothstep(cur.emissive, 0.35, 0.98) * 0.18;
     sharedUniforms.uNightHeroLift.value = duskFill + nightFill;
 
-    const bloomStr = cur.bloomStrength * 1.15;
     extractMat.uniforms.uThreshold.value = cur.bloomThreshold;
-
     const g = cur.grade;
-    compositeMat.uniforms.uBloomStrength.value = bloomStr;
+    compositeMat.uniforms.uBloomStrength.value = cur.bloomStrength * 1.12;
     compositeMat.uniforms.uLift.value.set(g.lift[0], g.lift[1], g.lift[2]);
     compositeMat.uniforms.uGamma.value.set(g.gamma[0], g.gamma[1], g.gamma[2]);
     compositeMat.uniforms.uGain.value.set(g.gain[0], g.gain[1], g.gain[2]);
     compositeMat.uniforms.uSaturation.value = g.saturation;
     compositeMat.uniforms.uContrast.value = g.contrast;
-    compositeMat.uniforms.uVignette.value = 0.14;
-    compositeMat.uniforms.uPaperGrain.value = 0.014;
+    compositeMat.uniforms.uVignette.value = 0.12;
+    compositeMat.uniforms.uPaperGrain.value = 0.012;
 
-    // Accumulate total draw calls across scene + shadow map + post passes.
     const prevAutoReset = renderer.info.autoReset;
     renderer.info.autoReset = false;
     renderer.info.reset();
@@ -457,7 +439,6 @@ if (uIsHero > 0.5 && uNightHeroLift > 0.005) {
     onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     fogDensityFactor: () => (style === 'a' ? 0.50 : 1.0),
     usesStyledFog: () => style === 'a',
-    syncScene,
     resize,
     render,
     dispose() {

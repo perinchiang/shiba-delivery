@@ -1,9 +1,7 @@
-// Painterly Ghibli-style rolling meadow terrain, GPU-instanced wind-swept grass blades,
-// cloud shadows, and clustered wildflowers for non-paddy countryside stretches.
+// Painterly Ghibli-style meadow terrain shader, GPU-instanced wind-swept grass blades,
+// cloud shadows, and wildflowers for Rongwan Coastal Hillside.
 import * as THREE from 'three';
 import { litMaterial } from '../core/materials.js';
-import { rngFrom } from '../core/rng.js';
-import { centerZ, halfWidth, roadEnd } from './country-route.js';
 
 export const meadowUniforms = {
   uMeadowTime: { value: 0 },
@@ -39,7 +37,6 @@ vec3 meadowTint(vec2 xz) {
   float nFine  = mNoise(xz * 0.42  + vec2(7.1, 14.2));
   float blend  = clamp(nBroad * 0.62 + nMed * 0.38, 0.0, 1.0);
 
-  // Linear-sRGB meadow tones harmonized with morning lighting & country road verge
   vec3 coolLush = vec3(0.082, 0.305, 0.062);
   vec3 midLush  = vec3(0.165, 0.430, 0.068);
   vec3 warmSun  = vec3(0.268, 0.520, 0.075);
@@ -54,7 +51,7 @@ vec3 meadowCloudShadow(vec2 xz, float t) {
   vec2 cuv = xz * 0.022 + t * vec2(0.022, 0.013);
   float c = 0.65 * mNoise(cuv) + 0.35 * mNoise(cuv * 2.15 + vec2(7.3, 4.9));
   float lit = smoothstep(0.36, 0.64, c);
-  return mix(vec3(0.42, 0.62, 0.76), vec3(1.10, 1.06, 0.96), lit);
+  return mix(vec3(0.46, 0.64, 0.78), vec3(1.08, 1.05, 0.96), lit);
 }
 
 float meadowGust(vec2 xz, float t) {
@@ -64,59 +61,10 @@ float meadowGust(vec2 xz, float t) {
 }
 `;
 
-function smoothstep(a, b, x) {
-  const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
-  return t * t * (3 - 2 * t);
-}
-
-// Deterministic rolling Ghibli hillside elevation outside the flat road & cottage belt.
-export function meadowHeight(x, z) {
-  const isBackdrop = x > roadEnd;
-  const refX = isBackdrop ? roadEnd : x;
-  const cz = centerZ(refX);
-  const hw = halfWidth(refX);
-  const edgeLat = Math.max(0, Math.abs(z - cz) - (hw + 1.65));
-
-  // Keep cottages, yards, and roadside trees safely grounded (-0.22) up to 23m from skirt.
-  const latRise = smoothstep(23, 76, edgeLat);
-  const backRise = isBackdrop ? smoothstep(1238, 1304, x) : 0;
-  const hillMask = Math.max(latRise, backRise);
-
-  // Fade hills down smoothly before crossing / paddy transitions so chunks meet seamlessly.
-  const fadeX = x < 500
-    ? smoothstep(136, 154, x) * (1 - smoothstep(178, 196, x))
-    : smoothstep(1068, 1094, x);
-
-  const swell = 0.55 + 0.45 * Math.sin(x * 0.026 + Math.cos(z * 0.021) * 1.4);
-  const undul = 0.50 + 0.50 * Math.cos(z * 0.029 - x * 0.017 + Math.sin(x * 0.014) * 1.6);
-  const ridge = 1.6 + 5.8 * swell + 4.8 * undul;
-
-  return -0.22 + ridge * hillMask * fadeX;
-}
-
-// Exact Y height on road verge (hw + 0.68 .. hw + 1.65) or meadow terrain beyond.
-function groundYAt(x, z) {
-  const refX = Math.min(x, roadEnd);
-  const cz = centerZ(refX);
-  const hw = halfWidth(refX);
-  const d = Math.abs(z - cz);
-  if (x <= roadEnd && d < hw + 1.68) {
-    const t = THREE.MathUtils.clamp((d - (hw + 0.68)) / 1.07, 0, 1);
-    return THREE.MathUtils.lerp(-0.025, -0.22, t);
-  }
-  return meadowHeight(x, z);
-}
-
-function meadowIntervals(start, end) {
-  const out = [];
-  const wLo = Math.max(start, 136);
-  const wHi = Math.min(end, 196);
-  if (wLo < wHi) out.push([wLo, wHi]);
-
-  const eLo = Math.max(start, 1068);
-  const eHi = Math.min(end, roadEnd);
-  if (eLo < eHi) out.push([eLo, eHi]);
-  return out;
+export function patchNoise(x, z) {
+  const a = 0.5 + 0.5 * Math.sin(x * 0.082 + Math.cos(z * 0.074) * 1.6);
+  const b = 0.5 + 0.5 * Math.cos(z * 0.115 - x * 0.061 + 1.3);
+  return 0.62 * a + 0.38 * b;
 }
 
 let terrainMat;
@@ -187,7 +135,6 @@ export function getGrassMaterial() {
         varying float vGust;
         ` + MEADOW_COMMON_GLSL)
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
-        // Keep DoubleSide blade shading cohesive & bright from every angle (undo back-face inversion toward ground)
         vec3 upView = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
         normal = normalize(mix(normal * faceDirection, upView, 0.84));`)
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -270,7 +217,6 @@ export function getGrassGeometry() {
   const bladeAttr = [];
   const idx = [];
 
-  // Three asymmetric graceful curved blades per tuft (15 triangles total)
   const specs = [
     { ox: 0.0, oz: 0.0, rot: 0.0, h: 0.52, w: 0.115, curve: 0.24, phase: 0.0 },
     { ox: 0.11, oz: -0.055, rot: 2.05, h: 0.43, w: 0.102, curve: 0.21, phase: 0.33 },
@@ -284,16 +230,8 @@ export function getGrassGeometry() {
 
   for (const sp of specs) {
     const c = Math.cos(sp.rot), s = Math.sin(sp.rot);
-    const toWorld = (lx, ly, lz) => [
-      sp.ox + lx * c + lz * s,
-      ly,
-      sp.oz - lx * s + lz * c,
-    ];
-    const nWorld = (lx, ly, lz) => [
-      lx * c + lz * s,
-      ly,
-      -lx * s + lz * c,
-    ];
+    const toWorld = (lx, ly, lz) => [sp.ox + lx * c + lz * s, ly, sp.oz - lx * s + lz * c];
+    const nWorld = (lx, ly, lz) => [lx * c + lz * s, ly, -lx * s + lz * c];
 
     const base = pos.length / 3;
     for (const r of rows) {
@@ -308,14 +246,12 @@ export function getGrassGeometry() {
         bladeAttr.push(r.t, sp.phase);
       }
     }
-    // Tip vertex
     const [tx, ty, tz] = toWorld(0, sp.h, sp.curve);
     const [tnx, tny, tnz] = nWorld(0, 0.55, 0.83);
     pos.push(tx, ty, tz);
     nor.push(tnx, tny, tnz);
     bladeAttr.push(1.0, sp.phase);
 
-    // 2 quads + 1 top triangle = 5 tris
     idx.push(base, base + 1, base + 3, base, base + 3, base + 2);
     idx.push(base + 2, base + 3, base + 5, base + 2, base + 5, base + 4);
     idx.push(base + 4, base + 5, base + 6);
@@ -336,7 +272,7 @@ export function getFlowerGeometry() {
 
   const pos = [];
   const nor = [];
-  const flowerAttr = []; // [heightNorm, part: 0=stem, 0.5=center, 1=petal]
+  const flowerAttr = [];
   const idx = [];
 
   const pushV = (x, y, z, nx, ny, nz, h, part) => {
@@ -347,7 +283,6 @@ export function getFlowerGeometry() {
     return i;
   };
 
-  // Slender stem (cross-strip or ribbon) rising to y = 0.42
   const stemH = 0.42;
   const s0 = pushV(-0.012, 0.0, 0.0, 0, 0.4, 0.9, 0.0, 0.0);
   const s1 = pushV(0.012, 0.0, 0.0, 0, 0.4, 0.9, 0.0, 0.0);
@@ -355,7 +290,6 @@ export function getFlowerGeometry() {
   const s3 = pushV(0.009, stemH, 0.03, 0, 0.4, 0.9, 1.0, 0.0);
   idx.push(s0, s1, s3, s0, s3, s2);
 
-  // Cupped 5-petal blossom centered at (0, stemH, 0.03) tilted slightly upward/outward
   const cx = 0, cy = stemH + 0.005, cz = 0.03;
   const centerIdx = pushV(cx, cy + 0.012, cz, 0, 1, 0, 1.0, 0.5);
   const ringR = 0.024;
@@ -364,9 +298,7 @@ export function getFlowerGeometry() {
     const a = (p / 5) * Math.PI * 2;
     ring.push(pushV(cx + Math.cos(a) * ringR, cy + 0.004, cz + Math.sin(a) * ringR, 0, 1, 0, 1.0, 0.5));
   }
-  for (let p = 0; p < 5; p++) {
-    idx.push(centerIdx, ring[(p + 1) % 5], ring[p]);
-  }
+  for (let p = 0; p < 5; p++) idx.push(centerIdx, ring[(p + 1) % 5], ring[p]);
 
   for (let p = 0; p < 5; p++) {
     const a = (p / 5) * Math.PI * 2;
@@ -387,291 +319,4 @@ export function getFlowerGeometry() {
   geo.computeBoundingSphere();
   sharedFlowerGeo = geo;
   return geo;
-}
-
-function buildMeadowTerrain(group, lo, hi) {
-  const xs = [];
-  const step = 2.5;
-  for (let x = lo; x < hi - 0.01; x += step) xs.push(x);
-  xs.push(hi);
-
-  const dists = [0, 1.5, 4, 7.5, 12, 17, 23, 30, 39, 50, 64, 82, 105, 135, 172, 215];
-  const cols = dists.length;
-  const rows = xs.length;
-  const eps = 0.6;
-
-  for (const side of [-1, 1]) {
-    const pos = new Float32Array(rows * cols * 3);
-    const nor = new Float32Array(rows * cols * 3);
-    const indices = [];
-
-    for (let r = 0; r < rows; r++) {
-      const x = xs[r];
-      const cz = centerZ(x);
-      const skirt = halfWidth(x) + 1.65;
-
-      for (let c = 0; c < cols; c++) {
-        const d = dists[c];
-        const z = cz + side * (skirt + d);
-        const y = meadowHeight(x, z);
-
-        // Smooth analytical finite-difference normal so adjacent chunks match seamlessly
-        const hx = (meadowHeight(x + eps, z) - meadowHeight(x - eps, z)) / (2 * eps);
-        const hz = (meadowHeight(x, z + eps) - meadowHeight(x, z - eps)) / (2 * eps);
-        const len = Math.hypot(hx, 1, hz) || 1;
-
-        const v = (r * cols + c) * 3;
-        pos[v] = x;
-        pos[v + 1] = y;
-        pos[v + 2] = z;
-        nor[v] = -hx / len;
-        nor[v + 1] = 1 / len;
-        nor[v + 2] = -hz / len;
-      }
-    }
-
-    for (let r = 0; r < rows - 1; r++) {
-      for (let c = 0; c < cols - 1; c++) {
-        const a = r * cols + c;
-        const b = a + 1;
-        const d = a + cols;
-        const e = d + 1;
-        if (side > 0) indices.push(a, b, d, b, e, d);
-        else indices.push(a, d, b, b, d, e);
-      }
-    }
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-    geo.setIndex(indices);
-    geo.computeBoundingSphere();
-
-    const mesh = new THREE.Mesh(geo, getTerrainMaterial());
-    mesh.receiveShadow = true;
-    mesh.castShadow = false;
-    mesh.matrixAutoUpdate = false;
-    mesh.updateMatrix();
-    group.add(mesh);
-  }
-}
-
-function buildBackdropTerrain(group, lo, hi) {
-  const xs = [];
-  const step = 4.0;
-  for (let x = lo; x < hi - 0.01; x += step) xs.push(x);
-  xs.push(hi);
-
-  const cz = centerZ(roadEnd);
-  const skirt = halfWidth(roadEnd) + 1.65;
-  const dists = [0, 1.5, 4, 7.5, 12, 17, 23, 30, 39, 50, 64, 82, 105, 135, 172, 215];
-  const offs = [
-    ...dists.slice().reverse().map(d => -(skirt + d)),
-    0,
-    ...dists.map(d => skirt + d),
-  ];
-  const cols = offs.length;
-  const rows = xs.length;
-  const eps = 0.6;
-  const pos = new Float32Array(rows * cols * 3);
-  const nor = new Float32Array(rows * cols * 3);
-  const indices = [];
-
-  for (let r = 0; r < rows; r++) {
-    const x = xs[r];
-    for (let c = 0; c < cols; c++) {
-      const z = cz + offs[c];
-      const y = meadowHeight(x, z);
-      const hx = (meadowHeight(x + eps, z) - meadowHeight(x - eps, z)) / (2 * eps);
-      const hz = (meadowHeight(x, z + eps) - meadowHeight(x, z - eps)) / (2 * eps);
-      const len = Math.hypot(hx, 1, hz) || 1;
-      const v = (r * cols + c) * 3;
-      pos[v] = x;
-      pos[v + 1] = y;
-      pos[v + 2] = z;
-      nor[v] = -hx / len;
-      nor[v + 1] = 1 / len;
-      nor[v + 2] = -hz / len;
-    }
-  }
-
-  for (let r = 0; r < rows - 1; r++) {
-    for (let c = 0; c < cols - 1; c++) {
-      const a = r * cols + c;
-      const b = a + 1;
-      const d = a + cols;
-      const e = d + 1;
-      indices.push(a, b, d, b, e, d);
-    }
-  }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-  geo.setIndex(indices);
-  geo.computeBoundingSphere();
-
-  const mesh = new THREE.Mesh(geo, getTerrainMaterial());
-  mesh.receiveShadow = true;
-  mesh.castShadow = false;
-  mesh.matrixAutoUpdate = false;
-  mesh.updateMatrix();
-  group.add(mesh);
-}
-
-function isExcluded(x, z, excludeRects) {
-  for (let i = 0; i < excludeRects.length; i++) {
-    const r = excludeRects[i];
-    if (x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ) return true;
-  }
-  return false;
-}
-
-// Smooth deterministic organic clumping factor (0..1) in world XZ
-export function patchNoise(x, z) {
-  return 0.5 + 0.5 * Math.sin(x * 0.14 + Math.cos(z * 0.17) * 1.6) * Math.cos(z * 0.13 - Math.sin(x * 0.11) * 1.3);
-}
-
-function buildStylizedGrassAndFlowers(group, lo, hi, excludeRects) {
-  const span = hi - lo;
-  if (span <= 0) return;
-
-  const rng = rngFrom('吉卜力草地', lo);
-  const nearTarget = Math.round(span * 185); // Lush dense foreground carpet near road & yards
-  const midTarget = Math.round(span * 52);   // Sweeping hillside grass waves
-
-  const grassTransforms = [];
-  const dummy = new THREE.Object3D();
-
-  const tryPlaceGrass = (px, pz, distFromRoad, isHill) => {
-    if (isExcluded(px, pz, excludeRects)) return;
-    const clumping = patchNoise(px, pz);
-    // Keep foreground dense; occasionally leave subtle breathing variation on hill slopes
-    if (isHill && clumping < 0.20 && rng.chance(0.45)) return;
-
-    const py = groundYAt(px, pz) - 0.025;
-    const vergeFade = smoothstep(0.75, 1.70, distFromRoad);
-    const heightMul = THREE.MathUtils.lerp(0.52, 1.0, vergeFade) * (0.76 + 0.56 * clumping) * (isHill ? 1.45 : 1.0);
-    const widthMul = (isHill ? 1.50 : 1.06) * rng.range(0.90, 1.24);
-
-    dummy.position.set(px, py, pz);
-    dummy.rotation.set(rng.range(-0.10, 0.10), rng.range(0, Math.PI * 2), rng.range(-0.10, 0.10));
-    dummy.scale.set(widthMul, heightMul * rng.range(0.84, 1.18), widthMul);
-    dummy.updateMatrix();
-    grassTransforms.push(dummy.matrix.clone());
-  };
-
-  // 1. Dense foreground belt hugging the road verge and cottage yards (0.8m .. 14.5m from road)
-  const grassEndX = Math.min(hi, 1265);
-  const grassSpan = Math.max(0, grassEndX - lo);
-  if (grassSpan > 0) {
-    for (let i = 0; i < nearTarget; i++) {
-      const px = lo + rng.next() * grassSpan;
-      const refX = Math.min(px, roadEnd);
-      const cz = centerZ(refX);
-      const hw = halfWidth(refX);
-      const side = rng.sign();
-      // Concentrate heavily in the 0.8m..10m roadside & yard strip
-      const u = rng.next();
-      const distFromRoad = px > roadEnd
-        ? -2.0 + u * 18.5
-        : 0.78 + Math.pow(u, 1.75) * 14.5;
-      const pz = px > roadEnd ? cz + (rng.next() * 2 - 1) * 28 : cz + side * (hw + distFromRoad);
-      tryPlaceGrass(px, pz, Math.abs(distFromRoad), false);
-    }
-
-    // 2. Mid-range rolling hillside tufts (14.5m .. 54m) to carry wind waves onto the slopes
-    for (let i = 0; i < midTarget; i++) {
-      const px = lo + rng.next() * grassSpan;
-      const refX = Math.min(px, roadEnd);
-      const cz = centerZ(refX);
-      const hw = halfWidth(refX);
-      const side = rng.sign();
-      const distFromRoad = 14.5 + Math.pow(rng.next(), 1.25) * 40.0;
-      const pz = cz + side * (hw + distFromRoad);
-      tryPlaceGrass(px, pz, distFromRoad, true);
-    }
-  }
-
-  if (grassTransforms.length > 0) {
-    const grassMesh = new THREE.InstancedMesh(getGrassGeometry(), getGrassMaterial(), grassTransforms.length);
-    for (let i = 0; i < grassTransforms.length; i++) {
-      grassMesh.setMatrixAt(i, grassTransforms[i]);
-    }
-    grassMesh.instanceMatrix.needsUpdate = true;
-    grassMesh.castShadow = false;
-    grassMesh.receiveShadow = true;
-    grassMesh.computeBoundingSphere();
-    group.add(grassMesh);
-  }
-
-  // 3. Clustered wildflowers in foreground meadow patches
-  const flowerTarget = Math.round(grassSpan * 13.5);
-  const flowerTransforms = [];
-  const flowerColors = [];
-  const palette = [
-    new THREE.Color(0xfff8e6), // Cream white daisy
-    new THREE.Color(0x8e86e8), // Meadow periwinkle violet
-    new THREE.Color(0xffe169), // Warm buttercup
-    new THREE.Color(0xb6c8f8), // Soft sky flower
-  ];
-
-  for (let i = 0; i < flowerTarget; i++) {
-    const px = lo + rng.next() * grassSpan;
-    const refX = Math.min(px, roadEnd);
-    const cz = centerZ(refX);
-    const hw = halfWidth(refX);
-    const side = rng.sign();
-    const distFromRoad = 1.00 + Math.pow(rng.next(), 1.50) * 14.0;
-    const pz = px > roadEnd ? cz + (rng.next() * 2 - 1) * 24 : cz + side * (hw + distFromRoad);
-    if (isExcluded(px, pz, excludeRects)) continue;
-
-    // Organic flower drift clustering so blooms appear in natural drifts rather than uniform grid
-    const cluster = patchNoise(px * 0.85 + 17.0, pz * 0.85 - 9.0);
-    if (cluster < 0.40 && rng.chance(0.80)) continue;
-
-    const py = groundYAt(px, pz) - 0.02;
-    const sc = rng.range(0.85, 1.42) * (0.72 + 0.42 * smoothstep(1.0, 2.5, distFromRoad));
-    dummy.position.set(px, py, pz);
-    dummy.rotation.set(rng.range(-0.14, 0.14), rng.range(0, Math.PI * 2), rng.range(-0.14, 0.14));
-    dummy.scale.set(sc, sc * rng.range(0.66, 1.18), sc);
-    dummy.updateMatrix();
-    flowerTransforms.push(dummy.matrix.clone());
-
-    const roll = rng.next();
-    const c = roll < 0.44 ? palette[0] : roll < 0.78 ? palette[1] : roll < 0.92 ? palette[2] : palette[3];
-    flowerColors.push(c);
-  }
-
-  if (flowerTransforms.length > 0) {
-    const fGeo = getFlowerGeometry().clone();
-    const tintArray = new Float32Array(flowerTransforms.length * 3);
-    for (let i = 0; i < flowerColors.length; i++) {
-      tintArray[i * 3] = flowerColors[i].r;
-      tintArray[i * 3 + 1] = flowerColors[i].g;
-      tintArray[i * 3 + 2] = flowerColors[i].b;
-    }
-    fGeo.setAttribute('aPetalTint', new THREE.InstancedBufferAttribute(tintArray, 3));
-
-    const flowerMesh = new THREE.InstancedMesh(fGeo, getFlowerMaterial(), flowerTransforms.length);
-    for (let i = 0; i < flowerTransforms.length; i++) {
-      flowerMesh.setMatrixAt(i, flowerTransforms[i]);
-    }
-    flowerMesh.instanceMatrix.needsUpdate = true;
-    flowerMesh.castShadow = false;
-    flowerMesh.receiveShadow = true;
-    flowerMesh.computeBoundingSphere();
-    group.add(flowerMesh);
-  }
-}
-
-export function addStylizedMeadow(group, start, end, excludeRects = []) {
-  for (const [lo, hi] of meadowIntervals(start, end)) {
-    buildMeadowTerrain(group, lo, hi);
-    buildStylizedGrassAndFlowers(group, lo, hi, excludeRects);
-  }
-  if (start < roadEnd && end >= roadEnd) {
-    buildBackdropTerrain(group, roadEnd, 1360);
-    buildStylizedGrassAndFlowers(group, roadEnd, 1265, excludeRects);
-  }
 }

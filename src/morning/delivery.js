@@ -1,12 +1,13 @@
 import { beginSequence } from './sequence.js';
 import { orders, start } from './orders.js';
+import { coastalTownSurfaceHeight, HERO_HAIKAZE } from './coastal-town.js';
 
 export const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
 export function initialState() {
   return {
-    order: orders[0], phase: 'offer', mode: 'ride', cargo: 'none', dialog: null, sequence: null,
-    ...start, bikeX: start.x, bikeZ: start.z, bikeYaw: Math.PI / 2, yaw: Math.PI / 2,
+    order: orders[0], phase: 'free', mode: 'ride', cargo: 'none', dialog: null, sequence: null,
+    x: start.x, z: start.z, bikeX: start.x, bikeZ: start.z, bikeYaw: start.yaw, yaw: start.yaw,
     throttle: 0, brakePressure: 0, reverseHold: 0, steerInput: 0,
     speed: 0, bank: 0, steer: 0, returnToBike: false, tiptoe: 0, reach: 0, stand: 1, lift: 0, braking: false,
     completedCount: 0, totalEarnedCents: 0,
@@ -15,60 +16,53 @@ export function initialState() {
 
 export function createDelivery(state) {
   const bike = () => ({ x: state.bikeX, z: state.bikeZ });
-  const parkedAtHome = () => !state.order.cityRoute
-    ? Math.abs(state.bikeX - state.order.customer.point.x) < 4.1
-    : distance(bike(), state.order.customer.point) < 7.2;
+  const parkedNearCustomer = () => distance(bike(), state.order.customer.point) < 12.0;
+
   function availableAction() {
     if (state.sequence || state.braking) return '';
     if (state.dialog === 'shopkeeper') return 'collect';
     if (state.dialog === 'customer') return 'sign';
     if (state.phase === 'free') {
       if (state.mode === 'ride') return Math.abs(state.speed) > 0.85 ? 'brake' : 'park';
-      return distance(state, bike()) < 1.82 ? 'mount' : '';
+      return distance(state, bike()) < 1.85 ? 'mount' : '';
     }
     if (state.phase === 'done') {
       if (state.mode === 'ride') return Math.abs(state.speed) > 0.85 ? 'brake' : 'park';
-      if (distance(state, bike()) < 1.82 && distance(state, state.order.customer.point) > 1.8) return 'mount';
+      if (distance(state, bike()) < 1.85 && distance(state, state.order.customer.point) > 1.8) return 'mount';
       return 'statement';
     }
     if (state.phase === 'offer') {
       if (state.mode === 'ride') {
         if (Math.abs(state.speed) > 0.85) return 'brake';
-        return distance(state, start) > 0.5 ? 'park' : 'phone';
+        return distance(state, start) > 0.6 ? 'park' : 'phone';
       }
-      return distance(state, bike()) < 1.82 ? 'mount' : 'phone';
+      return distance(state, bike()) < 1.85 ? 'mount' : 'phone';
     }
     if (state.mode === 'ride') return Math.abs(state.speed) > 0.85 ? 'brake' : 'park';
-    if (state.mode === 'shop') {
-      if (state.phase === 'pickup' && distance(state, state.order.room.counter) < 1.03) return 'talk';
-      if (distance(state, state.order.room.exit) < 0.95) return 'exit';
-      return '';
+
+    if (state.phase === 'pickup' && distance(state, state.order.door) < 2.2) {
+      return 'talk';
     }
-    if (state.phase === 'pickup') {
-      if (state.order.pickupMode === 'curbside') {
-        if (distance(state, state.order.door) < 1.85) return 'talk';
-      } else if (distance(state, state.order.door) < 1.02) {
-        return 'enter';
-      }
+    if (state.cargo === 'hand' && !state.returnToBike && distance(state, state.order.customer.point) < 1.95) {
+      const custUpper = Boolean(state.order.customer.onUpperFloor);
+      const onUpper = coastalTownSurfaceHeight(state.x, state.z, true) > HERO_HAIKAZE.baseY + 2.5;
+      if (!custUpper || onUpper) return 'deliver';
     }
-    const deliverRadius = state.order.cityRoute ? 1.85 : 1.04;
-    if (state.cargo === 'hand' && !state.returnToBike && distance(state, state.order.customer.point) < deliverRadius) return 'deliver';
-    if (distance(state, bike()) < 1.82) {
-      if (state.cargo === 'hand') return state.returnToBike || !parkedAtHome() ? 'pack' : '';
-      if (state.cargo === 'box' && parkedAtHome()) return 'unpack';
+    if (distance(state, bike()) < 1.85) {
+      if (state.cargo === 'hand') return state.returnToBike || !parkedNearCustomer() ? 'pack' : '';
+      if (state.cargo === 'box' && parkedNearCustomer()) return 'unpack';
       return 'mount';
     }
     return '';
   }
 
   function navigate() {
-    if (state.phase === 'free') return { name: '自由骑行', point: state };
-    if (state.mode === 'shop') return state.phase === 'pickup'
-      ? { name: state.order.actions.talk, point: state.order.room.counter }
-      : { name: '回到老街', point: state.order.room.exit };
+    if (state.phase === 'free') return { name: '海风庄街角 · 自由探索', point: state };
     if (state.phase === 'delivery' || state.phase === 'done') {
       if (state.mode === 'walk' && state.phase !== 'done' && (state.returnToBike || state.cargo === 'box')) {
-        const name = state.returnToBike ? '回车旁装' + state.order.item : (parkedAtHome() ? state.order.actions.unpack : state.order.actions.mount);
+        const name = state.returnToBike
+          ? '回车旁装' + state.order.item
+          : (parkedNearCustomer() ? state.order.actions.unpack : state.order.actions.mount);
         return { name, point: bike() };
       }
       return { name: state.order.customer.address, point: state.order.customer.point };
@@ -85,23 +79,26 @@ export function createDelivery(state) {
       case 'mount':
         beginSequence(state, 'mount');
         break;
-      case 'enter':
-      case 'exit':
       case 'pack':
       case 'unpack':
         beginSequence(state, action);
         break;
       case 'talk':
         state.dialog = 'shopkeeper';
-        state.yaw = state.order.pickupMode === 'curbside' && state.order.door.z > 4.17 ? 0 : Math.PI;
+        state.yaw = 0;
         break;
       case 'collect':
-        Object.assign(state, { dialog: null, phase: 'delivery', cargo: 'hand', returnToBike: true });
+        // For upstairs 201/202 deliveries, carry straight up the exterior stairs! For distant rides, pack in box.
+        Object.assign(state, {
+          dialog: null,
+          phase: 'delivery',
+          cargo: 'hand',
+          returnToBike: !state.order.customer.onUpperFloor,
+        });
         break;
       case 'deliver':
         state.dialog = 'customer';
-        state.yaw = !state.order.cityRoute || state.order.customer.point.x < 52
-          ? Math.PI : state.order.customer.point.x < 92 ? -Math.PI / 2 : Math.PI / 2;
+        state.yaw = state.order.customer.onUpperFloor ? Math.PI / 2 : 0;
         break;
       case 'sign':
         Object.assign(state, { dialog: null, phase: 'done', cargo: 'delivered' });
@@ -109,7 +106,7 @@ export function createDelivery(state) {
         state.totalEarnedCents = (state.totalEarnedCents || 0) + Math.max(0, state.order.feeCents - state.order.insuranceCents);
         break;
     }
-
   }
+
   return { availableAction, navigate, interact };
 }

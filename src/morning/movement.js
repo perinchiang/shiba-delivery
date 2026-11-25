@@ -1,12 +1,10 @@
-import { approach, clamp } from '../core/mathx.js';
 import { stepFreeRide } from './free-ride.js';
-import { constrainToRoad } from './country-route.js';
-import { avoidTreePits } from './street-layout.js';
-import { beginSequence, isStandSequence, standFrame, isBoxSequence, boxFrame, doorFrame } from './sequence.js';
+import { constrainCoastalTown } from './coastal-town.js';
+import { beginSequence, isStandSequence, standFrame, isBoxSequence, boxFrame } from './sequence.js';
 
 const DEFAULT_WALK_BASIS = { rightX: 1, rightZ: 0, backX: 0, backZ: 1 };
 
-export function createMovement(state, { street, scooter }, input) {
+export function createMovement(state, { scooter }, input) {
   let walking = 0, stride = 0;
   const courierScale = scooter.root.scale.y;
 
@@ -26,15 +24,8 @@ export function createMovement(state, { street, scooter }, input) {
     const length = Math.hypot(wx, wz);
     if (length < 1e-6) return;
     const step = 2.45 * dt / Math.max(1, length);
-    const inside = state.mode === 'shop';
     const oldX = state.x, oldZ = state.z;
-    if (!inside) {
-      Object.assign(state, constrainToRoad(oldX + wx * step, oldZ + wz * step, true));
-      avoidTreePits(state);
-    } else {
-      state.x = clamp(oldX + wx * step, -2.75, 2.75);
-      state.z = clamp(oldZ + wz * step, -0.18, 2.66);
-    }
+    Object.assign(state, constrainCoastalTown(oldX + wx * step, oldZ + wz * step, true));
     state.yaw = Math.atan2(wx, wz);
     const travel = Math.hypot(state.x - oldX, state.z - oldZ);
     walking = Math.min(1, travel / (2.45 * dt || 1));
@@ -55,7 +46,7 @@ export function createMovement(state, { street, scooter }, input) {
         }
         return;
       }
-      const travel = isBoxSequence(state.sequence) ? boxFrame(state, dt, scooter) : doorFrame(state, dt, street.doors.get(state.order.storefront));
+      const travel = isBoxSequence(state.sequence) ? boxFrame(state, dt, scooter) : 0;
       walking = Math.min(1, travel / (2.4 * dt || 1));
       stride += travel * 5.4;
       return;
@@ -69,8 +60,11 @@ export function createMovement(state, { street, scooter }, input) {
     if (state.mode === 'ride') ride(dx, dz, dt);
     else if (dx || dz) walk(dx, dz, dt, walkBasis);
   }
+
   return {
-    move, reset() { walking = stride = 0; },
-    get walking() { return walking; }, get stride() { return stride; },
+    move,
+    reset() { walking = stride = 0; },
+    get walking() { return walking; },
+    get stride() { return stride; },
   };
 }
