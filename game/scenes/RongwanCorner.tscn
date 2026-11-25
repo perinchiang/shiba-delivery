@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/game_main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://assets/buildings/Haikaze-Hero.blend" id="2_blend"]
-[ext_resource type="PackedScene" path="res://assets/characters/shiba-courier.glb" id="3_shiba"]
+[ext_resource type="PackedScene" path="res://assets/characters/Shiba-Hero.blend" id="3_shiba"]
 [ext_resource type="PackedScene" path="res://assets/vehicles/monkey-delivery.glb" id="4_scooter"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
@@ -64,7 +64,7 @@ size = Vector3(26, 15, 26)
 transform = Transform3D(-0.77, 0, -0.638, 0, 1, 0, 0.638, 0, -0.77, 7.6, -0.04, 8.8)
 
 [node name="Shiba" parent="ActorGroup" instance=ExtResource("3_shiba")]
-transform = Transform3D(-0.647, 0, -0.536, 0, 0.84, 0, 0.536, 0, -0.647, 7.6, 0.18, 8.8)
+transform = Transform3D(-0.77, 0, -0.638, 0, 1, 0, 0.638, 0, -0.77, 7.6, 0.21, 8.8)
 
 [node name="Camera3D" type="Camera3D" parent="."]
 transform = Transform3D(0.744, -0.181, 0.643, 0, 0.963, 0.271, -0.668, -0.201, 0.716, 14.8, 7.6, 16.5)

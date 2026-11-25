@@ -168,6 +168,9 @@ func _run_capture_qa(out_dir: String) -> void:
 		{"file": "06-play-ride-night.png",   "tod": "night",   "mode": "ride",   "actors": true,  "hud": true,  "beacon": true },
 		{"file": "07-play-shop-pickup.png",  "tod": "sunset",  "mode": "shop",   "actors": true,  "hud": true,  "beacon": true },
 		{"file": "08-play-2f-deliver.png",   "tod": "night",   "mode": "2f",     "actors": true,  "hud": true,  "beacon": true },
+		# Dedicated NEW 2.5-head Shiba scale & craft QA angles (exterior stairs + sunny front close-up!)
+		{"file": "09-play-stair-climb.png",  "tod": "morning", "mode": "stairs", "actors": true,  "hud": true,  "beacon": true },
+		{"file": "10-play-shiba-front.png",  "tod": "morning", "mode": "front",  "actors": true,  "hud": false, "beacon": false},
 	]
 
 	var results := []
@@ -205,6 +208,27 @@ func _run_capture_qa(out_dir: String) -> void:
 				rider_ctrl.bike_yaw = -2.2
 				rider_ctrl.teleport_to(Vector3(3.22, RongwanGround.FLOOR_2F_Y, -0.22), 1.05, false)
 				rider_ctrl.set_inspect_camera(Vector3(7.4, 5.10, 4.6), Vector3(2.4, 4.45, -0.25), 26.4, 0.025)
+			"stairs":
+				delivery.phase = "deliver"
+				delivery._sync_beacon()
+				rider_ctrl.bike_pos = Vector3(6.8, RongwanGround.ROAD_Y, 5.6)
+				rider_ctrl.bike_yaw = -2.35
+				var stair_z := 0.10
+				var stair_y := RongwanGround._stair_height_at_z(stair_z)
+				rider_ctrl.teleport_to(Vector3(4.90, stair_y, stair_z), PI, false)
+				rider_ctrl._play_anim("StairClimb", true, 0.0)
+				if rider_ctrl.shiba_anim:
+					rider_ctrl.shiba_anim.seek(0.22, true)
+					rider_ctrl.shiba_anim.pause()
+				rider_ctrl.set_inspect_camera(Vector3(9.4, 4.05, 6.2), Vector3(4.2, 2.35, -0.2), 34.0, 0.022)
+			"front":
+				rider_ctrl.bike_pos = Vector3(4.8, RongwanGround.ROAD_Y, 8.2)
+				rider_ctrl.bike_yaw = -2.2
+				rider_ctrl.teleport_to(Vector3(-0.35, RongwanGround.SIDEWALK_Y, 5.05), 0.35, false)
+				rider_ctrl._play_anim("Stand", true, 0.0)
+				if rider_ctrl.shiba_anim:
+					rider_ctrl.shiba_anim.seek(0.0, true)
+				rider_ctrl.set_inspect_camera(Vector3(0.45, 0.96, 7.65), Vector3(-0.35, 0.72, 5.05), 34.0, 0.020)
 
 		for _w in range(12):
 			await get_tree().process_frame

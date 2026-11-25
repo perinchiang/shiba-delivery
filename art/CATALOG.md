@@ -17,8 +17,8 @@
 ## 2. 目标复用目录结构
 
 - `art/shared/props/` — 全游戏唯一街头与室内公模道具库（**已落地首批 10 件微缩手办级公模**，见 §3.0）。
-- `art/shared/characters/` — 通用角色「布娃娃」素体公模 + 共享骨架（供后续小动物与居民 NPC 换头、换耳尾与换服饰贴图；当前待建立）。
-- `art/shared/textures/` — 真实 2D 风格化 PBR 贴图与独立招牌/海报 PNG 槽位（**已落地 10 张 `gpt-image-2.6-sunburst` AI 手绘原图 + 合成/衍生法线与招牌贴图**，见 §3.0；支持同名 `custom_<文件名>` 一键热覆盖；复用流程见 [`.agents/skills/shiba-blender-pipeline/SKILL.md`](../.agents/skills/shiba-blender-pipeline/SKILL.md)）。
+- `art/shared/characters/` — 通用角色「布娃娃」素体公模与主角母版（**已落地 2.5 头身手办级主角 [`art/shared/characters/shiba/Shiba-Hero.blend`](shared/characters/shiba/Shiba-Hero.blend)**，后续小动物居民 NPC 复用该骨架与比例换头/换耳尾/换装）。
+- `art/shared/textures/` — 真实 2D 风格化 PBR 贴图与独立招牌/海报 PNG 槽位（**已落地 12 张 `gpt-image-2.6-sunburst` AI 手绘原图 + 合成/衍生法线与招牌贴图**，含新增的柴犬毛绒与外卖冲锋衣面料 PBR，见 §3.0；支持同名 `custom_<文件名>` 一键热覆盖；复用流程见 [`.agents/skills/shiba-blender-pipeline/SKILL.md`](../.agents/skills/shiba-blender-pipeline/SKILL.md)）。
 - `art/<zone>/` — 区域专属建筑壳体模块与少数英雄地标（当前已实装首栋 Gate 2 标杆建筑 [`art/town/haikaze-hero/Haikaze-Hero.blend`](town/haikaze-hero/Haikaze-Hero.blend)，经 [`tools/sync_blender_to_godot.py`](../tools/sync_blender_to_godot.py) 原生直导入 [`game/assets/buildings/Haikaze-Hero.blend`](../game/assets/buildings/Haikaze-Hero.blend)）。
 
 ---
@@ -46,6 +46,8 @@
     - 倒角石板地砖：[`tex_deck_tiles.png`](shared/textures/tex_deck_tiles.png) + [`tex_deck_tiles_normal.png`](shared/textures/tex_deck_tiles_normal.png)（原图 [`ai_deck_tiles.png`](shared/textures/ai_deck_tiles.png)）
     - 釉面粉彩马赛克瓷砖 PBR 三件套：[`tex_mosaic_tiles.png`](shared/textures/tex_mosaic_tiles.png) + [`tex_mosaic_tiles_normal.png`](shared/textures/tex_mosaic_tiles_normal.png) + [`tex_mosaic_tiles_roughness.png`](shared/textures/tex_mosaic_tiles_roughness.png)（原图 [`ai_mosaic_tiles.png`](shared/textures/ai_mosaic_tiles.png)）
     - 织物粗麻青海波暖帘与法线（统一店名「海风拉面」）：[`tex_noren_4panel.png`](shared/textures/tex_noren_4panel.png) + [`tex_noren_normal.png`](shared/textures/tex_noren_normal.png)（原图 [`ai_noren_fabric.png`](shared/textures/ai_noren_fabric.png)）
+    - 柴犬暖橘短绒毛发 PBR：[`ai_shiba_fur.png`](shared/textures/ai_shiba_fur.png) + [`tex_shiba_fur_normal.png`](shared/textures/tex_shiba_fur_normal.png)
+    - 明黄外卖防风衣织物 PBR：[`ai_jacket_fabric.png`](shared/textures/ai_jacket_fabric.png) + [`tex_jacket_fabric_normal.png`](shared/textures/tex_jacket_fabric_normal.png)
   - AI 手绘海报、菜单与木竖牌（后期压印清晰中文排版，零乱码）：[`tex_menu_chalkboard.png`](shared/textures/tex_menu_chalkboard.png)、[`tex_poster_summer.png`](shared/textures/tex_poster_summer.png)、[`tex_vending_poster_white.png`](shared/textures/tex_vending_poster_white.png)、[`tex_vending_poster_pink.png`](shared/textures/tex_vending_poster_pink.png)、[`tex_plaque_vertical.png`](shared/textures/tex_plaque_vertical.png)（AI 雪松木底板「海风面馆」）
   - 清晰门牌与地垫平面图：[`tex_plaque_haikaze.png`](shared/textures/tex_plaque_haikaze.png)、[`tex_apt_plaque_201.png`](shared/textures/tex_apt_plaque_201.png)、[`tex_apt_plaque_202.png`](shared/textures/tex_apt_plaque_202.png)、[`tex_welcome_mat.png`](shared/textures/tex_welcome_mat.png)
 
@@ -56,14 +58,15 @@
 | [`town/haikaze-hero/Haikaze-Hero.blend`](town/haikaze-hero/Haikaze-Hero.blend) | `16M` · `423,108 tris` · 1,764 对象（源：[`build_haikaze_hero.py`](town/haikaze-hero/build_haikaze_hero.py)） | **Gate 1 Cycles 审图高精母版**（已通过终审，含 1F L 型贴墙楼梯、3D 立体字「海风拉面」、下倾直边遮阳棚、真牙盘链条单车、二楼精简绿植与全部共享公模引用） |
 | [`../game/assets/buildings/Haikaze-Hero.blend`](../game/assets/buildings/Haikaze-Hero.blend) | **`23.4M` · `436,648 tris` · `3 multi-material meshes` · `106 PBR materials`**（源：[`tools/sync_blender_to_godot.py`](../tools/sync_blender_to_godot.py)） | **Gate 2 Godot 4.7 原生直导资产**（已实装于 [`game/scenes/RongwanCorner.tscn`](../game/scenes/RongwanCorner.tscn)，零减面、零光图花斑，在 Forward+ Metal 下配合 AgX + VoxelGI + SSIL + SSAO + SSR 实现 95%+ Cycles 实机画质） |
 
-### 3.2 角色与车辆（`art/morning/`）
+### 3.2 角色与车辆（`art/shared/characters/` & `art/morning/`）
 
 | 资产文件 | 体积 / 结构（实测） | 源文件与配套贴图 | 现状工艺与后续规划 |
 |---|---|---|---|
-| [`morning/shiba-courier.glb`](morning/shiba-courier.glb) | `2.3M` · 43 nodes · 23 mats | [`morning/Rongwan-Courier.blend`](morning/Rongwan-Courier.blend) + [`shiba.py`](morning/shiba.py) / [`build.py`](morning/build.py)；贴图 [`Shiba_Urajiro.png`](morning/Shiba_Urajiro.png)、[`Plume_Coat.png`](morning/Plume_Coat.png)、[`Kerchief_Paisley.png`](morning/Kerchief_Paisley.png) | **阿柴主角**（`0.84` 缩放基线）。造型、无缝圆肩、24 骨骨架与骑姿动画扎实且已冻结，后续择机补充与新场景统一的 PBR 材质细节 |
-| [`morning/monkey-delivery.glb`](morning/monkey-delivery.glb) | `2.3M` · 41 nodes · 14 mats | [`morning/Rongwan-Courier.blend`](morning/Rongwan-Courier.blend) + [`motorcycle.py`](morning/motorcycle.py) / [`motorcycle_detail.py`](morning/motorcycle_detail.py) | **现行临时小摩托**（含 `Seat_Contact` / `Grip_L/R` / `Footrest_L/R` / `Cargo_Floor` 锚点）。后续按新版纯 Blender + AI PBR 管线制作圆润明黄二手电动车替换 |
+| [`shared/characters/shiba/Shiba-Hero.blend`](shared/characters/shiba/Shiba-Hero.blend) → [`../game/assets/characters/Shiba-Hero.blend`](../game/assets/characters/Shiba-Hero.blend) | **`6.0M` · `43,416 tris` · 2 蒙皮网格 · 25 骨 · 6 组 NLA 动画**（`1.0` 真世界比例：总高 `1.26m`、头盔宽 `0.48m`） | 生成脚本 [`shared/characters/shiba/build_shiba_hero.py`](shared/characters/shiba/build_shiba_hero.py)；无缝里白面贴图 [`tex_shiba_face_urajiro.png`](shared/characters/shiba/tex_shiba_face_urajiro.png) + AI PBR [`ai_shiba_fur.png`](shared/textures/ai_shiba_fur.png) / [`ai_jacket_fabric.png`](shared/textures/ai_jacket_fabric.png) | **现行正式 2.5 头身手办级阿柴主角**（已原生直导入 Godot 4.7 Forward+）：贴头半盔（宽度减半，顺滑走 1.15m 外楼梯）+ 可翻转复古护目镜（站走上翻、骑车下翻）+ 豆豆眉/腮红/3D `ω` 微笑/爪印胸章/柔顺卷尾 + 6 组流畅骨骼动画（`Stand`/`Walk`/`StairClimb`/`Ride`/`Mount`/`Dismount`），实机 60–70 FPS |
+| [`morning/monkey-delivery.glb`](morning/monkey-delivery.glb) | `2.3M` · 41 nodes · 14 mats | [`morning/Rongwan-Courier.blend`](morning/Rongwan-Courier.blend) + [`motorcycle.py`](morning/motorcycle.py) / [`motorcycle_detail.py`](morning/motorcycle_detail.py) | **现行临时小摩托**（`0.84` 缩放过渡）。下一步按已敲定**方案 A**用纯 Blender + AI PBR 新建「圆润复古明黄平踏板外卖电动车（可掀座垫换电仓 + 后箱 + 手机支架 + 前挂钩）」直接替换 |
+| [`morning/shiba-courier.glb`](morning/shiba-courier.glb) | `2.3M` · 43 nodes（已退役归档保留参考） | [`morning/Rongwan-Courier.blend`](morning/Rongwan-Courier.blend) | 早期大头盔过渡版（0.96m 头宽、43 拆件），已由新版 [`Shiba-Hero.blend`](shared/characters/shiba/Shiba-Hero.blend) 正式替换 |
 
-> **缺口标注**：仓库尚无通用 NPC 居民「布娃娃」素体公模；后续试点 NPC 时须直接建于 `art/shared/characters/` 并走新版 Blender + PBR 贴图管线。
+> **缺口标注**：仓库尚无通用 NPC 居民换皮变体；后续试点 NPC 时直接复用 [`Shiba-Hero.blend`](shared/characters/shiba/Shiba-Hero.blend) 的 25 骨 2.5 头身骨架与 PBR 管线，归口 `art/shared/characters/`。
 
 ---
 

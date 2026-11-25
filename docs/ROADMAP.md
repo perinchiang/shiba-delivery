@@ -6,7 +6,7 @@
 
 - **先打磨好 1 号方正箱庭，再连下一座城。** 采用《如龙》式高密度城市箱庭思路，先让 1 号箱庭「榕湾海滨坡道镇」做到好看、好认路、越跑越熟且打工循环成立，再沿滨海大道接出第 2 座箱庭。
 - **彻底重构旧拼缝，不再往旧老街补丁上硬改。** 旧老街与旧十字路口为两套独立拼接坐标，S2 直接以统一高度场与道路网格的新海滨坡道箱庭替代，待迁移完成后移除旧场景代码。
-- **不做空旷野外，角色造型冻结。** 乡道样段与边缘风车村仅保留于 Debug 入口参考；阿柴造型保持现状，Demo 前再统一精修。
+- **不做空旷野外，主角已升级至 2.5 头身手办级原生 `.blend`。** 乡道样段与边缘风车村仅保留于归档参考；主角阿柴已按纯 Blender + AI PBR 管线完成 2.5 头身重建（[`Shiba-Hero.blend`](../art/shared/characters/shiba/Shiba-Hero.blend)），下一步按方案 A 完成圆润复古平踏板电动车替换后再扩建周边街区。
 - **最小可玩版本 = 1 号箱庭（榕湾海滨坡道旧镇） + 滨海连接路 + 2 号箱庭（现代镇区/商圈简版）**，只为回答一个问题：「升级车还是搬家」是否让人纠结。
 - 每个阶段都是**可玩的完整体验**，并维护对应的开发期 Debug 瞬移入口。
 - 渲染与 3D 预算以 [`ART-BIBLE.md`](ART-BIBLE.md) §5 为准（≤ 250 calls、≤ 100 万三角形、60 FPS）。
@@ -49,8 +49,9 @@
   - **美术管线已彻底定调（2026-11-25，90 分过关基准）**：全面淘汰纯代码方块建筑（旧 `coastal-town-kit.py` 与程序化 Canvas `coastal-detail-atlas.js` 冻结待替换删除），统一采用**「纯 Blender 微缩手办级真实建模 + AI 手绘 2D PBR 贴图 + 全游戏共享公模库（支持换色/换图变体）+ 暖光室内夜景」**与两关制验收（见 [`ART-BIBLE.md`](ART-BIBLE.md)）。
   - **当前进展与执行顺序**：
     1. **[已完成 · Gate 1 v4 过关 & 管线沉淀]** 标杆建筑 **「海风庄」（[`art/town/haikaze-hero/Haikaze-Hero.blend`](../art/town/haikaze-hero/Haikaze-Hero.blend)）** 与首批 **10 件共享公模（[`art/shared/props/Shared-Props.blend`](../art/shared/props/Shared-Props.blend)）+ 10 张 AI 手绘贴图** 已通过终审；可复用 AI 生图 + Blender 建模管线沉淀为 Skill [`.agents/skills/shiba-blender-pipeline/`](../.agents/skills/shiba-blender-pipeline/SKILL.md)。
-    2. **[已完成 · G0 正式迁移 Godot 4.7 桌面端 & HTML 报告门户上线]** 已将最终版 Three.js 网页原型完整归档于标签 `archive/threejs-web-final`（`026cd7e`），正式建立 Godot 4.7 Forward+ 桌面工程 [`game/`](../game/)；打通 [`tools/sync_blender_to_godot.py`](../tools/sync_blender_to_godot.py) 原生 `.blend` 无损直导（43.6 万面 + 106 PBR 材质，AgX + VoxelGI + SSIL + SSAO + SSR 达到 Cycles 95%+ 还原度），实装可玩街角骑行、爬 14 级外楼梯与「1F 海风拉面取餐 → 2F 201/202 黄铜挂钩送达」闭环，并将 GitHub Pages 切换为面向手机远程验收的 HTML 图文进度报告门户（[`tools/build_report_site.py`](../tools/build_report_site.py)）。
-    3. **[下一步 · 扩建 1 号箱庭建筑群、坡道地形与海滨电车道口]** 按海风庄与共享公模同工艺，在 Blender 中制作周边杂居楼、传统木构老铺、坡上住宅与海滨电车/踏切并原生直导入 Godot 4.7，利用公模换色/换图变体自然铺满 1 号海滨坡道箱庭。
+    2. **[已完成 · G0 正式迁移 Godot 4.7 桌面端 & HTML 报告门户上线]** 已将最终版 Three.js 网页原型完整归档于标签 `archive/threejs-web-final`（`026cd7e`），正式建立 Godot 4.7 Forward+ 桌面工程 [`game/`](../game/)；打通 [`tools/sync_blender_to_godot.py`](../tools/sync_blender_to_godot.py) 原生 `.blend` 无损直导（43.6 万面 + 106 PBR 材质，AgX + VoxelGI + SSAO + SSR + TAA 达到 Cycles 95%+ 还原度），实装可玩街角骑行、爬 14 级外楼梯与「1F 海风拉面取餐 → 2F 201/202 黄铜挂钩送达」闭环，修清实测公路波浪纹/空调角噪点/走动闪动/栏杆穿模，并将 GitHub Pages 切换为面向手机远程验收的 HTML 图文进度报告门户（[`tools/build_report_site.py`](../tools/build_report_site.py)）。
+    3. **[已完成 · G0.2 新版 2.5 头身手办级阿柴主角（`Shiba-Hero.blend`）实装]** 按纯 Blender 5.2 + AI 短绒毛发/冲锋衣 PBR 贴图重做阿柴主角（2 蒙皮网格、25 骨、6 组流畅骨骼动画含专属 `StairClimb` / `Mount` / `Dismount` 与可翻转护目镜），彻底消除旧版大头盔与生硬动作，实机稳跑 60–70 FPS。
+    4. **[下一步 · 方案 A 圆润复古平踏板电动车（含可掀座垫换电仓）→ 扩建 1 号箱庭建筑群、坡道地形与海滨电车道口]** 先按已确认方案 A 精建圆润明黄平踏板外卖电动车替换临时小摩托，再按海风庄与共享公模同工艺制作周边杂居楼、传统木构老铺、坡上住宅与海滨电车/踏切并原生直导入 Godot 4.7。
 - **步骤 2 · 玩法接管与第一版黑色幽默打工循环**：
   - 接入清晰店招与数字/字母门牌（含外楼梯二楼门牌 201/202 与门旁黄铜圆形外卖挂钩挂袋交互），把取餐/送餐、找门玩法（GPS 漂移 + 门牌号 + 捷径窄巷 + 爬外楼梯上二楼敲门/挂袋）迁移进 1 号箱庭，完成后删除旧老街/旧十字路口历史代码。
   - 主角坡上便宜小屋室内（起点/终点、充电、睡觉、看账单）与第一版黑色幽默打工循环（上线扣 ¥3 安心险、超时按比例扣钱、电量消耗与推车焦虑）。

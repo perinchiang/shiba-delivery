@@ -4,7 +4,8 @@ extends Node
 ## Playable Scooter Riding + Dismount Walking (14-step exterior stairs -> 2F corridor) +
 ## Unified 360° Chase/Orbit Camera for Shiba Delivery (Godot 4.7 Forward+).
 
-const COURIER_SCALE := 0.84
+const SCOOTER_SCALE := 0.84 # temporary legacy monkey-delivery.glb until Step 2 retro e-scooter
+const SHIBA_SCALE := 1.0    # new 2.5-head Shiba-Hero.blend authored at true world meters (~1.26m tall)
 const MAX_RIDE_SPEED := 11.2 # ~40 km/h feel inside compact corner block
 const REVERSE_SPEED := 3.2
 const WALK_SPEED := 3.6
@@ -53,21 +54,27 @@ func setup(p_scooter: Node3D, p_shiba: Node3D, p_camera: Camera3D) -> void:
 	shiba = p_shiba
 	camera = p_camera
 
-	scooter.scale = Vector3.ONE * COURIER_SCALE
-	shiba.scale = Vector3.ONE * COURIER_SCALE
+	scooter.scale = Vector3.ONE * SCOOTER_SCALE
+	shiba.scale = Vector3.ONE * SHIBA_SCALE
 
-	# Optimize actor sub-meshes for steady 50–60 FPS on Apple M2:
-	# Keep dynamic lighting, SSAO, SSIL, and crisp body shadows without per-frame dynamic
-	# VoxelGI probe re-voxelization overhead on 84 small skeletal/bolt sub-parts!
+	# Optimize actor sub-meshes for steady 55–60 FPS on Apple M2:
+	# Keep dynamic lighting, SSAO, and crisp body shadows without per-frame dynamic
+	# VoxelGI re-voxelization overhead! New Shiba-Hero.blend is only 2 skinned meshes!
 	_optimize_actor_meshes(scooter, true)
 	_optimize_actor_meshes(shiba, false)
 
 	shiba_anim = _find_animation_player(shiba)
 	if shiba_anim:
-		for aname in shiba_anim.get_animation_list():
+		var anames := shiba_anim.get_animation_list()
+		print("[Rider] Shiba animations loaded: ", anames)
+		for aname in anames:
 			var anim := shiba_anim.get_animation(aname)
 			if anim:
-				anim.loop_mode = Animation.LOOP_LINEAR
+				var lower := String(aname).to_lower()
+				if lower == "mount" or lower == "dismount":
+					anim.loop_mode = Animation.LOOP_NONE
+				else:
+					anim.loop_mode = Animation.LOOP_LINEAR
 
 	# Scooter Headlight (warm forward SpotLight3D, zero shadow pass bloat -> crisp 60 FPS!)
 	scooter_headlight = SpotLight3D.new()
@@ -96,7 +103,7 @@ func _optimize_actor_meshes(root_node: Node, is_bike: bool) -> void:
 			mi.visible = false
 			continue
 		mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
-		var tiny := n.contains("bolt") or n.contains("screw") or n.contains("eye") or n.contains("spoke") or n.contains("cable") or n.contains("lens")
+		var tiny := n.contains("bolt") or n.contains("screw") or n.contains("eye") or n.contains("spoke") or n.contains("cable") or n.contains("lens") or n.contains("glass")
 		if tiny:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		else:
@@ -124,11 +131,20 @@ func _find_animation_player(node: Node) -> AnimationPlayer:
 	return null
 
 
-func _play_anim(anim_name: String) -> void:
-	if shiba_anim == null or current_anim == anim_name:
+func _play_anim(anim_name: String, force_restart: bool = false, blend: float = 0.14) -> void:
+	if shiba_anim == null:
 		return
-	if shiba_anim.has_animation(anim_name):
-		shiba_anim.play(anim_name, 0.16)
+	if not force_restart and current_anim == anim_name:
+		return
+	var target := anim_name
+	if not shiba_anim.has_animation(target):
+		# Case-insensitive fallback if Blender/glTF adds suffix
+		for a in shiba_anim.get_animation_list():
+			if String(a).to_lower() == anim_name.to_lower() or String(a).to_lower().begins_with(anim_name.to_lower()):
+				target = String(a)
+				break
+	if shiba_anim.has_animation(target):
+		shiba_anim.play(target, blend)
 		current_anim = anim_name
 
 
@@ -176,7 +192,7 @@ func can_mount_scooter() -> bool:
 
 func _seat_world_pos() -> Vector3:
 	var basis := Basis.from_euler(Vector3(0.0, bike_yaw, bike_lean))
-	return bike_pos + basis * Vector3(0.0, 0.22, -0.06)
+	return bike_pos + basis * Vector3(0.0, 0.25, -0.10)
 
 
 func toggle_mount() -> bool:
@@ -192,7 +208,7 @@ func toggle_mount() -> bool:
 		mount_to_pos = target
 		mount_from_yaw = bike_yaw
 		mount_to_yaw = bike_yaw
-		mount_anim_dur = 0.28
+		mount_anim_dur = 0.42
 		mount_anim_t = 0.0
 		bike_bounce_t = 1.0
 		shiba_pos = target
@@ -200,7 +216,9 @@ func toggle_mount() -> bool:
 		shiba_vel = Vector2.ZERO
 		free_inspect = false
 		orbit_dist = 5.4
-		_play_anim("Stand")
+		if shiba_anim:
+			shiba_anim.speed_scale = 1.25
+		_play_anim("Dismount", true, 0.08)
 		return true
 	elif can_mount_scooter():
 		is_riding = true
@@ -209,13 +227,15 @@ func toggle_mount() -> bool:
 		mount_to_pos = _seat_world_pos()
 		mount_from_yaw = shiba_yaw
 		mount_to_yaw = bike_yaw
-		mount_anim_dur = 0.34
+		mount_anim_dur = 0.46
 		mount_anim_t = 0.0
 		bike_bounce_t = 1.0
 		shiba_vel = Vector2.ZERO
 		free_inspect = false
 		orbit_dist = 7.4
-		_play_anim("Ride")
+		if shiba_anim:
+			shiba_anim.speed_scale = 1.25
+		_play_anim("Mount", true, 0.08)
 		return true
 	return false
 
@@ -302,6 +322,10 @@ func step(delta: float) -> void:
 
 	if mount_anim_t < 1.0:
 		mount_anim_t = minf(1.0, mount_anim_t + delta / mount_anim_dur)
+		if mount_anim_t >= 1.0:
+			if shiba_anim:
+				shiba_anim.speed_scale = 1.0
+			_play_anim("Ride" if is_riding else "Stand", false, 0.14)
 		sync_transforms()
 		if not free_inspect:
 			_apply_chase_camera(delta)
@@ -380,9 +404,10 @@ func _step_walking(delta: float, move_fwd: float, move_right: float) -> void:
 	if shiba_moving:
 		var next_pos := shiba_pos + Vector3(shiba_vel.x, 0.0, shiba_vel.y) * delta
 		shiba_pos = RongwanGround.resolve_walk_pos(shiba_pos, next_pos)
-		_play_anim("Walk")
+		var climbing := (shiba_pos.y > 0.25 and shiba_pos.y < 3.15)
+		_play_anim("StairClimb" if climbing else "Walk")
 		if shiba_anim:
-			shiba_anim.speed_scale = clampf(spd / 2.9, 0.65, 1.25)
+			shiba_anim.speed_scale = clampf(spd / (2.35 if climbing else 2.85), 0.72, 1.32)
 	else:
 		_play_anim("Stand")
 		if shiba_anim:
@@ -397,20 +422,20 @@ func sync_transforms() -> void:
 	if mount_anim_t < 1.0:
 		var u := mount_anim_t
 		var ease_u := u * u * (3.0 - 2.0 * u)
-		var arc := sin(u * PI) * 0.44
+		var arc := sin(u * PI) * 0.24
 		var p := mount_from_pos.lerp(mount_to_pos, ease_u)
 		p.y += arc
 		shiba.position = p
-		shiba.rotation = Vector3(0.10 * sin(u * PI), lerp_angle(mount_from_yaw, mount_to_yaw, ease_u), 0.0)
+		shiba.rotation = Vector3(0.0, lerp_angle(mount_from_yaw, mount_to_yaw, ease_u), 0.0)
 		return
 
 	if is_riding:
 		var basis := Basis.from_euler(Vector3(0.0, bike_yaw, bike_lean))
-		shiba.position = bike_pos + Vector3(0.0, bounce_dip, 0.0) + basis * Vector3(0.0, 0.22, -0.06)
+		shiba.position = bike_pos + Vector3(0.0, bounce_dip, 0.0) + basis * Vector3(0.0, 0.25, -0.10)
 		shiba.rotation = Vector3(0.0, bike_yaw, bike_lean * 0.85)
 	else:
 		var on_stairs := (shiba_pos.y > 0.25 and shiba_pos.y < 3.15)
-		var pitch_lean := 0.09 if (on_stairs and shiba_moving) else (0.04 if shiba_moving else 0.0)
+		var pitch_lean := 0.04 if (on_stairs and shiba_moving) else 0.0
 		shiba.position = shiba_pos
 		shiba.rotation = Vector3(pitch_lean, shiba_yaw, 0.0)
 
