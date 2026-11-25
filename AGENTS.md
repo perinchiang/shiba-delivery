@@ -19,7 +19,7 @@
 ## 开发边界
 
 - **PC / Steam 优先正式发行，不是 PC-only 开发。** 持续维护能实际操作的浏览器 UI；新增场景及复杂流程时，优先保障开发期可点击 Debug 入口（如瞬移到已实现场景），减少重复跑图。正式发行 UI 不默认暴露这些调试控件。
-- 保持**柔和绘本风（风格 A）**与街景 `0.84` 缩放基线；推行**公模复用优先（开工前先查 [`art/CATALOG.md`](art/CATALOG.md)）+ 支持真实 `.blend`/`.glb` 资产与真实风格化图片贴图（含 AI 生图精修/手绘 PBR 图集）**，Three.js 代码专注路网生成、批量实例化拼装、灰盒验证与光影特效，不再强制纯代码盲写建模；制作新区域前先用约 10m×10m 3D 样角实机验证，不擅自切换成写实脏旧质感。
+- 保持**微缩手办感 × 柔和绘本风（风格化 PBR）**与街景 `0.84` 缩放基线；**全面定调「纯 Blender 精建（真墙厚/真凹洞/真室内纵深/柔和倒角）+ AI 手绘 2D PBR 贴图 + 共享公模库（开工前必查 [`art/CATALOG.md`](art/CATALOG.md)）」与两关制验收（Gate 1 Blender Cycles 日/夜审图 → Gate 2 减面合批压缩进 Three.js 实机验收）**，彻底淘汰纯代码方块建筑、纯顶点色假材质与程序化 Canvas 糊字招牌；Three.js 代码专注路网/碰撞、批量实例化拼装与换色、光影/时段/水面/微风特效与 UI，不擅自切换成写实脏旧质感。
 - 以小而完整的玩家体验验证新系统，避免将长期设想一次性铺开；未经要求不擅自更换引擎、添加大系统或扩大功能范围。
 
 ## 轻量研发工作流
@@ -27,7 +27,7 @@
 本仓库在 `.agents/skills/` 中维护轻量游戏开发工作流（按需触发，不常驻污染上下文），并遵循以下工程红线：
 
 - **验收先行**：跨文件或涉及玩法/美术/UI 的任务，先明确任务分型、可核验验收条件（AC）、改动边界与必拍机位（见 `.agents/skills/shiba-task-plan/`），再动手实现。
-- **美术规范与资产台账索引**：视觉与 3D 资产改动遵守 [`docs/ART-BIBLE.md`](docs/ART-BIBLE.md)、目录级 [`art/AGENTS.md`](art/AGENTS.md) 与全库复用台账 [`art/CATALOG.md`](art/CATALOG.md)，严禁跳过查库重复建模，不擅自打破 0.84 比例、色板与性能预算。
+- **美术规范、生产流水线与资产台账索引**：视觉与 3D 资产改动遵守 [`docs/ART-BIBLE.md`](docs/ART-BIBLE.md)、目录级 [`art/AGENTS.md`](art/AGENTS.md) 与全库复用台账 [`art/CATALOG.md`](art/CATALOG.md)，实操生产遵循 [`.agents/skills/shiba-blender-pipeline/`](.agents/skills/shiba-blender-pipeline/SKILL.md)（含 AI 贴图脚本与 Gate 1/2 模板），严禁跳过查库重复建模，不擅自打破 0.84 比例、色板与性能预算。
 - **视觉改动必看实机图**：凡涉及玩家可见改动，必须运行游戏并检查落盘截图（`.agents/skills/shiba-visual-qa/`）与 Console/Draw Calls 读数；编译通过或单测通过不能替代视觉验收，无法核验的项必须标明 `NOT ASSESSED` 或 `DEFERRED`。
 - **失败先根因、2 轮熔断**：验收不通过时，禁止直接猜数值反复盲改——必须先定位根因类别再改；同一缺陷连续 2 轮自动修复仍未过关，立即停止并向 Patrick 汇报对比图与备选方案。
 - **显式披露 Own Calls**：需求未写死、由 AI 自主拍板的数值、颜色或交互细节，交付时单独列出供 Patrick 确认保留或调整。

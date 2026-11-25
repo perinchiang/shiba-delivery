@@ -1,6 +1,6 @@
 # 阿柴快送｜资产台账与公模复用目录（Art Catalog）
 
-> 本文是《阿柴快送》**全仓库唯一资产索引与公模复用台账**。盘点基线：2026-11-24（只记录磁盘实测存在的文件、节点与材质数；未迁移的历史资产保留原位，渐进收敛，不强制一次性推倒重做）。相关规范见 [`docs/ART-BIBLE.md`](../docs/ART-BIBLE.md) 与 [`art/AGENTS.md`](AGENTS.md)。
+> 本文是《阿柴快送》**全仓库唯一资产索引与公模复用台账**（2026-11-25 随美术管线彻底改版同步更新：仅记录磁盘实测文件；全面定调「纯 Blender 精建 + AI 2D PBR 贴图 + 共享公模库」，旧纯代码过渡资产全部标为冻结待替换删除）。相关规范见 [`docs/ART-BIBLE.md`](../docs/ART-BIBLE.md) 与 [`art/AGENTS.md`](AGENTS.md)。
 
 ---
 
@@ -16,39 +16,69 @@
 
 ## 2. 目标复用目录结构（渐进迁移）
 
-- `art/shared/props/` — 全游戏唯一街头与室内公模道具库（自动贩卖机、空调外机、盆栽、饮料筐、自行车、电线杆、转角镜、易拉罐/餐盒、招牌框等；当前待抽离迁移）。
+- `art/shared/props/` — 全游戏唯一街头与室内公模道具库（**已落地首批 10 件微缩手办级公模**，见 §3.0）。
 - `art/shared/characters/` — 通用角色「布娃娃」素体公模 + 共享骨架（供后续小动物与居民 NPC 换头、换耳尾与换服饰贴图；当前待建立）。
-- `art/shared/textures/` — 真实 2D 风格化 PBR 贴图与共享图集 / Trim Sheet（Color / Roughness / Normal / Emissive；支持 AI 生图精修、手绘或风格化材质库）。
-- `art/<zone>/` — 区域专属建筑壳体模块与少数英雄地标（如 [`art/town/`](town/coastal-town-kit.glb)）。
+- `art/shared/textures/` — 真实 2D 风格化 PBR 贴图与独立招牌/海报 PNG 槽位（**已落地 10 张 `gpt-image-2.6-sunburst` AI 手绘原图 + 23 张合成/衍生法线与招牌贴图，见 §3.0**；支持同名 `custom_<文件名>` 一键热覆盖）。
+- `art/<zone>/` — 区域专属建筑壳体模块与少数英雄地标（如 [`art/town/haikaze-hero/`](town/haikaze-hero/haikaze-hero.glb) 与 [`art/town/coastal-town-kit.glb`](town/coastal-town-kit.glb)）。
 
 ---
 
-## 3. 现存资产实测台账（2026-11-24 盘点）
+## 3. 现存资产实测台账（2026-11-25 更新）
 
-### 3.1 角色与车辆（`art/morning/`）
+### 3.0 全游戏共享公模库与独立贴图库（`art/shared/` — 优先直接复用！）
 
-| 资产文件 | 体积 / 结构（实测） | 源文件与配套贴图 | 用途与复用说明 |
+- **共享公模总源文件**：[`shared/props/Shared-Props.blend`](shared/props/Shared-Props.blend)（`6.0M`）+ 生成脚本 [`shared/props/build_shared_props.py`](shared/props/build_shared_props.py)
+- **独立公模 `.glb` 清单（10 件，微缩手办圆润倒角 + 真结构建模 + AI 贴图，支持一键换色/换图变体）**：
+  - [`shared/props/prop_vending_white.glb`](shared/props/prop_vending_white.glb)（`1.2M`）& [`shared/props/prop_vending_pink.glb`](shared/props/prop_vending_pink.glb)（`1.2M`）— 真实 Boolean 凹陷透明展示窗 + 18 个车削 3D 饮料瓶罐 + 发光按键 + AI 海浪灯塔 / 樱花白桃海报槽（换 `tex_vending_poster_*.png` 即可衍生新机）
+  - [`shared/props/prop_ac_unit.glb`](shared/props/prop_ac_unit.glb)（`328K`）— 真凹陷风扇腔 + 3 叶螺旋桨 + 3D 同心圆铁丝网罩 + 曲线白包扎冷媒管与 L 型支架
+  - [`shared/props/prop_door_hook.glb`](shared/props/prop_door_hook.glb)（`192K`）— **门框圆形黄铜外卖挂钩**（鼠尾草绿圆润底座 + 黄铜圆环挂钩 + 预埋空物体锚点 `Hook_Hang_Point`）
+  - [`shared/props/prop_delivery_bag.glb`](shared/props/prop_delivery_bag.glb)（`69K`）— **牛皮纸拉面外卖袋**（皱褶牛皮纸袋身 + 双提手绳圈 + 绯红店铺封口贴纸，原点对齐提手拱顶，可直接挂接 `Hook_Hang_Point`）
+  - [`shared/props/prop_bottle_crate.glb`](shared/props/prop_bottle_crate.glb)（`137K`）— 真镂空网格塑料饮料筐 + 6 个车削透明玻璃汽水瓶（`Shared-Props.blend` 内含黄/蓝/红/绿 4 色筐体与翠绿/波子蓝/琥珀玻璃瓶可换色槽）
+  - [`shared/props/prop_potted_plant.glb`](shared/props/prop_potted_plant.glb)（`249K`）— 车削厚润红陶花盆 + 托盘 + 曲面立体阔叶 + 矮丛变体盛开黄/珊瑚小花
+  - [`shared/props/prop_vintage_bicycle.glb`](shared/props/prop_vintage_bicycle.glb)（`1.8M`）— 复古女式单车：**真 24 齿 5 爪镂空大牙盘 + 12 齿后飞轮 + 真实上下链条 + 镀铬曲柄/双脚踏（含琥珀反光片）+ 车削箱型轮圈/双法兰花鼓/24 根交叉辐条与黄铜辐条帽 + 后货架斜撑与挡泥板撑杆** + AI 雪松木底铁丝前筐；单车漆面独立归入单材质槽（`Prop_Bike_Paint_Teal/Mustard/Coral/Cream`，`Shared-Props.blend` 内含芥末黄实装换色变体 `Prop_Vintage_Bicycle_Mustard`）
+  - [`shared/props/prop_aframe_menu.glb`](shared/props/prop_aframe_menu.glb)（`2.5M`）— AI 雪松木 A 字黑板架 + 黄铜铰链拉链 + 粉笔槽与双色粉笔 + AI 粉彩手绘拉面黑板菜单
+  - [`shared/props/prop_chochin_lantern.glb`](shared/props/prop_chochin_lantern.glb)（`72K`）— 车削竹骨纹日式纸灯笼 + 黑漆上下盖 + 铁艺壁挂架 + 暖光次表面散射与绯红流苏
+- **共享独立 2D 贴图库（`art/shared/textures/`，10 张 `gpt-image-2.6-sunburst` AI 手绘原图 `ai_*.png` + [`compose_ai_textures.py`](shared/textures/compose_ai_textures.py) 精排中字与衍生法线/粗糙度 + [`build_textures.py`](shared/textures/build_textures.py) 门牌/地垫，均支持 `custom_<文件名>` 热替换）**：
+  - 建筑与材质 PBR 组（AI 原画 + 衍生 Normal/Roughness）：
+    - 奶油手涂灰泥：[`tex_plaster_cream.png`](shared/textures/tex_plaster_cream.png) + [`tex_plaster_cream_normal.png`](shared/textures/tex_plaster_cream_normal.png)（原图 [`ai_plaster_cream.png`](shared/textures/ai_plaster_cream.png)）
+    - 鼠尾草绿混凝土：[`tex_sage_concrete.png`](shared/textures/tex_sage_concrete.png) + [`tex_sage_concrete_normal.png`](shared/textures/tex_sage_concrete_normal.png)（原图 [`ai_sage_concrete.png`](shared/textures/ai_sage_concrete.png)）
+    - 暖调雪松木板：[`tex_wood_cedar.png`](shared/textures/tex_wood_cedar.png) + [`tex_wood_cedar_normal.png`](shared/textures/tex_wood_cedar_normal.png)（原图 [`ai_wood_cedar.png`](shared/textures/ai_wood_cedar.png)）
+    - 倒角石板地砖：[`tex_deck_tiles.png`](shared/textures/tex_deck_tiles.png) + [`tex_deck_tiles_normal.png`](shared/textures/tex_deck_tiles_normal.png)（原图 [`ai_deck_tiles.png`](shared/textures/ai_deck_tiles.png)）
+    - 釉面粉彩马赛克瓷砖 PBR 三件套：[`tex_mosaic_tiles.png`](shared/textures/tex_mosaic_tiles.png) + [`tex_mosaic_tiles_normal.png`](shared/textures/tex_mosaic_tiles_normal.png) + [`tex_mosaic_tiles_roughness.png`](shared/textures/tex_mosaic_tiles_roughness.png)（原图 [`ai_mosaic_tiles.png`](shared/textures/ai_mosaic_tiles.png)）
+    - 织物粗麻青海波暖帘与法线（统一店名「海风拉面」）：[`tex_noren_4panel.png`](shared/textures/tex_noren_4panel.png) + [`tex_noren_normal.png`](shared/textures/tex_noren_normal.png)（原图 [`ai_noren_fabric.png`](shared/textures/ai_noren_fabric.png)）
+  - AI 手绘海报、菜单与木竖牌（后期压印清晰中文排版，零乱码）：[`tex_menu_chalkboard.png`](shared/textures/tex_menu_chalkboard.png)、[`tex_poster_summer.png`](shared/textures/tex_poster_summer.png)、[`tex_vending_poster_white.png`](shared/textures/tex_vending_poster_white.png)、[`tex_vending_poster_pink.png`](shared/textures/tex_vending_poster_pink.png)、[`tex_plaque_vertical.png`](shared/textures/tex_plaque_vertical.png)（AI 雪松木底板「海风面馆」）
+  - 清晰门牌与地垫平面图：[`tex_plaque_haikaze.png`](shared/textures/tex_plaque_haikaze.png)、[`tex_apt_plaque_201.png`](shared/textures/tex_apt_plaque_201.png)、[`tex_apt_plaque_202.png`](shared/textures/tex_apt_plaque_202.png)、[`tex_welcome_mat.png`](shared/textures/tex_welcome_mat.png)（旧扁平招牌 [`tex_sign_ramen.png`](shared/textures/tex_sign_ramen.png) 已由 Blender 3D 立体字招牌替代）
+
+### 3.1 独立微缩手办版地标建筑（`art/town/haikaze-hero/` — v4 Gate 1 精修完成，待进 Gate 2）
+
+- [`town/haikaze-hero/Haikaze-Hero.blend`](town/haikaze-hero/Haikaze-Hero.blend)（`16M`，高精母版实测 `423,108` 三角面）+ [`town/haikaze-hero/haikaze-hero.glb`](town/haikaze-hero/haikaze-hero.glb)（`14M`，Draco 压缩高精母版）+ 源脚本 [`town/haikaze-hero/build_haikaze_hero.py`](town/haikaze-hero/build_haikaze_hero.py) + 验收渲染脚本 [`town/haikaze-hero/render_qa_shots.py`](town/haikaze-hero/render_qa_shots.py)
+- **已定调且全部完成自查的标杆工艺（v4）**：
+  - 全建筑使用 `gpt-image-2.6-sunburst` AI 手绘 PBR 贴图 + 真实厚墙 Boolean 深凹门窗与室内纵深（夜间室内/店面暖光真实透出）；
+  - **1F L 型墙体 + 零缝贴墙外挂铁楼梯**：东南角留出内凹贩卖机与空调壁龛，楼梯内侧斜梁紧贴 1F 墙面零缝收口（保留外侧单扶手 + 3 处墙体螺栓支架），且完全保留既有步行碰撞坐标；
+  - **3D 立体字「海风拉面」主招牌 + 全店店名统一**：深胡桃木框 + 暖奶油漆板 + 3D 立体挤出倒角「海风拉面」+ 3D 浮雕拉面碗徽章与鹅颈灯；暖帘统一为「海风拉面」、AI 木纹竖牌统一为「海风面馆」；
+  - **下倾无圆弧帆布遮阳棚**：正确向外下方倾斜（`+0.46 rad`），移除违和圆弧改为利落直边日式帆布垂帘；
+  - **二楼克制留白**：精简为 2 盆绿植，凸显 201/202 房门、门铃、黄铜圆形外卖挂钩与牛皮纸外卖袋挂接；天台保持外楼梯只到 2F 的清爽景观定位。
+  - 全部街头道具均从 `Shared-Props.blend` 实例化引用。待 Patrick 终审 v4 渲染图后即可提交母版并进入 Gate 2（减面合批压缩接入 Three.js）。
+
+### 3.2 角色与车辆（`art/morning/`）
+
+| 资产文件 | 体积 / 结构（实测） | 源文件与配套贴图 | 现状工艺与后续规划 |
 |---|---|---|---|
-| [`morning/shiba-courier.glb`](morning/shiba-courier.glb) | `2.3M` · 43 nodes · 23 mats | [`morning/Rongwan-Courier.blend`](morning/Rongwan-Courier.blend) + [`shiba.py`](morning/shiba.py) / [`build.py`](morning/build.py)；贴图 [`Shiba_Urajiro.png`](morning/Shiba_Urajiro.png) (`6.0K`)、[`Plume_Coat.png`](morning/Plume_Coat.png) (`56K`)、[`Kerchief_Paisley.png`](morning/Kerchief_Paisley.png) (`16K`) | **阿柴主角**（`0.84` 缩放基线）。造型已冻结，修改须保活骑姿与接触锚点断言 |
-| [`morning/monkey-delivery.glb`](morning/monkey-delivery.glb) | `2.3M` · 41 nodes · 14 mats | [`morning/Rongwan-Courier.blend`](morning/Rongwan-Courier.blend) + [`motorcycle.py`](morning/motorcycle.py) / [`motorcycle_detail.py`](morning/motorcycle_detail.py) | **现行小摩托**（含 `Seat_Contact` / `Grip_L/R` / `Footrest_L/R` / `Cargo_Floor` 等锚点）。后续按 [`docs/ROADMAP.md`](../docs/ROADMAP.md) 择机替换为明黄二手电动车 |
+| [`morning/shiba-courier.glb`](morning/shiba-courier.glb) | `2.3M` · 43 nodes · 23 mats | [`morning/Rongwan-Courier.blend`](morning/Rongwan-Courier.blend) + [`shiba.py`](morning/shiba.py) / [`build.py`](morning/build.py)；贴图 [`Shiba_Urajiro.png`](morning/Shiba_Urajiro.png) (`6.0K`)、[`Plume_Coat.png`](morning/Plume_Coat.png) (`56K`)、[`Kerchief_Paisley.png`](morning/Kerchief_Paisley.png) (`16K`) | **阿柴主角**（`0.84` 缩放基线）。现为早期 Blender Python 数学造型 + 24 骨骨架 + 纯色/基础程序化毛色贴图；造型、无缝圆肩与骑姿动画扎实且已冻结，后续只需择机补充与新场景匹配的 PBR 材质细节 |
+| [`morning/monkey-delivery.glb`](morning/monkey-delivery.glb) | `2.3M` · 41 nodes · 14 mats | [`morning/Rongwan-Courier.blend`](morning/Rongwan-Courier.blend) + [`motorcycle.py`](morning/motorcycle.py) / [`motorcycle_detail.py`](morning/motorcycle_detail.py) | **现行临时小摩托**（纯 Python 脚本生成、14 个纯色材质无贴图，含 `Seat_Contact` / `Grip_L/R` / `Footrest_L/R` / `Cargo_Floor` 等锚点）。后续直接按**新版纯 Blender + AI PBR 贴图管线**重做圆润明黄二手电动车替换 |
 
-> **缺口标注**：仓库尚无通用 NPC 居民「布娃娃」素体公模；后续试点 NPC 时须直接建于 `art/shared/characters/`，不要为单个路人另起一套不可复用骨架。
-
----
-
-### 3.2 1 号箱庭 · 榕湾海滨坡道镇（`art/town/coastal-town-kit.glb`）
-
-- **文件规格（实测）**：`3.7M` · 13 nodes · 4 共享材质（`CoastalTown_VertexColor`、`Hero_Plaster`、`Hero_Metal`、`Hero_Atlas`）
-- **源文件与配套图集**：[`town/coastal-town-kit.py`](town/coastal-town-kit.py)；配套细节图集 [`src/morning/coastal-detail-atlas.js`](../src/morning/coastal-detail-atlas.js)（当前为程序化 Canvas，后续可直接替换为 `art/shared/textures/` 真实 PNG PBR 图集而保持 UV 不变）
-- **已包含节点（13 个）**：
-  - 英雄地标：`Town_Hero_Haikaze`（海风庄 2.5 层商住楼 + 可步行外挂铁楼梯）
-  - 区域建筑模块：`Town_Shop_Corner`、`Town_Shop_Tall`、`Town_Shop_Konbini`、`Town_House_SlopeA`、`Town_House_SlopeB`
-  - 交通与街具：`Town_Tram_Car`、`Town_Crossing_Bar`、`Town_Crossing_Post`、`Town_Utility_Pole`、`Town_Bus_Stop`、`Town_Battery_Cabinet`、`Town_Vending`
-- **待拆债提示**：`Town_Hero_Haikaze` 内目前直接内嵌了真叶片盆栽、镂空汽水筐、复古单车、A 字菜单牌、空调外机与双色贩卖机；后续扩展整片街区或新增店铺时，应先将这批通用小道具抽离为 `art/shared/props/` 独立公模，**严禁在相邻建筑里再写一遍**。
+> **缺口标注**：仓库尚无通用 NPC 居民「布娃娃」素体公模；后续试点 NPC 时须直接建于 `art/shared/characters/` 并走新版 Blender + PBR 贴图管线，不要为单个路人另起一套不可复用骨架。
 
 ---
 
-### 3.3 历史 / 参考场景资产（只读参考，勿复制造轮子）
+### 3.3 待淘汰旧过渡资产 · 1 号箱庭旧纯代码套件（`art/town/coastal-town-kit.glb` — 已冻结，待逐批替换删除）
+
+- **状态声明（2026-11-25 冻结淘汰）**：本套资产由早期纯代码方块脚本 [`town/coastal-town-kit.py`](town/coastal-town-kit.py) 与程序化 Canvas 图集 [`src/morning/coastal-detail-atlas.js`](../src/morning/coastal-detail-atlas.js) 产出（`3.7M` · 13 nodes · 4 材质）。**禁止再向其新增建筑或打视觉补丁**，仅作当前线上原型占位，待 `art/town/haikaze-hero/` 与新版 Blender+AI 区域模块套件在 Gate 2 逐批接入后整套删除。
+- **当前占位节点（13 个）**：`Town_Hero_Haikaze`（首个替换目标）、`Town_Shop_Corner`、`Town_Shop_Tall`、`Town_Shop_Konbini`、`Town_House_SlopeA`、`Town_House_SlopeB`、`Town_Tram_Car`、`Town_Crossing_Bar`、`Town_Crossing_Post`、`Town_Utility_Pole`、`Town_Bus_Stop`、`Town_Battery_Cabinet`、`Town_Vending`。
+
+---
+
+### 3.4 历史 / 参考场景资产（只读参考，勿复制造轮子）
 
 | 资产文件 | 体积 / 结构（实测） | 包含节点 / 贴图 | 当前状态 |
 |---|---|---|---|

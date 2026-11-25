@@ -6,3 +6,8 @@ output/
 .playwright-cli/
 *.log
 .claude/
+.env
+.env.local
+.env.*.local
+*.blend1
+**/__pycache__/

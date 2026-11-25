@@ -1,18 +1,26 @@
 # art/ 目录工作约定（Blender 与 3D 资产）
 
-本目录存放 Blender 源文件、生成脚本、风格化贴图与导出的 `.glb` 资产。修改或新增本目录任何资产前，先对照 [`art/CATALOG.md`](CATALOG.md)、[`docs/ART-BIBLE.md`](../docs/ART-BIBLE.md) 与 [`art/morning/README.md`](morning/README.md)。
+本目录存放可编辑 Blender 源文件（`.blend`）、构造脚本、AI 手绘 PBR 贴图与导出的 `.glb` 资产。修改或新增本目录任何资产前，先对照 [`art/CATALOG.md`](CATALOG.md)、[`docs/ART-BIBLE.md`](../docs/ART-BIBLE.md) 与 [`art/morning/README.md`](morning/README.md)。
 
 ## 硬性约束
 
-1. **先查台账、公模复用优先**：开工前必须先读 [`art/CATALOG.md`](CATALOG.md)，并在方案中明确声明 **① 直接复用** / **② 公模换贴图或换局部配件** / **③ 确认缺失后新建**；凡通用道具或 NPC 素体，必须独立归口共享目录（`art/shared/props/` 或 `art/shared/characters/`），严禁将通用道具焊死在单栋建筑内；任何新增或结构变更须同步更新 `art/CATALOG.md`。
-2. **源文件与 `.glb` 配套维护（不再强迫纯代码建模）**：支持两种合法源文件形态——① **可视化 `.blend` 源文件**（主推，适合主角、公模道具、英雄建筑、展 UV 与贴图烘焙）并规范导出 `.glb`，② **Blender Python 脚本**（适合规则批量模块或参数化套件，须可无头复现 `blender --background --factory-startup --python-exit-code 2 --python <script>.py`）；严禁只留孤立二进制 `.glb` 而丢失源文件。
-3. **坐标与比例红线**：
-   - Blender 源空间：米制、X 横、Z 上、车头朝 `-Y`；导出 glTF 自动转为 Y 上、车头朝 `+Z`。
-   - 角色与摩托车统一 `0.84` 街景缩放基线；角色躯干与手臂采用单张连续四边面细分网格（一体无缝圆肩），不得破坏 `Seat_Contact`、`Grip_L/R`、`Footrest_L/R`、`Cargo_Floor`、`soleDepth` 等接触锚点。
-4. **材质、贴图与防 Z-fighting**：
-   - 鼓励使用共享风格化 2D PBR 贴图 / 图集（`art/shared/textures/`，含 Color / Roughness / Normal / Emissive）与 `CITY_PALETTE`（[`src/morning/city-palette.js`](../src/morning/city-palette.js)）协调的有限材质槽（例如哑光墙面 / 半光烤漆金属 / 釉面贴图 / 玻璃），兼容既有顶点色 AO 资产；避免为一小组道具拆出十几个冗余材质导致 Draw Calls 暴涨。
-   - 严禁共面叠加（背板、牌面、地面标线、门窗框等必须留清晰厚度或法向偏移），导出前检查法线朝向与背面剔除效果。
-5. **控制资产重量**：避免无意义高细分与单件独占超大贴图（共享图集遵循 2 的幂次，按需 `512`–`2048`）；重复街景套件（路灯、红绿灯、护柱、树、公模道具等）按可被 Three.js 实例化（`InstancedMesh`）的干净原点与分组导出。
+1. **纯 Blender 精建 + AI 2D PBR 贴图（全面淘汰纯代码假建筑）**：
+   - 所有新建与重做的建筑、道具、载具一律使用真实 Blender 建模能力（真实墙厚、Boolean 挖深门窗洞、真实室内纵深、厚实圆润 Bevel、Curve/Lathe/Subsurf 真实结构、规范 UV），配合 `art/shared/textures/` 中的 **AI 手绘 2D PBR 贴图（Color + Normal + Roughness + Emissive）**。
+   - **严禁**再写 `BoxBuilder` 式百块方块堆砌建筑脚本，严禁纯顶点色充当建筑表面材质，严禁把程序化 Canvas/简笔画当作核心店招或海报贴图；旧的 `coastal-town-kit.py` 等历史过渡资产已冻结，后续随新套件逐批下线。
+2. **先查台账、公模复用与一键变体优先**：
+   - 开工前必须先读 [`art/CATALOG.md`](CATALOG.md)，明确声明 **① 直接复用** / **② 公模换色、换贴图或换局部配件** / **③ 确认缺失后新建**。
+   - 凡通用街头/室内道具或 NPC 素体，必须独立归口共享目录（`art/shared/props/` 或 `art/shared/characters/`），并在建模时分离「主漆面/瓶身材质槽」与「海报/贴纸 UV 槽」，方便一键换色（如单车、瓶子/饮料筐、花盆）或一键换图（贩卖机、菜单、招牌）。**严禁将通用道具焊死在单栋建筑内**；新增或变更须同步更新 `art/CATALOG.md`。
+3. **源文件（`.blend`）与运行版 `.glb` 配套维护**：
+   - 每套资产必须保留可直接双击打开编辑的 `.blend` 母版源文件；若由 Blender Python 构造脚本驱动生成，须可无头复现（`blender --background --factory-startup --python-exit-code 2 --python <script>.py`）且输出干净可编辑的 `.blend`。严禁只留孤立二进制 `.glb`。
+   - 生产采用**两关制**：**Gate 1** 先在 Blender Cycles 输出日景多角度 + 暖光夜景 5 张审图（`output/blender-qa/<asset>/`），精修过关后进入 **Gate 2** 导出减面合批 + 贴图压缩的**游戏运行版 `.glb`** 接入 Three.js。
+4. **坐标、比例与结构细节红线**：
+   - Blender 源空间：米制、X 横、Z 上、朝前 `-Y`；导出 glTF 自动转为 Y 上、朝前 `+Z`，原点贴地。
+   - 角色与载具统一 `0.84` 街景缩放基线，改动须保活 `Seat_Contact`、`Grip_L/R`、`Footrest_L/R`、`Cargo_Floor`、`soleDepth` 等接触锚点并通过 `npm test`。
+   - 结构细节硬检查：单车等机械道具做真传动与轮毂/花鼓（不用白板遮挡）；遮阳棚向外下方倾斜、不做违和圆弧；外挂楼梯要么紧贴墙体收口、要么双侧配齐扶手；主招牌文字清晰且同店名统一；可通行走廊摆件克制留白。
+5. **材质、贴图、防 Z-fighting 与资产重量**：
+   - 材质围绕 `CITY_PALETTE`（[`src/morning/city-palette.js`](../src/morning/city-palette.js)）拉开哑光灰泥 / 半光烤漆铁件 / 高光釉面瓷砖 / 木纹 / 暖光自发光反差；AI 原图放 `art/shared/textures/ai_*.png`（纯无字），中文/日文排版由后期合成或 3D 立体字制作，禁止 AI 错字与模糊糊字。
+   - 严禁共面叠加（背板、牌面、门窗框留明确厚度或法向偏移），导出前检查法线与背面剔除。
+   - 游戏运行版严格控制面数、材质槽数与贴图体积（共享贴图 `512`–`1024`，大海报上限 `2048`，支持 Draco / WebP 压缩与 `InstancedMesh` 实例化）。
 6. **导出后必验**：
-   - 涉及角色/摩托车/骑姿改动：必须通过 `npm test`（含 [`tools/test-morning-riding.mjs`](../tools/test-morning-riding.mjs) 接触与袖型/配饰断言）。
-   - 任何可见资产改动：必须使用 [`capture-scenes.mjs`](../.agents/skills/shiba-visual-qa/scripts/capture-scenes.mjs) 在真实游戏中拍下**近景 + 中景/骑行视角**截图并实际看图验收，确认无穿模、浮空、比例失调或 Z-fighting。
+   - **Gate 1（Blender 阶段）**：必须用 `read_file` 亲自检查 `output/blender-qa/<asset>/` 全部日景特写与暖光夜景 Cycles 渲染图。
+   - **Gate 2（进游戏阶段）**：必须用 [`capture-scenes.mjs`](../.agents/skills/shiba-visual-qa/scripts/capture-scenes.mjs) 拍下真实游戏近景 + 中景/骑行视角（含夜晚时段）并核对零报错、Draw Calls ≤ 250 与 60 FPS；涉及角色/载具同时跑 `npm test`。
