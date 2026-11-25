@@ -17,7 +17,7 @@
 ## 2. 目标复用目录结构
 
 - `art/shared/props/` — 全游戏唯一街头与室内公模道具库（**已落地首批 10 件微缩手办级公模**，见 §3.0）。
-- `art/shared/characters/` — 通用角色「布娃娃」素体公模与主角母版（**已落地 2.5 头身手办级主角 [`art/shared/characters/shiba/Shiba-Hero.blend`](shared/characters/shiba/Shiba-Hero.blend)**，后续小动物居民 NPC 复用该骨架与比例换头/换耳尾/换装）。
+- `art/shared/characters/` — 通用角色「布娃娃」素体公模与主角母版（**已落地胖萌 2.0 头身糯米手办级主角 [`art/shared/characters/shiba/Shiba-Hero.blend`](shared/characters/shiba/Shiba-Hero.blend)**，后续小动物居民 NPC 复用该骨架与比例换头/换耳尾/换装）。
 - `art/shared/textures/` — 真实 2D 风格化 PBR 贴图与独立招牌/海报 PNG 槽位（**已落地 12 张 `gpt-image-2.6-sunburst` AI 手绘原图 + 合成/衍生法线与招牌贴图**，含新增的柴犬毛绒与外卖冲锋衣面料 PBR，见 §3.0；支持同名 `custom_<文件名>` 一键热覆盖；复用流程见 [`.agents/skills/shiba-blender-pipeline/SKILL.md`](../.agents/skills/shiba-blender-pipeline/SKILL.md)）。
 - `art/<zone>/` — 区域专属建筑壳体模块与少数英雄地标（当前已实装首栋 Gate 2 标杆建筑 [`art/town/haikaze-hero/Haikaze-Hero.blend`](town/haikaze-hero/Haikaze-Hero.blend)，经 [`tools/sync_blender_to_godot.py`](../tools/sync_blender_to_godot.py) 原生直导入 [`game/assets/buildings/Haikaze-Hero.blend`](../game/assets/buildings/Haikaze-Hero.blend)）。
 
@@ -62,7 +62,7 @@
 
 | 资产文件 | 体积 / 结构（实测） | 源文件与配套贴图 | 现状工艺与后续规划 |
 |---|---|---|---|
-| [`shared/characters/shiba/Shiba-Hero.blend`](shared/characters/shiba/Shiba-Hero.blend) → [`../game/assets/characters/Shiba-Hero.blend`](../game/assets/characters/Shiba-Hero.blend) | **`6.0M` · `43,416 tris` · 2 蒙皮网格 · 25 骨 · 6 组 NLA 动画**（`1.0` 真世界比例：总高 `1.26m`、头盔宽 `0.48m`） | 生成脚本 [`shared/characters/shiba/build_shiba_hero.py`](shared/characters/shiba/build_shiba_hero.py)；无缝里白面贴图 [`tex_shiba_face_urajiro.png`](shared/characters/shiba/tex_shiba_face_urajiro.png) + AI PBR [`ai_shiba_fur.png`](shared/textures/ai_shiba_fur.png) / [`ai_jacket_fabric.png`](shared/textures/ai_jacket_fabric.png) | **现行正式 2.5 头身手办级阿柴主角**（已原生直导入 Godot 4.7 Forward+）：贴头半盔（宽度减半，顺滑走 1.15m 外楼梯）+ 可翻转复古护目镜（站走上翻、骑车下翻）+ 豆豆眉/腮红/3D `ω` 微笑/爪印胸章/柔顺卷尾 + 6 组流畅骨骼动画（`Stand`/`Walk`/`StairClimb`/`Ride`/`Mount`/`Dismount`），实机 60–70 FPS |
+| [`shared/characters/shiba/Shiba-Hero.blend`](shared/characters/shiba/Shiba-Hero.blend) → [`../game/assets/characters/Shiba-Hero.blend`](../game/assets/characters/Shiba-Hero.blend) | **`6.0M` · `47,636 tris` · 2 蒙皮网格 · 25 骨 · 6 组 NLA 动画**（`1.0` 真世界比例：总高 `1.19m`、贴头半盔宽 `0.61m`） | 生成脚本 [`shared/characters/shiba/build_shiba_hero.py`](shared/characters/shiba/build_shiba_hero.py)；无缝里白面贴图 [`tex_shiba_face_urajiro.png`](shared/characters/shiba/tex_shiba_face_urajiro.png) + AI PBR [`ai_shiba_fur.png`](shared/textures/ai_shiba_fur.png) / [`ai_jacket_fabric.png`](shared/textures/ai_jacket_fabric.png) | **现行正式 2.0 头身胖萌糯米柴犬主角**（已原生直导入 Godot 4.7 Forward+）：宽糯米团子脸 + 立体奶油鼓嘴筒 + 零人脖子/珊瑚红领巾 + 梨形小肚子与超短胖萌小短腿 + 贴头半盔（比旧版 0.96m 窄 36%，走 1.15m 外楼梯两侧充裕）+ 可翻转复古护目镜 + 豆豆眉/腮红/3D `ω` 微笑/爪印胸章/大卷尾 + 6 组流畅骨骼动画，实机 62–70 FPS |
 | [`morning/monkey-delivery.glb`](morning/monkey-delivery.glb) | `2.3M` · 41 nodes · 14 mats | [`morning/Rongwan-Courier.blend`](morning/Rongwan-Courier.blend) + [`motorcycle.py`](morning/motorcycle.py) / [`motorcycle_detail.py`](morning/motorcycle_detail.py) | **现行临时小摩托**（`0.84` 缩放过渡）。下一步按已敲定**方案 A**用纯 Blender + AI PBR 新建「圆润复古明黄平踏板外卖电动车（可掀座垫换电仓 + 后箱 + 手机支架 + 前挂钩）」直接替换 |
 | [`morning/shiba-courier.glb`](morning/shiba-courier.glb) | `2.3M` · 43 nodes（已退役归档保留参考） | [`morning/Rongwan-Courier.blend`](morning/Rongwan-Courier.blend) | 早期大头盔过渡版（0.96m 头宽、43 拆件），已由新版 [`Shiba-Hero.blend`](shared/characters/shiba/Shiba-Hero.blend) 正式替换 |
 

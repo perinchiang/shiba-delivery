@@ -192,7 +192,7 @@ func can_mount_scooter() -> bool:
 
 func _seat_world_pos() -> Vector3:
 	var basis := Basis.from_euler(Vector3(0.0, bike_yaw, bike_lean))
-	return bike_pos + basis * Vector3(0.0, 0.25, -0.10)
+	return bike_pos + basis * Vector3(0.0, 0.34, -0.08)
 
 
 func toggle_mount() -> bool:
@@ -431,7 +431,7 @@ func sync_transforms() -> void:
 
 	if is_riding:
 		var basis := Basis.from_euler(Vector3(0.0, bike_yaw, bike_lean))
-		shiba.position = bike_pos + Vector3(0.0, bounce_dip, 0.0) + basis * Vector3(0.0, 0.25, -0.10)
+		shiba.position = bike_pos + Vector3(0.0, bounce_dip, 0.0) + basis * Vector3(0.0, 0.34, -0.08)
 		shiba.rotation = Vector3(0.0, bike_yaw, bike_lean * 0.85)
 	else:
 		var on_stairs := (shiba_pos.y > 0.25 and shiba_pos.y < 3.15)
